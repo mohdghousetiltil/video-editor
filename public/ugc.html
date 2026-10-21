@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>UGC Review Studio</title>
+<style>
+  :root{--bg:#0b0d12;--panel:#12151c;--panel2:#171b24;--line:#232836;--text:#eceef4;--mute:#8a92a6;--acc:#7c5cff;--acc2:#b39bff;--ok:#34d399;--err:#ff6b6b;--warn:#fbbf24}
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 500px at 20% -10%,#1a1440 0,transparent 60%),var(--bg);color:var(--text);font:14px/1.5 Inter,system-ui,Segoe UI,sans-serif;min-height:100vh}
+  .wrap{max-width:1150px;margin:0 auto;padding:22px 18px 60px}
+  header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:12px;flex-wrap:wrap}
+  .brand{display:flex;align-items:center;gap:10px;font-size:19px;font-weight:700}
+  .logo{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,var(--acc),#ff7ab6);display:grid;place-items:center}
+  nav a{color:var(--mute);text-decoration:none;border:1px solid var(--line);padding:6px 12px;border-radius:99px;margin-left:6px}
+  nav a.on,nav a:hover{color:var(--text);border-color:var(--acc)}
+  .layout{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:18px;align-items:start}
+  @media(max-width:900px){.layout{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:18px}
+  h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute);margin:0 0 12px;font-weight:600}
+  textarea,select,input[type=text],input[type=number]{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:9px;padding:9px;font:inherit;outline:none;width:100%}
+  textarea{min-height:130px;resize:vertical;line-height:1.55}
+  textarea:focus,select:focus,input:focus{border-color:var(--acc)}
+  label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--mute)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:12px 0}
+  .photos{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+  .drop{border:1.5px dashed var(--line);background:var(--panel2);border-radius:14px;aspect-ratio:3/4;display:grid;place-items:center;text-align:center;color:var(--mute);cursor:pointer;overflow:hidden;position:relative;transition:.15s}
+  .drop:hover,.drop.over{border-color:var(--acc);background:#1a1830}
+  .drop img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  .drop .tag{position:absolute;left:8px;top:8px;background:#000a;padding:2px 9px;border-radius:99px;font-size:12px;color:#fff;z-index:2}
+  .drop input{display:none}
+  .btn{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:9px 15px;font:inherit;font-weight:600;cursor:pointer;transition:.15s}
+  .btn:hover:not(:disabled){border-color:var(--acc);color:var(--acc2)}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .primary{width:100%;padding:14px;font-size:15px;background:linear-gradient(135deg,var(--acc),#9a6bff);border:0;color:#fff;border-radius:12px}
+  .primary:hover:not(:disabled){color:#fff;filter:brightness(1.1)}
+  .row{display:flex;justify-content:space-between;align-items:center;margin:8px 0 14px;gap:8px;flex-wrap:wrap}
+  .cost{display:flex;justify-content:space-between;align-items:center;margin:0 0 12px;padding:10px 12px;border-radius:10px;background:var(--panel2);border:1px solid var(--line)}
+  .cost b{color:var(--warn);font-size:16px}
+  .err{color:var(--err);margin-top:10px;font-size:13px}
+  .meta{color:var(--mute);font-size:13px}
+  .stage{display:grid;place-items:center;background:#07080c;border:1px solid var(--line);border-radius:14px;min-height:300px;overflow:hidden}
+  .stage video{width:100%;max-height:560px;display:block;background:#000}
+  .empty{color:var(--mute);text-align:center;padding:30px}.empty .big{font-size:40px}
+  .prog{width:100%;padding:26px}
+  .pct{font-size:52px;font-weight:800;line-height:1}
+  .bar{height:10px;background:var(--panel2);border-radius:99px;overflow:hidden;margin:14px 0 10px}
+  .fill{height:100%;width:0;background:linear-gradient(90deg,var(--acc),#ff7ab6);transition:width .6s}
+  .actions{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;align-items:center}
+  a.btn{text-decoration:none;display:inline-block}
+</style>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body data-title="UGC review studio" data-sub="Create a realistic influencer review of your product, using a saved AI influencer.">
+<div class="wrap">
+  <div class="layout">
+    <div>
+      <div class="panel">
+        <h2>1 · Influencer &amp; product</h2>
+        <div class="grid" style="grid-template-columns:1fr 1fr;margin-top:0">
+          <label>Influencer source<select id="mode">
+            <option value="persona">AI influencer (described, no photo)</option>
+          </select></label>
+          <label id="personaPick"><span>Saved influencer (<a href="/influencers.html" style="color:var(--acc2)">manage</a>)</span><select id="persona"></select></label>
+        </div>
+        <div id="picRow" style="display:none;align-items:center;gap:12px;margin-bottom:12px;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--panel2)">
+          <img id="infPic" style="width:64px;height:86px;object-fit:cover;border-radius:8px">
+          <label style="flex-direction:row;align-items:center;gap:8px;color:var(--text);font-size:13px"><input type="checkbox" id="usePic" checked style="width:auto"> Use this influencer's saved picture as the first frame, so the face stays the same. (The product photo can't be sent in this mode, so describe the product below.)</label>
+        </div>
+        <div id="sfBox" style="display:none;margin-bottom:12px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--panel2)">
+          <div class="meta" style="margin-bottom:8px;color:var(--text)"><b>🖼️ Start frame</b>: combines the influencer and your product photo into one picture of them holding your exact product. The video then starts from it, so the product matches.</div>
+          <div class="row" style="margin:0;align-items:flex-start;gap:12px">
+            <div><button class="btn" id="mkFrame" type="button">🖼️ Create start frame</button><div class="meta" id="sfMsg" style="margin-top:6px;max-width:220px"></div></div>
+            <img id="sfImg" style="display:none;width:96px;aspect-ratio:9/16;object-fit:cover;border-radius:10px;border:1px solid var(--line)">
+          </div>
+        </div>
+        <div id="personaBox">
+          <label>Influencer description (reused word-for-word in every video so they stay consistent)
+            <textarea id="pdesc" style="min-height:90px" placeholder="e.g. A friendly woman in her mid-20s with warm light-brown skin, shoulder-length wavy dark brown hair, small gold hoop earrings, wearing a plain cream knit sweater."></textarea></label>
+          <div class="row"><span style="display:flex;gap:8px;flex-wrap:wrap"><input type="text" id="pname2" placeholder="Name, e.g. Maya" style="width:160px"><button class="btn" id="psave" type="button">💾 Save influencer</button><button class="btn" id="pnew" type="button">New</button></span><span class="meta" id="pseed"></span></div>
+        </div>
+        <div class="photos">
+          <label class="drop" id="d1" style="display:none"><span class="tag">Influencer</span><span>📷 Click or drop<br>influencer photo</span><input type="file" accept="image/*"></label>
+          <label class="drop" id="d2"><span class="tag">Product</span><span>📦 Click or drop<br>product photo</span><input type="file" accept="image/*"></label>
+        </div>
+
+        <h2>2 · Product details</h2>
+        <div class="grid" style="grid-template-columns:1fr 1fr">
+          <label>Product name<input type="text" id="pname" placeholder="e.g. GlowUp Vitamin C Serum"></label>
+          <label>UGC format<select id="format">
+            <option value="an excited unboxing and first impressions">Unboxing</option>
+            <option value="an honest product review with pros">Honest review</option>
+            <option value="a 'try it with me' demo, using the product on camera">Try it with me / demo</option>
+            <option value="a TikTok Shop style hype recommendation">TikTok Shop pitch</option>
+            <option value="a before-and-after style testimonial">Testimonial</option>
+          </select></label>
+        </div>
+        <label id="plookRow" style="display:none;margin-bottom:10px">What the product looks like (only needed if you don't create a start frame)<input type="text" id="plook" placeholder="e.g. a small frosted glass bottle with a white dropper and a gold label"></label>
+        <label>Key benefits / what to say (optional)<textarea id="notes" style="min-height:70px" placeholder="Lightweight, absorbs fast, smells amazing, visible glow in a week…"></textarea></label>
+
+        <div class="row"><span style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="write" type="button">✨ Write UGC prompt</button><button class="btn" id="real" type="button">🎯 Make it realistic</button></span><span class="meta">Both add flawless-UGC realism rules</span></div>
+        <label>Final prompt (edit freely)<textarea id="prompt" placeholder="Click “Write UGC prompt”, or write your own…"></textarea></label>
+
+        <h2 style="margin-top:16px">3 · Settings</h2>
+        <div class="grid">
+          <label>Model<select id="model">
+            <option value="x-ai/grok-imagine-video-1.5-lite">Grok Imagine 1.5 Lite (~$0.02/s) - works with a saved picture</option>
+            <option value="bytedance/seedance-2.0-fast">Seedance 2.0 Fast (~$0.04/s)</option>
+            <option value="bytedance/seedance-2.0">Seedance 2.0 (~$0.07/s)</option>
+          </select></label>
+          <label>Duration (s)<input type="number" id="duration" value="8" min="4" max="15"></label>
+          <label>Resolution<select id="res"><option>480p</option><option>720p</option></select></label>
+          <label>Aspect<select id="aspect"><option>9:16</option><option>1:1</option><option>16:9</option></select></label>
+          <label>Audio (voice)<select id="audio"><option value="true">On</option><option value="false">Off</option></select></label>
+        </div>
+        <div class="cost"><span class="meta">Estimated cost</span><b id="cost">—</b></div>
+        <button class="btn primary" id="go" type="button">Generate UGC video</button>
+        <div class="err" id="err"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel">
+        <h2>Result</h2>
+        <div class="stage" id="stage"><div class="empty"><div class="big">🎞️</div>Upload two photos and generate.</div></div>
+        <div class="actions" id="actions"></div>
+        <div class="meta" id="note" style="margin-top:8px"></div>
+      </div>
+      <div class="panel meta">
+        <b>Tips</b><br>
+        • Influencer: clear, front-facing, good light, face fully visible.<br>
+        • Product: sharp photo on a plain background, label readable.<br>
+        • Generated text on packaging can warp. Check the result before using it in ads.
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+if(location.protocol==='file:'){location.replace('http://localhost:3100/'+(location.pathname.split('/').pop()==='index.html'?'':location.pathname.split('/').pop()));}
+
+const $=id=>document.getElementById(id);
+const PRICE={'x-ai/grok-imagine-video-1.5-lite':{'480p':.02,'720p':.03},'bytedance/seedance-2.0-fast':{'480p':.0425,'720p':.0912},'bytedance/seedance-2.0':{'480p':.07,'720p':.15}};
+const imgs={d1:null,d2:null};
+const mode=()=>$('mode').value;
+
+/* ---- saved AI influencers (server library, managed on the Influencers page) ---- */
+let seed=Math.floor(Math.random()*2e9), infs=[];
+function seedLabel(){$('pseed').textContent='Seed '+seed+' (kept with this influencer)'}
+async function loadInfs(sel){
+  try{infs=(await (await fetch('/api/influencers')).json()).influencers||[];}catch{infs=[];}
+  $('persona').innerHTML='<option value="">— new —</option>'+infs.map(p=>'<option value="'+p.id+'">'+p.name.replace(/</g,'&lt;')+'</option>').join('');
+  if(sel) {$('persona').value=sel; pickInf();}
+}
+function pickInf(){
+  const p=infs.find(x=>x.id===$('persona').value);
+  if(p){$('pdesc').value=p.desc||'';$('pname2').value=p.name;seed=p.seed;}
+  seedLabel();
+  startFrameData=null;
+  const hasPic=!!(p&&p.image); $('picRow').style.display=hasPic?'flex':'none'; if(hasPic) $('infPic').src=p.image; updFrame();
+}
+function frameMode(){const p=infs.find(x=>x.id===$('persona').value);return mode()==='persona'&&!!(p&&p.image)&&$('usePic').checked?p:null}
+let startFrameData=null;
+function showSF(){
+  const fm=frameMode();
+  $('sfBox').style.display=fm?'':'none';
+  $('plookRow').style.display=fm&&!startFrameData?'':'none';
+  $('sfImg').style.display=startFrameData?'':'none'; if(startFrameData) $('sfImg').src=startFrameData;
+}
+function updFrame(){ showSF(); }
+$('mkFrame').onclick=async()=>{
+  $('err').textContent=''; const fm=frameMode();
+  if(!fm) return; if(!imgs.d2) return $('err').textContent='Add the product photo first.';
+  const b=$('mkFrame'); b.disabled=true; b.textContent='Creating…'; $('sfMsg').textContent='About 15-40 seconds, costs a few cents.';
+  try{
+    const r=await fetch('/api/startframe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({influencer_id:fm.id,product:imgs.d2})});
+    const j=await r.json(); if(!r.ok) throw new Error(j.error||'Failed');
+    startFrameData=await shrinkSrc(j.image); showSF(); $('sfMsg').textContent='Check the product looks right. Not happy? Click again for a new one. Cost $'+(j.cost||0).toFixed(2);
+  }catch(e){ $('err').textContent=e.message; $('sfMsg').textContent=''; }
+  b.disabled=false; b.textContent='🖼️ Create start frame';
+};
+function shrinkSrc(src,max=1024){
+  return new Promise((res,rej)=>{const im=new Image();im.onload=()=>{const k=Math.min(1,max/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);c.getContext('2d').drawImage(im,0,0,c.width,c.height);res(c.toDataURL('image/jpeg',.9));};im.onerror=()=>rej(new Error('image load failed'));im.src=src;});
+}
+$('usePic').onchange=updFrame;
+$('persona').onchange=pickInf;
+$('psave').onclick=async()=>{
+  const name=$('pname2').value.trim(), desc=$('pdesc').value.trim();
+  if(!name||!desc) return $('err').textContent='Give the influencer a name and a description.';
+  const id=infs.find(p=>p.name===name)?.id;
+  const r=await fetch('/api/influencers',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,name,desc,seed})});
+  const j=await r.json(); if(!r.ok) return $('err').textContent=j.error||'Save failed';
+  $('err').textContent=''; await loadInfs(j.id);
+};
+$('pnew').onclick=()=>{$('persona').value='';$('pdesc').value='';$('pname2').value='';seed=Math.floor(Math.random()*2e9);seedLabel();};
+$('mode').onchange=()=>{
+  const p=mode()==='persona'; setTimeout(()=>{ if(!p){$('picRow').style.display='none';} else pickInf(); updFrame(); },0);
+  $('personaBox').style.display=p?'':'none'; $('personaPick').style.display=p?'':'none'; $('d1').style.display=p?'none':'';
+};
+loadInfs(new URLSearchParams(location.search).get('inf')); seedLabel();
+function ugcRules(){
+  const d=Math.max(4,Math.min(15,+$('duration').value||8)), words=Math.round(d*2.3);
+  const t=x=>Math.round(x*10)/10;
+  const hook=Math.min(2,t(d*0.2)), show=t(d*0.45), use=t(d*0.8);
+  let beats;
+  if(d<=5) beats=`TIMED BEATS (${d}s total): 0-${hook}s hook, the person looks at the lens and starts speaking while already holding the product; ${hook}-${d}s a quick demo of using it ending on a genuine reaction.`;
+  else if(d<=8) beats=`TIMED BEATS (${d}s total): 0-${hook}s hook line to camera; ${hook}-${show}s shows the product to the lens with the label facing camera; ${show}-${d}s uses it and ends on a genuine reaction.`;
+  else if(d<=12) beats=`TIMED BEATS (${d}s total): 0-${hook}s hook line to camera; ${hook}-${show}s shows the product with the label facing the lens; ${show}-${use}s demonstrates using it with natural pauses; ${use}-${d}s reaction plus a soft call to action.`;
+  else beats=`TIMED BEATS (${d}s total): 0-${hook}s hook line to camera; ${hook}-${t(d*0.3)}s shows the product, label to lens; ${t(d*0.3)}-${t(d*0.55)}s opens or prepares it; ${t(d*0.55)}-${use}s demonstrates using it; ${use}-${d}s reaction plus a soft call to action.`;
+  const intro = frameMode()
+   ? startFrameData ? 'This is a UGC product review video that STARTS from a supplied first-frame image that already shows the influencer holding the product. Do NOT describe the face, hair, skin tone, age or clothing of the influencer, and do NOT describe the look of the product: keep the person, outfit, setting AND the product exactly as in the first frame throughout, with the product label facing the camera. Only describe actions, camera and speech. '
+   : 'This is a UGC product review video that STARTS from a supplied first-frame image of the influencer. Do NOT describe the face, hair, skin tone, age or clothing of the influencer; simply continue naturally from that first frame, keeping the same person, outfit and setting throughout. No product image is supplied, so describe the product exactly like this and keep it identical throughout: "'+($('plook').value.trim()||'the product')+'". '
+   : mode()==='persona'
+   ? 'This is a UGC product review. ONE reference image is supplied: the product (keep its shape, size, colors, label and packaging exactly the same); refer to it as "the product from the reference image" and do NOT describe its look. The influencer is a fixed character with NO reference image, so begin the prompt by describing them with EXACTLY this description, copied word for word: "'+$('pdesc').value.trim()+'". Never change their looks or clothing. '
+   : 'This is a UGC product review. Two reference images are supplied: the FIRST is the influencer (keep face, hair, skin tone and outfit exactly the same), the SECOND is the product (keep shape, size, colors, label and packaging exactly the same). Refer to them as "the person from the first reference image" and "the product from the second reference image". IMPORTANT: do NOT describe the face of the person, hair, skin tone, age, ethnicity, body or clothing, and do NOT describe the look of the product, label or colors. The reference images define all of that; only describe actions, setting, camera and speech. ';
+  return intro+
+  'REALISM RULES: it must look like a real vertical smartphone front-camera video, one continuous take with no cuts. Handheld with slight natural micro-shake, imperfect casual framing, natural window or room light, normal phone-camera color (no cinematic grading, no film look). '+
+  'The person has real skin texture with visible pores and small imperfections, no beauty filter, no plastic or airbrushed skin; natural blinking, relaxed eye contact with the lens, small natural head and hand movements, a genuine expression. '+
+  'Hands are anatomically correct with five fingers and a natural grip; the product stays the same size and shape in the hand, label clearly facing the camera and never warping, morphing or floating. Realistic physics when opening, applying or using the product. '+
+  `Only ONE person and ONE product in frame, same setting for the whole clip. ${beats} `+
+  `SPEECH: casual conversational delivery with small natural pauses, not an announcer voice. HARD LIMIT: no more than ${words} spoken words in TOTAL for the whole ${d}-second clip (about 2.3 words per second); fewer is better. Write the spoken words ONLY ONCE, inside quotes in the Sound line; in the action text just say 'speaks' or 'says the line', never repeat the words. Quiet room ambience, no background music. Do not pack in more action than ${d} seconds can show. `+
+  'End the prompt with an Avoid line: Avoid: extra people, text overlays or captions, subtitles, logos changing, distorted hands or fingers, uncanny eyes, over-smooth skin, dramatic cinematic lighting, camera zooms, scene cuts, music.';
+}
+function maxWords(){const d=+$('duration').value||8;return d<=6?110:d<=10?160:220}
+let timer=null;
+
+function shrink(file,max=1024){
+  return new Promise((res,rej)=>{
+    const url=URL.createObjectURL(file), im=new Image();
+    im.onload=()=>{
+      const k=Math.min(1,max/Math.max(im.width,im.height)), c=document.createElement('canvas');
+      c.width=Math.round(im.width*k); c.height=Math.round(im.height*k);
+      c.getContext('2d').drawImage(im,0,0,c.width,c.height);
+      URL.revokeObjectURL(url); res(c.toDataURL('image/jpeg',.88));
+    };
+    im.onerror=()=>rej(new Error('Could not read that image.'));
+    im.src=url;
+  });
+}
+async function setImg(id,file){
+  if(!file||!file.type.startsWith('image/')) return;
+  try{
+    const data=await shrink(file); imgs[id]=data; if(id==='d2'){startFrameData=null; if(typeof showSF==='function') showSF();}
+    const el=$(id); el.querySelector('img')?.remove();
+    const im=document.createElement('img'); im.src=data; el.appendChild(im);
+  }catch(e){$('err').textContent=e.message}
+}
+for(const id of ['d1','d2']){
+  const el=$(id);
+  el.querySelector('input').onchange=e=>setImg(id,e.target.files[0]);
+  ['dragenter','dragover'].forEach(t=>el.addEventListener(t,ev=>{ev.preventDefault();el.classList.add('over')}));
+  ['dragleave','drop'].forEach(t=>el.addEventListener(t,ev=>{ev.preventDefault();el.classList.remove('over')}));
+  el.addEventListener('drop',ev=>setImg(id,ev.dataTransfer.files[0]));
+}
+
+function cost(){
+  const p=PRICE[$('model').value][$('res').value]||0, d=+$('duration').value||0;
+  $('cost').textContent=d?`≈ $${(p*d).toFixed(2)}`:'—';
+}
+['model','res','duration'].forEach(i=>$(i).addEventListener('input',cost)); cost();
+
+$('write').onclick=async()=>{
+  $('err').textContent='';
+  const name=$('pname').value.trim()||'the product';
+  const rough=`UGC-style ${$('format').value} video. The influencer reviews ${name}. ${$('notes').value.trim()}`;
+  const b=$('write'); b.disabled=true; b.textContent='Writing…';
+  try{
+    const r=await fetch('/api/enhance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      prompt:rough,duration:+$('duration').value,aspect_ratio:$('aspect').value,
+      style:'Authentic UGC smartphone selfie video, natural window light, handheld, casual home setting, not overly polished.',
+      extra:ugcRules(),max_words:maxWords()})});
+    const j=await r.json(); if(!r.ok) throw new Error(j.error||'Failed');
+    $('prompt').value=j.prompt;
+  }catch(e){$('err').textContent=e.message}
+  b.disabled=false; b.textContent='✨ Write UGC prompt';
+};
+$('real').onclick=async()=>{
+  $('err').textContent=''; const cur=$('prompt').value.trim();
+  if(!cur) return $('err').textContent='Write or generate a prompt first.';
+  const b=$('real'); b.disabled=true; b.textContent='Refining…';
+  try{
+    const r=await fetch('/api/enhance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      prompt:'Rewrite this UGC video prompt so it looks as real and flawless as possible, keeping the same product, person and idea:\n\n'+cur,
+      duration:+$('duration').value,aspect_ratio:$('aspect').value,style:'Authentic UGC smartphone selfie video.',extra:ugcRules(),max_words:maxWords()})});
+    const j=await r.json(); if(!r.ok) throw new Error(j.error||'Failed');
+    $('prompt').value=j.prompt;
+  }catch(e){$('err').textContent=e.message}
+  b.disabled=false; b.textContent='🎯 Make it realistic';
+};
+
+function show(p,msg){$('stage').innerHTML=`<div class="prog"><div class="pct">${p}%</div><div class="bar"><div class="fill" style="width:${p}%"></div></div><div class="meta">${msg}</div></div>`}
+function stop(){clearInterval(timer);$('go').disabled=false}
+function fail(m){$('err').textContent=m;stop()}
+async function poll(id){
+  let j; try{const r=await fetch('/api/jobs/'+id); j=await r.json(); if(!r.ok) return fail(j.error||'Poll failed')}catch{return fail('Lost connection to server.')}
+  if(j.status==='failed') return fail('Generation failed: '+(j.error||'unknown'));
+  if(j.status!=='completed'){
+    const left=Math.max(5,Math.round(j.elapsed*(100-j.progress)/Math.max(j.progress,1)));
+    return show(j.progress,`${j.status==='pending'?'Queued at provider':'Generating'} · ${j.elapsed}s elapsed · ~${left}s left (estimate)`);
+  }
+  stop();
+  $('stage').innerHTML=`<video controls autoplay loop src="${j.videoUrl}"></video>`;
+  $('actions').innerHTML=`<a class="btn" href="${j.videoUrl}?download=1">⬇ Download MP4</a>`+(j.cost!=null?`<span class="meta">Cost $${j.cost}</span><span class="meta">· job ${id}</span>`:'');
+}
+$('go').onclick=async()=>{
+  $('err').textContent=''; $('actions').innerHTML='';
+  const persona=mode()==='persona';
+  if(persona&&!$('pdesc').value.trim()) return $('err').textContent='Describe your AI influencer first.';
+  const fm=frameMode();
+  if(fm&&!startFrameData&&!$('plook').value.trim()) return $('err').textContent='Describe what the product looks like (or click Create start frame to use your product photo).';
+  if(!fm&&(!imgs.d2||(!persona&&!imgs.d1))) return $('err').textContent=persona?'Add the product photo.':'Add both photos (influencer and product).';
+  if(!$('prompt').value.trim()) return $('err').textContent='Write or generate a prompt first.';
+  $('go').disabled=true; show(0,'Submitting…');
+  try{
+    const r=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      model:$('model').value,duration:+$('duration').value,resolution:$('res').value,
+      prompt:(()=>{let p=$('prompt').value.trim(),d=$('pdesc').value.trim();
+        return persona&&d&&!p.includes(d.slice(0,25))?d+' '+p:p})(),
+      aspect_ratio:$('aspect').value,generate_audio:$('audio').value==='true',
+      ...(persona?{seed}:{}),
+      ...(fm?(startFrameData?{frame_image:startFrameData}:{influencer_id:fm.id,use_frame:true}):{input_references:(persona?[imgs.d2]:[imgs.d1,imgs.d2]).map(u=>({type:'image_url',image_url:{url:u}}))})})});
+    const j=await r.json(); if(!r.ok) return fail(j.error||'Request failed');
+    $('note').textContent=j.note||''; timer=setInterval(()=>poll(j.id),3000); poll(j.id);
+  }catch(e){fail(e.message)}
+};
+</script>
+<script src="/app.js"></script>
+</body>
+</html>

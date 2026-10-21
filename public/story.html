@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Story Mode</title>
+<style>
+  :root{--bg:#0b0d12;--panel:#12151c;--panel2:#171b24;--line:#232836;--text:#eceef4;--mute:#8a92a6;--acc:#7c5cff;--acc2:#b39bff;--ok:#34d399;--err:#ff6b6b;--warn:#fbbf24}
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 500px at 20% -10%,#1a1440 0,transparent 60%),var(--bg);color:var(--text);font:14px/1.5 Inter,system-ui,Segoe UI,sans-serif;min-height:100vh}
+  .wrap{max-width:1100px;margin:0 auto;padding:22px 18px 60px}
+  header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:12px;flex-wrap:wrap}
+  .brand{display:flex;align-items:center;gap:10px;font-size:19px;font-weight:700}
+  .logo{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,var(--acc),#ff7ab6);display:grid;place-items:center}
+  nav a{color:var(--mute);text-decoration:none;border:1px solid var(--line);padding:6px 12px;border-radius:99px;margin-left:6px}
+  nav a.on,nav a:hover{color:var(--text);border-color:var(--acc)}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:18px}
+  h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute);margin:0 0 12px;font-weight:600}
+  textarea,select,input{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:9px;padding:9px;font:inherit;outline:none;width:100%}
+  textarea{min-height:150px;resize:vertical;line-height:1.55}
+  textarea:focus,select:focus,input:focus{border-color:var(--acc)}
+  label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--mute)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:12px 0}
+  .btn{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px 16px;font:inherit;font-weight:600;cursor:pointer}
+  .btn:hover:not(:disabled){border-color:var(--acc);color:var(--acc2)}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .primary{background:linear-gradient(135deg,var(--acc),#9a6bff);border:0;color:#fff}
+  .primary:hover:not(:disabled){color:#fff;filter:brightness(1.1)}
+  .err{color:var(--err);margin-top:10px}
+  .meta{color:var(--mute);font-size:13px}
+  .scene{border:1px solid var(--line);background:var(--panel2);border-radius:12px;padding:12px;margin-bottom:10px}
+  .scene.key{border-color:var(--acc)}
+  .scene .top{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+  .scene .top b{flex:1;min-width:120px}
+  .scene textarea{min-height:64px;background:var(--panel)}
+  .scene select{width:auto}.scene input[type=number]{width:70px}
+  .tag{font-size:11px;padding:2px 8px;border-radius:99px;background:#2a2f3a;color:var(--mute)}
+  .tag.key{background:var(--acc);color:#fff}
+  .bar{height:8px;background:var(--panel);border-radius:99px;overflow:hidden;margin-top:8px}
+  .fill{height:100%;width:0;background:linear-gradient(90deg,var(--acc),#ff7ab6);transition:width .6s}
+  .sum{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0}
+  .sum b{color:var(--warn);font-size:17px}
+  video{width:100%;max-width:420px;border-radius:12px;background:#000;display:block;margin-bottom:10px}
+  .hidden{display:none}
+</style>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body data-title="Story mode" data-sub="Split a script into scenes, choose a model per scene, add narration, and stitch it all into one video.">
+<div class="wrap">
+  <div class="panel hidden" id="histPanel">
+    <h2>History (continue where you left off)</h2>
+    <div id="hist" class="hgrid"></div>
+    <div id="diskWrap" class="hidden" style="margin-top:14px"><div class="meta" style="margin-bottom:8px">Earlier finished videos found on this computer (made before history existed, so their scenes can't be edited, but you can play or download them):</div>
+    <div id="disk" class="hgrid"></div></div>
+  </div>
+  <div class="panel">
+    <h2>1 · Script</h2>
+    <textarea id="script" placeholder="Paste your full script / story here…"></textarea>
+    <div class="grid">
+      <label>Total length (s)<input id="total" type="number" value="30" min="8" max="90"></label>
+      <label>Aspect<select id="aspect"><option>9:16</option><option>16:9</option><option>1:1</option></select></label>
+      <label>Resolution<select id="res"><option>480p</option><option>720p</option></select></label>
+      <label>Style<select id="style">
+        <option value="Cinematic live-action movie style, dramatic lighting, smooth camera movement.">Cinematic</option>
+        <option value="Bright colorful 3D animated kids cartoon in the style of CoComelon, cute round characters, soft glossy shading.">Kids cartoon</option>
+        <option value="Japanese anime style, vivid colors, cel shading, detailed painted backgrounds.">Anime</option>
+        <option value="Ultra-realistic cinematic horror, dark atmosphere, low-key lighting, no gore.">Horror</option>
+        <option value="High-quality 3D animated feature-film style like Pixar, warm lighting.">3D film</option>
+        <option value="">None</option>
+      </select></label>
+      <label>Cheap model (filler scenes)<select id="cheap">
+        <option value="bytedance/seedance-1-5-pro">Seedance 1.5 Pro, no audio (~$0.012/s)</option>
+        <option value="heygen/heygen-video-1">HeyGen Video (~$0.02/s)</option>
+        <option value="x-ai/grok-imagine-video-1.5-lite" selected>Grok Imagine 1.5 Lite (~$0.02/s)</option>
+        <option value="bytedance/seedance-2.0-mini">Seedance 2.0 Mini (~$0.035/s)</option>
+        <option value="bytedance/seedance-2.0-fast">Seedance 2.0 Fast (~$0.04/s)</option>
+      </select></label>
+      <label>Quality model (key scenes)<select id="good">
+        <option value="bytedance/seedance-2.0-fast">Seedance 2.0 Fast (~$0.04/s)</option>
+        <option value="bytedance/seedance-2.0">Seedance 2.0 (~$0.07/s)</option>
+        <option value="bytedance/seedance-2.5">Seedance 2.5 (~$0.11/s)</option>
+      </select></label>
+    </div>
+    <button class="btn primary" id="plan">Plan scenes</button>
+    <div class="err" id="err"></div>
+  </div>
+
+  <div class="panel hidden" id="planPanel">
+    <h2>2 · Scenes (edit anything, switch models per scene)</h2>
+    <label>Character &amp; setting bible (added to every scene so the look stays consistent)<textarea id="bible" style="min-height:70px"></textarea></label>
+    <div style="margin-top:14px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--panel2)">
+      <label style="flex-direction:row;align-items:center;gap:8px;margin-bottom:10px;color:var(--text);font-size:14px"><input type="checkbox" id="narOn" checked style="width:auto"> 🎙️ Add voiceover narration (each scene's narration is voiced and mixed into that scene)</label>
+      <div class="grid" id="narGrid" style="margin:0">
+        <label>Voice model<select id="ttsModel"></select></label>
+        <label>Voice<select id="ttsVoice"></select></label>
+        <label>Tone (ElevenLabs v3 only)<input id="ttsTone" placeholder="calm, suspenseful, low voice"></label>
+        <label>&nbsp;<button class="btn" id="ttsPrev" type="button">▶ Preview voice</button></label>
+      </div>
+      <audio id="ttsAudio" controls class="hidden" style="width:100%;margin-top:10px"></audio>
+      <div class="meta" id="ttsMsg" style="margin-top:6px"></div>
+    </div>
+    <label style="flex-direction:row;align-items:center;gap:8px;margin-top:12px"><input type="checkbox" id="chain" checked style="width:auto"> Chain scenes: start flagged scenes from the previous scene's last frame (keeps characters consistent, but those scenes run one after another so it takes longer)</label>
+    <div id="scenes" style="margin-top:12px"></div>
+    <div class="sum" style="background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px 14px"><span style="font-weight:600">Estimated cost <span class="meta" id="secs"></span></span><b id="total$" style="font-size:22px">—</b></div>
+    <div id="breakdown" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-bottom:12px"></div>
+    <style>.hgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}@media(max-width:700px){.hgrid{grid-template-columns:1fr}}.hgrid .item{flex-wrap:wrap}</style>
+    <style>#breakdown>div{display:flex;justify-content:space-between;gap:8px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel2)}</style>
+    <div class="meta" style="margin-bottom:10px">Audio is off for all clips so the sound stays consistent when stitched. Add narration and music afterwards. Clips from different models can look slightly different.</div>
+    <button class="btn primary" id="gen">Generate all scenes &amp; stitch</button>
+    <button class="btn hidden" id="regen" type="button" style="margin-top:8px">🔁 Regenerate everything from scratch</button>
+  </div>
+
+  <div class="panel hidden" id="outPanel">
+    <h2>3 · Final video</h2>
+    <div id="final" class="meta"></div>
+  </div>
+</div>
+
+<script>
+if(location.protocol==='file:'){location.replace('http://localhost:3100/'+(location.pathname.split('/').pop()==='index.html'?'':location.pathname.split('/').pop()));}
+
+const $=id=>document.getElementById(id);
+const PRICE={
+  'bytedance/seedance-1-5-pro':{'480p':.012,'720p':.027},
+  'heygen/heygen-video-1':{'480p':.02,'720p':.036},
+  'x-ai/grok-imagine-video-1.5-lite':{'480p':.02,'720p':.03},
+  'bytedance/seedance-2.0-mini':{'480p':.035,'720p':.075},
+  'bytedance/seedance-2.0-fast':{'480p':.0425,'720p':.0912},
+  'bytedance/seedance-2.0':{'480p':.07,'720p':.15},
+  'bytedance/seedance-2.5':{'480p':.11,'720p':.23},
+};
+const MIN={'x-ai/grok-imagine-video-1.5-lite':1,'heygen/heygen-video-1':5};
+const MAX={'bytedance/seedance-1-5-pro':12};
+const minSec=m=>MIN[m]||4, maxSec=m=>MAX[m]||15;
+const NAME=m=>$('cheap').querySelector(`option[value="${m}"]`)?.textContent.split(' (')[0]||$('good').querySelector(`option[value="${m}"]`)?.textContent.split(' (')[0]||m;
+let scenes=[];
+
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')}
+function models(){const set=new Set([...$('cheap').options,...$('good').options].map(o=>o.value));return [...set]}
+
+function render(){
+  $('scenes').innerHTML=scenes.map((s,i)=>`
+    <div class="scene ${s.key?'key':''}" data-i="${i}">
+      <div class="top"><span class="tag ${s.key?'key':''}">${s.key?'KEY':'filler'}</span><b>${i+1}. ${esc(s.title||'Scene')}</b>
+        <input type="number" min="1" max="15" value="${s.seconds}" data-f="seconds"> s
+        <select data-f="model">${models().map(m=>`<option value="${m}" ${m===s.model?'selected':''}>${NAME(m)}</option>`).join('')}</select>
+        <span class="meta" data-cost>$${(price(s)).toFixed(2)}</span></div>
+      ${i>0?`<label style="flex-direction:row;align-items:center;gap:6px;margin-bottom:6px"><input type="checkbox" data-f="continues" ${s.continues?'checked':''} style="width:auto"> ↪ Start from previous scene's last frame</label>`:''}
+      <textarea data-f="prompt">${esc(s.prompt)}</textarea>
+      <textarea data-f="narration" placeholder="Narration spoken in this scene (leave empty for silence)" style="min-height:48px;margin-top:6px;border-color:#2f3550">${esc(s.narration||'')}</textarea>
+      <div class="meta" data-nw>${nwText(s)}</div>
+      <div class="bar"><div class="fill" id="f${i}"></div></div><div class="meta" id="m${i}"></div><div id="r${i}"></div>
+    </div>`).join('');
+  $('scenes').querySelectorAll('[data-f]').forEach(el=>el.addEventListener('input',()=>{
+    const i=+el.closest('.scene').dataset.i, f=el.dataset.f;
+    scenes[i][f]=f==='seconds'?+el.value:f==='continues'?el.checked:el.value;
+    if(f==='narration'||f==='seconds'||f==='model') el.closest('.scene').querySelector('[data-nw]').textContent=nwText(scenes[i]);
+    if(f==='model'||f==='seconds') el.closest('.scene').querySelector('[data-cost]').textContent='$'+price(scenes[i]).toFixed(2);
+    totals();
+  }));
+  totals();
+}
+const TTS={
+  'hexgrad/kokoro-82m':{label:'Kokoro 82M (cheapest)',perSec:.00003,voices:['am_adam','am_michael','am_onyx','bm_george','bm_daniel','af_heart','af_bella','af_nicole','bf_emma']},
+  'elevenlabs/eleven-turbo-v2.5':{label:'ElevenLabs Turbo v2.5',perSec:.0005,voices:['george','brian','adam','daniel','liam','will','sarah','jessica','alice','lily']},
+  'elevenlabs/eleven-v3':{label:'ElevenLabs v3 (most expressive)',perSec:.001,tone:true,voices:['george','brian','adam','daniel','liam','will','sarah','jessica','alice','lily']},
+};
+function nwText(s){
+  const words=(s.narration||'').trim().split(/\s+/).filter(Boolean).length, d=dur(s), max=Math.round(d*2.5);
+  if(!words) return '🔇 silent scene';
+  return words+' words · fits about '+max+' in '+d+'s'+(words>max*1.35?' ⚠ too long, will be sped up or cut off':'');
+}
+function narCost(){ if(!$('narOn').checked) return 0; const p=TTS[$('ttsModel').value]?.perSec||0; return scenes.reduce((a,s)=>a+((s.narration||'').trim()?dur(s)*p:0),0); }
+function dur(s){return Math.max(minSec(s.model),Math.min(maxSec(s.model),Math.round(s.seconds)||minSec(s.model)))}
+function price(s){return (PRICE[s.model]?.[$('res').value]||0)*dur(s)}
+function totals(){
+  const nc=narCost(), t=scenes.reduce((a,s)=>a+price(s),0)+nc, d=scenes.reduce((a,s)=>a+dur(s),0);
+  $('total$').textContent='≈ $'+t.toFixed(2); $('secs').textContent=`(${d}s of video, ${scenes.length} scenes)`;
+  // breakdown: key vs filler, and savings vs rendering everything on the quality model
+  const keyS=scenes.filter(s=>s.key), fillS=scenes.filter(s=>!s.key);
+  const sum=(a)=>a.reduce((x,s)=>x+price(s),0), secs=(a)=>a.reduce((x,s)=>x+dur(s),0);
+  const allGood=scenes.reduce((a,s)=>a+(PRICE[$('good').value]?.[$('res').value]||0)*dur(s),0);
+  const save=allGood-(t-nc);
+  $('breakdown').innerHTML=
+    `<div><span class="meta">Key scenes (${keyS.length} · ${secs(keyS)}s)</span><b>$${sum(keyS).toFixed(2)}</b></div>`+
+    `<div><span class="meta">Filler scenes (${fillS.length} · ${secs(fillS)}s)</span><b>$${sum(fillS).toFixed(2)}</b></div>`+
+    `<div><span class="meta">All on ${NAME($('good').value)} would be</span><b>$${allGood.toFixed(2)}</b></div>`+
+    `<div><span class="meta">Narration voiceover</span><b>${nc>0?'$'+nc.toFixed(3):'off'}</b></div>`+
+    `<div><span class="meta">You save</span><b style="color:var(--ok)">${save>0?'$'+save.toFixed(2)+' ('+Math.round(save/allGood*100)+'%)':'$0.00'}</b></div>`;
+}
+
+$('plan').onclick=async()=>{
+  $('err').textContent=''; const b=$('plan'); b.disabled=true; b.textContent='Planning…';
+  try{
+    const r=await fetch('/api/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      script:$('script').value,total:+$('total').value,aspect:$('aspect').value,style:$('style').value})});
+    const j=await r.json(); if(!r.ok) throw new Error(j.error||'Planning failed');
+    $('bible').value=j.bible||'';
+    scenes=j.scenes.map(s=>({title:s.title,prompt:s.prompt,seconds:Math.round(s.seconds)||6,key:!!s.key,continues:!!s.continues,narration:s.narration||'',model:s.key?$('good').value:$('cheap').value}));
+    jobs=[]; runP=[]; projFinal=null; projId='p'+Date.now().toString(36); $('outPanel').classList.add('hidden');
+    $('planPanel').classList.remove('hidden'); render(); updateGen(); saveNow();
+  }catch(e){$('err').textContent=e.message}
+  b.disabled=false; b.textContent='Plan scenes';
+};
+['res','cheap','good'].forEach(id=>$(id).addEventListener('change',()=>{
+  if(id!=='res') scenes.forEach(s=>{ s.model=s.key?$('good').value:$('cheap').value });
+  if(scenes.length) render();
+}));
+
+$('ttsModel').innerHTML=Object.entries(TTS).map(([id,m])=>'<option value="'+id+'">'+m.label+'</option>').join('');
+function fillVoices(){
+  const m=TTS[$('ttsModel').value]; $('ttsVoice').innerHTML=m.voices.map(v=>'<option>'+v+'</option>').join('');
+  $('ttsTone').disabled=!m.tone; if(scenes.length) totals();
+}
+$('ttsModel').onchange=fillVoices; $('narOn').onchange=()=>{ $('narGrid').style.opacity=$('narOn').checked?1:.4; if(scenes.length) totals(); }; fillVoices();
+$('ttsPrev').onclick=async()=>{
+  const text=(scenes.find(s=>(s.narration||'').trim())||{}).narration||'At exactly three seventeen in the morning, my own phone number called me.';
+  const b=$('ttsPrev'); b.disabled=true; $('ttsMsg').textContent='Generating preview…';
+  try{
+    const r=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:$('ttsModel').value,voice:$('ttsVoice').value,text,instructions:$('ttsTone').value||undefined})});
+    if(!r.ok){ throw new Error((await r.json()).error||'failed'); }
+    const a=$('ttsAudio'); a.src=URL.createObjectURL(await r.blob()); a.classList.remove('hidden'); a.play(); $('ttsMsg').textContent='';
+  }catch(e){ $('ttsMsg').textContent='❌ '+e.message; }
+  b.disabled=false;
+};
+let jobs=[], runP=[];
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function showRetry(i){
+  const box=$('r'+i); if(!box) return; box.innerHTML='';
+  const bt=document.createElement('button'); bt.type='button'; bt.className='btn'; bt.style.marginTop='8px'; bt.textContent='🔄 Retry this scene';
+  bt.onclick=()=>retry(i); box.append(bt);
+}
+function failJob(i,msg,skipped){
+  const job=jobs[i]; job.failed=job.done=true; job.skipped=!!skipped;
+  if($('m'+i)) $('m'+i).textContent='❌ '+msg; showRetry(i); save();
+}
+function progress(){const n=jobs.filter(j=>j.done&&!j.failed).length; $('final').textContent='Generating scenes… '+n+'/'+jobs.length+' done'}
+async function run(i){
+  const s=scenes[i], job=jobs[i], style=$('style').value, bible=$('bible').value.trim();
+  let prev=null, note='';
+  if(i>0&&s.continues&&$('chain').checked){
+    $('m'+i).textContent='⏳ waiting for scene '+i+' to finish, to start from its last frame…';
+    await runP[i-1];
+    if(jobs[i-1].failed) return failJob(i,'skipped because the previous scene failed',true);
+    prev=jobs[i-1].id;
+  }
+  if(!job.id){
+    try{
+      const r=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+        model:s.model,prompt:(bible?bible+' ':'')+s.prompt+(style?' Visual style: '+style:''),duration:dur(s),
+        resolution:$('res').value,aspect_ratio:$('aspect').value,generate_audio:false,frame_from_job:prev})});
+      const j=await r.json(); if(!r.ok) throw new Error(j.error||'failed');
+      job.id=j.id; note=j.note?'⚠ '+j.note+' · ':(prev?'↪ from previous last frame · ':''); save();
+    }catch(e){ return failJob(i,e.message); }
+  }
+  for(;;){
+    await sleep(3000);
+    try{
+      const d=await (await fetch('/api/jobs/'+job.id)).json();
+      if(d.status==='failed') return failJob(i,d.error||'failed');
+      $('f'+i).style.width=d.progress+'%';
+      $('m'+i).textContent=note+(d.status==='completed'?'✅ done'+(d.cost!=null?' · $'+d.cost:''):d.progress+'% · '+d.status);
+      if(d.status==='completed'){ job.done=true; progress(); save(); return; }
+    }catch{}
+  }
+}
+async function execute(idxs,keep){
+  $('gen').disabled=true; $('outPanel').classList.remove('hidden'); $('final').textContent='Starting scenes…';
+  if(!keep) idxs.forEach(i=>{ jobs[i]={i,id:null,done:false,failed:false}; if($('r'+i)) $('r'+i).innerHTML=''; if($('f'+i)) $('f'+i).style.width='0'; if($('m'+i)) $('m'+i).textContent=''; });
+  idxs.forEach(i=>{ runP[i]=run(i); });
+  await Promise.all(idxs.map(i=>runP[i]));
+  $('gen').disabled=false; updateGen();
+  const bad=jobs.map((j,i)=>j.failed?i:-1).filter(i=>i>=0);
+  if(bad.length){
+    $('final').innerHTML='A scene failed, so nothing was stitched. Your scenes and settings are kept, so you can edit them and retry. Successful scenes are kept and not charged again. ';
+    const b=document.createElement('button'); b.type='button'; b.className='btn'; b.textContent='🔄 Retry failed scenes'; b.onclick=()=>retry(bad[0],true); $('final').append(b);
+    return;
+  }
+  const miss=pending();
+  if(miss.length){ $('final').textContent=miss.length+' scene(s) not generated yet. Click the Generate button to continue.'; return; }
+  stitch(jobs.map(j=>j.id));
+}
+function retry(i,all){
+  let start=i; while(start>0&&jobs[start].skipped) start--;
+  const idxs=[start]; for(let k=start+1;k<jobs.length;k++){ if(all?jobs[k].failed:jobs[k].skipped) idxs.push(k); }
+  execute(idxs);
+}
+function pending(){ return scenes.map((_,i)=>jobs[i]&&jobs[i].id&&jobs[i].done&&!jobs[i].failed?-1:i).filter(i=>i>=0); }
+function updateGen(){
+  const left=pending().length, done=scenes.length-left;
+  $('gen').innerHTML=done>0&&left>0?'Continue: generate remaining '+left+' scene(s) &amp; stitch':'Generate all scenes &amp; stitch';
+  $('regen').classList.toggle('hidden',done===0);
+}
+$('gen').onclick=()=>{
+  const todo=pending(); if(todo.length===scenes.length){ jobs=[]; runP=[]; }
+  execute(todo,false);
+};
+$('regen').onclick=()=>{ if(!confirm('Regenerate every scene from scratch? Finished scenes will be charged again.')) return; jobs=[]; runP=[]; projFinal=null; execute(scenes.map((_,i)=>i)); };
+async function stitch(ids){
+  $('final').textContent='Stitching…';
+  const r=await fetch('/api/stitch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids,aspect:$('aspect').value,narration:$('narOn').checked?{model:$('ttsModel').value,voice:$('ttsVoice').value,instructions:$('ttsTone').value||undefined,lines:scenes.map(s=>s.narration||'')}:undefined})});
+  const j=await r.json(); if(!r.ok){ $('final').textContent=j.error; $('gen').disabled=false; return; }
+  const t=setInterval(async()=>{
+    const d=await (await fetch('/api/stitch/'+j.id)).json();
+    if(d.status==='running') return $('final').textContent=d.step;
+    clearInterval(t); $('gen').disabled=false;
+    if(d.status==='failed') return $('final').textContent='Stitch failed: '+d.error;
+    projFinal={url:d.url,warnings:d.warnings||[]}; save();
+    $('final').innerHTML=(d.warnings&&d.warnings.length?'<div style="color:var(--warn);margin-bottom:8px">⚠ '+d.warnings.join('<br>⚠ ')+'</div>':'')+`<video controls autoplay loop src="${d.url}"></video><a class="btn" href="${d.url}?download=1" style="text-decoration:none;display:inline-block">⬇ Download MP4</a>`;
+  },1500);
+}
+
+/* ---------------- history (saved in this browser) ---------------- */
+const HKEY='storyHistory', FIELDS=['script','total','aspect','res','style','cheap','good','bible','ttsModel','ttsVoice','ttsTone'];
+let projId=null, projFinal=null;
+const hget=()=>{try{return JSON.parse(localStorage.getItem(HKEY)||'[]')}catch{return[]}};
+const hset=h=>{try{localStorage.setItem(HKEY,JSON.stringify(h.slice(0,2)))}catch{}};
+let saveT=null;
+function save(){ clearTimeout(saveT); saveT=setTimeout(saveNow,300); }
+function saveNow(){
+  if(!projId||!scenes.length) return;
+  const f={}; FIELDS.forEach(k=>f[k]=$(k).value); f.narOn=$('narOn').checked; f.chain=$('chain').checked;
+  const p={id:projId,ts:Date.now(),title:($('script').value.trim().replace(/\s+/g,' ').slice(0,48))||'Untitled story',fields:f,scenes,
+    jobs:jobs.map(j=>j?{id:j.id,done:!!j.done,failed:!!j.failed,skipped:!!j.skipped}:null),final:projFinal};
+  const h=hget().filter(x=>x.id!==projId); h.unshift(p); hset(h); renderHist();
+}
+function renderHist(){
+  const h=hget(); $('histPanel').classList.toggle('hidden',!h.length&&!diskList.length);
+  $('hist').innerHTML=h.map(p=>{
+    const n=p.scenes.length, d=(p.jobs||[]).filter(j=>j&&j.done&&!j.failed).length;
+    const st=p.final?'✅ finished':d?d+'/'+n+' scenes done':n+' scenes planned';
+    return `<div class="item" data-id="${p.id}" style="cursor:default"><span class="t" style="flex:1"><b>${esc(p.title)}</b><br><span class="s">${new Date(p.ts).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})} · ${st}</span></span><button class="btn" data-a="open" type="button">▶ Continue</button><button class="btn danger" data-a="del" type="button" title="Delete">✕</button></div>`;
+  }).join('');
+  $('hist').querySelectorAll('.item').forEach(el=>{
+    el.querySelector('[data-a=open]').onclick=()=>restore(el.dataset.id);
+    el.querySelector('[data-a=del]').onclick=()=>{ if(!confirm('Delete this saved story from history?')) return; hset(hget().filter(x=>x.id!==el.dataset.id)); if(projId===el.dataset.id) projId=null; renderHist(); };
+  });
+}
+function restore(id){
+  const p=hget().find(x=>x.id===id); if(!p) return;
+  ['script','total','aspect','res','style','cheap','good','bible','ttsModel'].forEach(k=>{ if(p.fields[k]!==undefined) $(k).value=p.fields[k]; });
+  fillVoices(); $('ttsVoice').value=p.fields.ttsVoice; $('ttsTone').value=p.fields.ttsTone||'';
+  $('narOn').checked=p.fields.narOn!==false; $('narGrid').style.opacity=$('narOn').checked?1:.4; $('chain').checked=p.fields.chain!==false;
+  projId=p.id; projFinal=p.final||null; scenes=p.scenes; jobs=(p.jobs||[]).map((j,i)=>j?{i,...j}:undefined); runP=[];
+  $('planPanel').classList.remove('hidden'); render(); totals(); $('planPanel').scrollIntoView({behavior:'smooth'});
+  scenes.forEach((_,i)=>{ const j=jobs[i]; if(!j) return;
+    if(j.done&&!j.failed){ $('f'+i).style.width='100%'; $('m'+i).textContent='✅ done (from history)'; }
+    else if(j.failed){ $('m'+i).textContent='❌ failed last time'; showRetry(i); } });
+  updateGen();
+  if(projFinal){ $('outPanel').classList.remove('hidden'); $('final').innerHTML=(projFinal.warnings&&projFinal.warnings.length?'<div style="color:var(--warn);margin-bottom:8px">⚠ '+projFinal.warnings.join('<br>⚠ ')+'</div>':'')+`<video controls loop src="${projFinal.url}"></video><a class="btn" href="${projFinal.url}?download=1" style="text-decoration:none;display:inline-block">⬇ Download MP4</a><div class="meta" style="margin-top:8px">If the video does not play, the server was restarted: click Regenerate to make it again.</div>`; return; }
+  const inflight=scenes.map((_,i)=>i).filter(i=>jobs[i]&&jobs[i].id&&!jobs[i].done&&!jobs[i].failed);
+  if(inflight.length) execute(inflight,true);
+}
+document.querySelector('.wrap').addEventListener('input',save);
+document.querySelector('.wrap').addEventListener('change',save);
+let diskList=[];
+function renderDisk(){
+  $('diskWrap').classList.toggle('hidden',!diskList.length);
+  $('disk').innerHTML=diskList.map(f=>`<div class="item" data-u="${f.url}" style="cursor:default"><span class="t" style="flex:1"><b>${new Date(f.ts).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</b><br><span class="s">${f.clips} scenes${f.narrated?' · narrated':''} · ${(f.size/1048576).toFixed(1)} MB</span></span><button class="btn" data-a="play" type="button">▶ Play</button><a class="btn" href="${f.url}?download=1" style="text-decoration:none">⬇</a></div>`).join('');
+  $('disk').querySelectorAll('.item').forEach(el=>el.querySelector('[data-a=play]').onclick=()=>{
+    $('outPanel').classList.remove('hidden'); $('final').innerHTML=`<video controls autoplay loop src="${el.dataset.u}"></video><a class="btn" href="${el.dataset.u}?download=1" style="text-decoration:none;display:inline-block">⬇ Download MP4</a>`;
+    $('outPanel').scrollIntoView({behavior:'smooth'});
+  });
+}
+fetch('/api/finals').then(r=>r.json()).then(j=>{ diskList=(j.finals||[]).slice(0,2); renderDisk(); renderHist(); }).catch(()=>{});
+renderHist();
+</script>
+<script src="/app.js"></script>
+</body>
+</html>

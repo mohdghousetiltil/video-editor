@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Influencers</title>
+<style>
+  :root{--bg:#0b0d12;--panel:#12151c;--panel2:#171b24;--line:#232836;--text:#eceef4;--mute:#8a92a6;--acc:#7c5cff;--acc2:#b39bff;--ok:#34d399;--err:#ff6b6b}
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 500px at 20% -10%,#1a1440 0,transparent 60%),var(--bg);color:var(--text);font:14px/1.5 Inter,system-ui,Segoe UI,sans-serif;min-height:100vh}
+  .wrap{max-width:1150px;margin:0 auto;padding:22px 18px 60px}
+  header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:12px;flex-wrap:wrap}
+  .brand{display:flex;align-items:center;gap:10px;font-size:19px;font-weight:700}
+  .logo{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,var(--acc),#ff7ab6);display:grid;place-items:center}
+  nav a{color:var(--mute);text-decoration:none;border:1px solid var(--line);padding:6px 12px;border-radius:99px;margin-left:6px;display:inline-block}
+  nav a.on,nav a:hover{color:var(--text);border-color:var(--acc)}
+  .layout{display:grid;grid-template-columns:340px minmax(0,1fr);gap:18px;align-items:start}
+  @media(max-width:900px){.layout{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px}
+  h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute);margin:0 0 12px;font-weight:600}
+  textarea,input[type=text]{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:9px;padding:9px;font:inherit;outline:none;width:100%}
+  textarea{min-height:110px;resize:vertical;line-height:1.5}
+  textarea:focus,input:focus{border-color:var(--acc)}
+  label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--mute);margin-bottom:12px}
+  .drop{border:1.5px dashed var(--line);background:var(--panel2);border-radius:14px;aspect-ratio:3/4;display:grid;place-items:center;text-align:center;color:var(--mute);cursor:pointer;overflow:hidden;position:relative;margin-bottom:12px}
+  .drop:hover,.drop.over{border-color:var(--acc);background:#1a1830}
+  .drop img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  .drop input{display:none}
+  .btn{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:8px 14px;font:inherit;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block}
+  .btn:hover:not(:disabled){border-color:var(--acc);color:var(--acc2)}
+  .btn.danger:hover{border-color:var(--err);color:var(--err)}
+  .primary{background:linear-gradient(135deg,var(--acc),#9a6bff);border:0;color:#fff}
+  .primary:hover:not(:disabled){color:#fff;filter:brightness(1.1)}
+  .row{display:flex;gap:8px;flex-wrap:wrap}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden;display:flex;flex-direction:column}
+  .card.sel{border-color:var(--acc)}
+  .pic{aspect-ratio:3/4;background:var(--panel2);display:grid;place-items:center;color:var(--mute);font-size:46px}
+  .pic img{width:100%;height:100%;object-fit:cover;display:block}
+  .info{padding:12px;display:flex;flex-direction:column;gap:6px;flex:1}
+  .info b{font-size:15px}
+  .desc{color:var(--mute);font-size:13px;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+  .seed{font-size:11px;color:var(--mute)}
+  .actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto;padding-top:6px}
+  .actions .btn{padding:6px 10px;font-size:13px}
+  .err{color:var(--err);margin-top:8px;font-size:13px}
+  .empty{color:var(--mute);padding:40px;text-align:center;border:1px dashed var(--line);border-radius:16px}
+  .note{color:var(--mute);font-size:12px;margin-top:10px}
+  .gen{border:1px solid var(--line);background:var(--panel2);border-radius:12px;padding:12px;margin-bottom:12px}
+  .gen select{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:7px;font:inherit;width:100%}
+  .cands{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+  .cands img{width:100%;aspect-ratio:9/16;object-fit:cover;border-radius:10px;border:2px solid transparent;cursor:pointer;display:block}
+  .cands img:hover{border-color:#3a3f55}
+  .cands img.sel{border-color:var(--acc)}
+</style>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body data-title="Influencers" data-sub="Create and manage the AI influencers used across your videos.">
+<div class="wrap">
+  <div class="layout">
+    <div class="panel" id="formPanel">
+      <h2 id="formTitle">Add influencer</h2>
+      <div class="drop" id="drop" style="cursor:default"><span id="dropText">No picture yet.<br><small>Generate pictures below, then click one to use it.</small></span></div>
+      <label>Name<input type="text" id="name" placeholder="e.g. Maya"></label>
+      <label>Description (reused word-for-word in prompts)
+        <textarea id="desc" placeholder="A friendly woman in her mid-20s with warm light-brown skin, shoulder-length wavy dark brown hair, small gold hoop earrings, cream knit sweater."></textarea></label>
+      <div class="row" style="margin:-4px 0 12px"><button class="btn" id="descPic" type="button">✨ Fill description from the picture</button><span class="meta" id="descPicMsg" style="font-size:12px;color:var(--mute)"></span></div>
+      <div class="gen">
+        <h2 style="margin-bottom:8px">✨ Generate pictures from the description</h2>
+        <label style="margin-bottom:8px">Made for which video model?<select id="gTarget"><option value="seedance">Seedance (3D animated or anime, so it accepts the picture)</option><option value="grok">Grok Lite and others (realistic is fine)</option></select></label>
+        <div class="row" style="margin-bottom:8px">
+          <select id="gStyle" style="flex:1"></select>
+          <select id="gCount" style="width:70px"><option>2</option><option selected>4</option></select>
+        </div>
+        <select id="gModel" style="margin-bottom:8px"><option value="qwen/qwen-image-3">Qwen Image 3 (~$0.03/pic, measured)</option><option value="x-ai/grok-imagine-image-2.0">Grok Imagine Image 2.0 (~$0.06/pic, measured)</option><option value="bytedance-seed/seedream-5-0-lite">Seedream 5.0 Lite (price not checked)</option><option value="google/gemini-3.1-flash-image">Gemini 3.1 Flash Image (price not checked)</option></select>
+        <button class="btn" id="gen" type="button" style="width:100%">✨ Generate pictures</button>
+        <div id="gMsg" style="font-size:12px;color:var(--mute);margin-top:6px">Pick one below, then Save. That picture becomes this influencer's face in videos.</div>
+        <div class="cands" id="cands"></div>
+      </div>
+      <label>Seed (keeps the look similar between videos)
+        <span class="row"><input type="text" id="seed" style="flex:1;width:auto"><button class="btn" id="dice" type="button">🎲</button></span></label>
+      <div class="row">
+        <button class="btn primary" id="save" type="button">Save influencer</button>
+        <button class="btn" id="reset" type="button">Clear</button>
+      </div>
+      <div class="err" id="err"></div>
+      <div class="note">Uploading photos isn't supported: video models block photos of real people. Generate the influencer here instead. Seedance also blocks realistic AI faces, so for Seedance pick a stylized look, then press <b>Test with Seedance</b> on the card to see if it's accepted.</div>
+    </div>
+
+    <div>
+      <div class="grid" id="list"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+if(location.protocol==='file:'){location.replace('http://localhost:3100/influencers.html');}
+const $=id=>document.getElementById(id);
+let editing=null, image=null, removeImage=false, items=[];
+
+function shrink(file,max=768){
+  return new Promise((res,rej)=>{
+    const url=URL.createObjectURL(file), im=new Image();
+    im.onload=()=>{
+      const k=Math.min(1,max/Math.max(im.width,im.height)), c=document.createElement('canvas');
+      c.width=Math.round(im.width*k); c.height=Math.round(im.height*k);
+      c.getContext('2d').drawImage(im,0,0,c.width,c.height);
+      URL.revokeObjectURL(url); res(c.toDataURL('image/jpeg',.88));
+    };
+    im.onerror=()=>rej(new Error('Could not read that image.'));
+    im.src=url;
+  });
+}
+function showPreview(src){
+  $('drop').querySelector('img')?.remove();
+  if(src){const im=document.createElement('img');im.src=src;$('drop').appendChild(im);}
+}
+
+const newSeed=()=>Math.floor(Math.random()*2e9);
+$('dice').onclick=()=>{$('seed').value=newSeed()};
+
+const STYLE_SETS={
+  seedance:[['cartoon3d','3D animated character (accepted by Seedance in my test)'],['anime','Anime']],
+  grok:[['photo','Realistic selfie photo'],['studio','Studio portrait'],['stylized','Stylized digital painting'],['cartoon3d','3D animated character'],['anime','Anime']],
+};
+function fillStyles(){ $('gStyle').innerHTML=STYLE_SETS[$('gTarget').value].map(s=>'<option value="'+s[0]+'">'+s[1]+'</option>').join(''); }
+$('gTarget').onchange=fillStyles; fillStyles();
+$('descPic').onclick=async()=>{
+  if(!image&&!editing) return $('descPicMsg').textContent='Add or pick a picture first.';
+  const b=$('descPic'); b.disabled=true; $('descPicMsg').textContent=' Looking at the picture…';
+  try{
+    const r=await fetch('/api/describe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(image?{image}:{influencer_id:editing})});
+    const j=await r.json(); if(!r.ok) throw new Error(j.error||'Failed');
+    $('desc').value=j.description; $('descPicMsg').textContent=' Done. Edit it if you like, then Save.';
+  }catch(e){ $('descPicMsg').textContent=' ❌ '+e.message; }
+  b.disabled=false;
+};
+$('gen').onclick=async()=>{
+  $('err').textContent=''; if(!$('desc').value.trim()) return $('err').textContent='Write a description first.';
+  const b=$('gen'); b.disabled=true; b.textContent='Generating…'; $('gMsg').textContent='This takes 10-40 seconds…'; $('cands').innerHTML='';
+  try{
+    const r=await fetch('/api/portraits',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({desc:$('desc').value,style:$('gStyle').value,model:$('gModel').value,count:+$('gCount').value})});
+    const j=await r.json(); if(!r.ok) throw new Error(j.error||'Failed');
+    $('cands').innerHTML=j.images.map((u,i)=>'<img data-i="'+i+'" src="'+u+'">').join('');
+    $('cands').querySelectorAll('img').forEach(im=>im.onclick=async()=>{
+      $('cands').querySelectorAll('img').forEach(x=>x.classList.remove('sel')); im.classList.add('sel');
+      image=await shrinkSrc(im.src); removeImage=false; showPreview(image);
+    });
+    $('gMsg').textContent='Click the one you like, then Save. Cost: $'+(j.cost||0).toFixed(2);
+  }catch(e){ $('err').textContent=e.message; $('gMsg').textContent=''; }
+  b.disabled=false; b.textContent='✨ Generate pictures';
+};
+function shrinkSrc(src,max=768){
+  return new Promise((res,rej)=>{const im=new Image();im.onload=()=>{const k=Math.min(1,max/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);c.getContext('2d').drawImage(im,0,0,c.width,c.height);res(c.toDataURL('image/jpeg',.9));};im.onerror=()=>rej(new Error('image load failed'));im.src=src;});
+}
+function resetForm(){
+  editing=null;image=null;removeImage=false;
+  $('formTitle').textContent='Add influencer';
+  $('name').value='';$('desc').value='';$('seed').value=newSeed();$('err').textContent='';
+  showPreview(null); $('cands').innerHTML=''; render();
+}
+$('reset').onclick=resetForm;
+
+function edit(p){
+  editing=p.id;image=null;removeImage=false;
+  $('formTitle').textContent='Edit '+p.name;
+  $('name').value=p.name;$('desc').value=p.desc||'';$('seed').value=p.seed;$('err').textContent='';
+  showPreview(p.image); render(); window.scrollTo({top:0,behavior:'smooth'});
+}
+
+$('save').onclick=async()=>{
+  $('err').textContent='';
+  const seed=parseInt($('seed').value,10);
+  if(!$('name').value.trim()) return $('err').textContent='Give the influencer a name.';
+  const b=$('save'); b.disabled=true;
+  try{
+    const r=await fetch('/api/influencers',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      id:editing,name:$('name').value,desc:$('desc').value,seed:Number.isInteger(seed)?seed:undefined,
+      ...(image?{image}:{}),...(removeImage?{removeImage:true}:{})})});
+    const j=await r.json(); if(!r.ok) throw new Error(j.error||'Save failed');
+    await load(); resetForm();
+  }catch(e){$('err').textContent=e.message}
+  b.disabled=false;
+};
+
+async function del(p){
+  if(!confirm('Delete "'+p.name+'"? This removes the saved description and picture.')) return;
+  const r=await fetch('/api/influencers/'+p.id,{method:'DELETE'});
+  if(!r.ok) return alert('Delete failed');
+  if(editing===p.id) resetForm();
+  await load();
+}
+
+const esc=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+function render(){
+  if(!items.length){ $('list').innerHTML='<div class="empty" style="grid-column:1/-1">No influencers yet. Add your first one on the left.</div>'; return; }
+  $('list').innerHTML=items.map(p=>`
+    <div class="card ${p.id===editing?'sel':''}">
+      <div class="pic">${p.image?`<img src="${p.image}" alt="">`:'🧑'}</div>
+      <div class="info"><b>${esc(p.name)}</b><div class="desc">${esc(p.desc)||'<i>No description</i>'}</div><div class="seed">Seed ${p.seed} · ${p.seedance==='ok'?'<span style="color:var(--ok)">✓ Seedance accepts</span>':p.seedance==='blocked'?'<span style="color:var(--err)">✗ Seedance blocks</span>':'Seedance: untested'}</div>
+        <div class="actions">
+          <a class="btn" href="/ugc.html?inf=${p.id}">Use in UGC</a>
+          <button class="btn" data-e="${p.id}">Edit</button>
+          ${p.image?`<button class="btn" data-t="${p.id}">Test with Seedance</button>`:''}
+          <button class="btn danger" data-d="${p.id}">Delete</button>
+        </div></div>
+    </div>`).join('');
+  $('list').querySelectorAll('[data-e]').forEach(b=>b.onclick=()=>edit(items.find(x=>x.id===b.dataset.e)));
+  $('list').querySelectorAll('[data-t]').forEach(b=>b.onclick=async()=>{
+    const p=items.find(x=>x.id===b.dataset.t);
+    if(!confirm('Test "'+p.name+'" with Seedance?\n\nIf Seedance REJECTS the picture it costs nothing.\nIf it ACCEPTS it, it makes a real 4-second test clip, about $0.15.')) return;
+    b.disabled=true; b.textContent='Testing…';
+    try{
+      const r=await fetch('/api/influencers/'+p.id+'/check',{method:'POST'}); const j=await r.json(); if(!r.ok) throw new Error(j.error||'Test failed');
+      alert(j.result==='ok'?'Seedance accepted this picture. A short test clip is generating (job '+j.id+'), you can fetch it on the Single clip page.':'Seedance rejected this picture (it reads it as a real person). Nothing was charged. Try a more stylized picture.');
+    }catch(e){ alert('Test failed: '+e.message); }
+    await load();
+  });
+  $('list').querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>del(items.find(x=>x.id===b.dataset.d)));
+}
+async function load(){
+  try{items=(await (await fetch('/api/influencers')).json()).influencers||[];}catch{items=[];}
+  render();
+}
+$('seed').value=newSeed(); load();
+</script>
+<script src="/app.js"></script>
+</body>
+</html>

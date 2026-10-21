@@ -1,0 +1,7 @@
+.env
+work/
+videos/
+data/
+*.bak
+*.bak2
+node_modules/
