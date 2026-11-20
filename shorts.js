@@ -11,6 +11,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
   const MODEL = process.env.SHORTS_MODEL || "google/gemini-3.5-flash-lite";
   const FONTS = path.join(__dirname, "fonts"); // Anton (SIL OFL), used by the caption/thumbnail styles
   const MAX_UPLOAD = 500 * 1024 * 1024;
+  const MAX_LINK = 1500 * 1024 * 1024; // direct-link downloads (same cap as yt-dlp)
   const ANALYSE_MAX = 30 * 60; // only the first 30 min of very long videos is analysed
   const jobs = new Map(); // id -> live job (status lives on disk in meta.json once finished)
   fs.mkdirSync(DIR, { recursive: true });
@@ -45,7 +46,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
     const args = [
       "--no-playlist", "--no-simulate", "--newline", "--progress", "--print", "after_move:TITLE:%(title)s",
       "-f", "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/bv*[height<=1080]+ba/b[height<=1080]/b",
-      "--merge-output-format", "mp4", "--max-filesize", "1500M", "--match-filter", "duration <= 10800",
+      "--merge-output-format", "mp4", "--max-filesize", "1500M", "--match-filter", "duration <=? 10800",
       "--js-runtimes", "node", "-o", "src.%(ext)s",
     ];
     if (FFMPEG !== "ffmpeg") args.push("--ffmpeg-location", FFMPEG);
@@ -69,6 +70,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
         p.on("close", (code) => {
           const f = fs.readdirSync(dir).find((n) => /^src\.(mp4|mkv|webm|mov)$/.test(n));
           if (code === 0 && f) return resolve({ file: path.join(dir, f), title });
+          if (code === 0) return reject(new Error("No video was downloaded from that link (it may be longer than 3 hours, private, or not a video page)."));
           const msg = (err.match(/ERROR:.*$/m) || [err.trim().split("\n").pop() || "unknown error"])[0];
           if (/Sign in to confirm|bot|cookies/i.test(msg)) return reject(new Error("YouTube blocked the download from this server. Upload the video file instead, or add YT_COOKIES (see README)."));
           reject(new Error("Couldn't download that link: " + msg.slice(0, 300)));
@@ -86,6 +88,44 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
     if (!/^https?:$/.test(x.protocol)) return null;
     if (/^(localhost|127\.|10\.|192\.168\.|169\.254\.|0\.|\[?::1\]?$)/i.test(x.hostname) || /^172\.(1[6-9]|2\d|3[01])\./.test(x.hostname)) return null;
     return x.toString();
+  }
+
+  // ---------- direct file links (https://…/clip.mp4, Dropbox, Google Drive, S3, CDNs) ----------
+  const VIDEO_EXT = /\.(mp4|m4v|mov|webm|mkv|avi|mpe?g|3gp)$/i;
+  function normalizeLink(u) {
+    const x = new URL(u);
+    if (/(^|\.)dropbox\.com$/i.test(x.hostname)) { x.searchParams.set("dl", "1"); return x.toString(); }
+    const g = x.hostname === "drive.google.com" && (x.pathname.match(/\/file\/d\/([\w-]{10,})/) || [null, x.searchParams.get("id")]);
+    if (g && g[1]) return `https://drive.usercontent.google.com/download?id=${g[1]}&export=download&confirm=t`;
+    return u;
+  }
+  // Starts the download and decides from the response whether it's a video file. Returns the open response
+  // when it is (caller reads or cancels it), or { direct: false } for a web page that yt-dlp should handle.
+  async function probeDirect(link) {
+    const r = await fetch(normalizeLink(link), { redirect: "follow", headers: { "User-Agent": "Mozilla/5.0 VideoStudio" }, signal: AbortSignal.timeout(20000) });
+    const ct = (r.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+    const cd = r.headers.get("content-disposition") || "";
+    let name = decodeURIComponent((cd.match(/filename\*=UTF-8''([^;]+)/i) || cd.match(/filename="?([^";]+)"?/i) || [])[1] || "");
+    if (!name) try { name = decodeURIComponent(new URL(r.url).pathname.split("/").pop() || ""); } catch {}
+    const looksVideo = /^video\//.test(ct) || (/(octet-stream|binary|download)/.test(ct) && VIDEO_EXT.test(name));
+    if (!r.ok || !looksVideo) { r.body?.cancel().catch(() => {}); return { direct: false, status: r.status, type: ct }; }
+    const size = Number(r.headers.get("content-length")) || 0;
+    return { direct: true, res: r, type: ct, size, name };
+  }
+  async function saveDirect(d, dir, job) {
+    if (d.size > MAX_LINK) { d.res.body?.cancel().catch(() => {}); throw new Error(`That file is ${(d.size / 1048576).toFixed(0)} MB; the limit is ${MAX_LINK / 1048576} MB.`); }
+    const ext = (d.name.match(VIDEO_EXT) || [, d.type.split("/")[1] || "mp4"])[1].toLowerCase().replace("quicktime", "mov");
+    const file = path.join(dir, "src." + ext.replace(/[^a-z0-9]/g, ""));
+    const ws = fs.createWriteStream(file);
+    let got = 0;
+    for await (const c of d.res.body) {
+      got += c.length;
+      if (got > MAX_LINK) { ws.destroy(); throw new Error(`That file is bigger than ${MAX_LINK / 1048576} MB.`); }
+      if (!ws.write(c)) await new Promise((r) => ws.once("drain", r));
+      if (d.size) setStep(job, 0, Math.min(14, (got / d.size) * 14));
+    }
+    await new Promise((r) => ws.end(r));
+    return file;
   }
 
   // ---------- model calls ----------
@@ -166,7 +206,12 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
     try {
       setStep(job, 0, 1);
       let srcFile = opts.file, srcTitle = opts.title || "";
-      if (opts.link) ({ file: srcFile, title: srcTitle } = await download(opts.link, dir, job));
+      if (opts.link) {
+        // direct video file -> plain download; anything else (YouTube, X, Instagram…) -> yt-dlp
+        const d = await probeDirect(opts.link).catch(() => ({ direct: false }));
+        if (d.direct) { srcFile = await saveDirect(d, dir, job); srcTitle = d.name.replace(VIDEO_EXT, ""); }
+        else ({ file: srcFile, title: srcTitle } = await download(opts.link, dir, job));
+      }
       const src = await probe(srcFile);
       if (!src) throw new Error("That file isn't a readable video.");
       job.source = { title: srcTitle, link: opts.link || null, duration: Math.round(src.duration), w: src.w, h: src.h };
@@ -291,6 +336,18 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       runShort(id, { ...readOpts(url.searchParams), file, title: name });
       return send(res, 200, { id }), true;
     }
+    if (req.method === "POST" && url.pathname === "/api/shorts/check") {
+      let b = "";
+      for await (const c of req) { b += c; if (b.length > 1e4) break; }
+      let link = null;
+      try { link = safeLink(String(JSON.parse(b || "{}").url || "").trim()); } catch {}
+      if (!link) return send(res, 200, { ok: false, error: "Paste a full link starting with https://" }), true;
+      const d = await probeDirect(link).catch((e) => ({ direct: false, error: e.name === "TimeoutError" ? "timeout" : e.message }));
+      if (d.direct) { d.res.body?.cancel().catch(() => {}); return send(res, 200, { ok: true, kind: "direct", name: d.name, size: d.size, type: d.type }), true; }
+      const host = new URL(link).hostname.replace(/^www\./, "");
+      if (d.status === 404 || d.status === 410) return send(res, 200, { ok: false, error: `That link returns "not found" (${d.status}).` }), true;
+      return send(res, 200, { ok: true, kind: "site", site: host }), true;
+    }
     if (req.method === "POST" && url.pathname === "/api/shorts") {
       if (!getKey()) return send(res, 500, { error: "OPENROUTER_API_KEY missing." }), true;
       let b = "";
@@ -317,7 +374,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       const v = publicView(m[1]);
       return (v ? send(res, 200, v) : send(res, 404, { error: "Unknown short" })), true;
     }
-    if (req.method === "GET" && (m = url.pathname.match(/^\/api\/shorts\/(\w+)\/(short\.mp4|thumb\.jpg)$/))) {
+    if ((req.method === "GET" || req.method === "HEAD") && (m = url.pathname.match(/^\/api\/shorts\/(\w+)\/(short\.mp4|thumb\.jpg)$/))) {
       const f = path.join(dirOf(m[1]), m[2]), dl = url.searchParams.has("dl");
       if (m[2] === "short.mp4") return serveMp4(req, res, f, dl ? `short-${m[1]}.mp4` : false), true;
       if (!fs.existsSync(f)) { res.writeHead(404); return res.end("Not found"), true; }
