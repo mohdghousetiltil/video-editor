@@ -6,7 +6,7 @@ Run: copy `.env.example` to `.env`, add your OpenRouter key, then `node server.j
 
 ## Deploy: backend on Railway, frontend on Cloudflare Pages
 
-**Railway** (this repo, root directory): Railway builds the `Dockerfile` (Node 22 + ffmpeg + yt-dlp). Add a Volume mounted at `/data`, set the healthcheck path to `/healthz`, then set variables:
+**Railway** (this repo, root directory): `railway.json` makes Railway build the `Dockerfile` and start `node server.js` (leave Custom Start Command empty; `wrangler deploy` is for Cloudflare only) (Node 22 + ffmpeg + yt-dlp). Add a Volume mounted at `/data`, set the healthcheck path to `/healthz`, then set variables:
 
 | Variable | Value |
 |---|---|
