@@ -29,7 +29,7 @@
   document.body.prepend(side);
 
   // Mobile tab bar: 4 main tabs + a centre "more" orb that fans the remaining pages out on an arc.
-  const PRIMARY = ['/', '/story.html', '/shorts.html', '/influencers.html'];
+  const PRIMARY = ['/', '/story.html', '/motion.html', '/shorts.html'];
   const prim = items.filter((i) => PRIMARY.includes(i[0]));
   const more = items.filter((i) => !PRIMARY.includes(i[0]));
   const inMore = more.find((i) => i[0] === here);
