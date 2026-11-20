@@ -9,6 +9,11 @@
     "binding": "ASSETS",
     "run_worker_first": true
   },
-  // keep BACKEND_URL / PROXY_KEY / APP_PASSWORD set in the dashboard when deploying
+  // Not secret, so it lives here and can't go missing. PROXY_KEY (and APP_PASSWORD if wanted) are set as
+  // runtime *secrets* in the dashboard: Worker > Settings > Variables and secrets (not the Build variables).
+  "vars": {
+    "BACKEND_URL": "https://video-editor-production-f2643903.up.railway.app"
+  },
+  // keep other variables set in the dashboard when deploying
   "keep_vars": true
 }
