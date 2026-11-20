@@ -6,14 +6,17 @@ export async function onRequest({ request, env }) {
   const base = "https://" + env.BACKEND_URL.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
   const u = new URL(request.url);
   const h = new Headers(request.headers);
-  h.set("x-proxy-key", env.PROXY_KEY || "");
+  // trim: a pasted secret often carries a trailing space/newline or quotes
+  const key = String(env.PROXY_KEY || "").trim().replace(/^["']|["']$/g, "");
+  if (!key) return json(500, "This Cloudflare Worker has no PROXY_KEY at runtime. Add it under Worker > Settings > Variables and secrets (the card without 'API token', not the Build one), type Secret, then Deploy.");
+  h.set("x-proxy-key", key);
   h.delete("authorization"); h.delete("host");
   const init = { method: request.method, headers: h, redirect: "manual" };
   if (!["GET", "HEAD"].includes(request.method)) { init.body = request.body; init.duplex = "half"; }
   let r;
   try { r = await fetch(base + u.pathname + u.search, init); }
   catch (e) { return json(502, "Can't reach the backend at " + base + " (" + e.message + ")."); }
-  if (r.status === 401) return json(502, "Backend refused the request: PROXY_KEY in Cloudflare and Railway don't match.");
+  if (r.status === 401) return json(502, `Backend refused the request: Cloudflare's PROXY_KEY (${key.length} characters, starts "${key.slice(0, 4)}") doesn't match Railway's. Set both to exactly the same value.`);
   if (r.status === 502 || r.status === 503) {
     const t = await r.text();
     return json(502, "Backend is not responding (" + r.status + "). On Railway check the service is running and the domain's port matches the PORT in the logs. " + t.slice(0, 200));

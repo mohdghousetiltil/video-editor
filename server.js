@@ -196,7 +196,8 @@ const server = http.createServer(async (req, res) => {
     if (sm0) return serveMp4(req, res, path.join(SHARE_DIR, sm0[1] + ".mp4"));
     if (url.pathname === "/healthz") return send(res, 200, { ok: true }); // Railway health check (no key needed)
     // When PROXY_KEY is set, only the Cloudflare Pages proxy (which adds this header) may use the backend.
-    if (process.env.PROXY_KEY && req.headers["x-proxy-key"] !== process.env.PROXY_KEY) { res.writeHead(401); return res.end("Unauthorized"); }
+    const PK = (process.env.PROXY_KEY || "").trim().replace(/^["']|["']$/g, "");
+    if (PK && String(req.headers["x-proxy-key"] || "").trim() !== PK) { res.writeHead(401); return res.end("Unauthorized"); }
     if (await shortsRoutes(req, res, url)) return;
     if (req.method === "POST" && url.pathname === "/api/generate") {
       if (!KEY) return send(res, 500, { error: "OPENROUTER_API_KEY missing. Put it in .env and restart." });
