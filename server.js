@@ -635,9 +635,10 @@ const server = http.createServer(async (req, res) => {
     }
 
     // static files
-    const file = path.join(__dirname, "public", url.pathname === "/" ? "index.html" : path.normalize(url.pathname));
+    let file = path.join(__dirname, "public", url.pathname === "/" ? "index.html" : path.normalize(url.pathname));
+    if (!path.extname(file) && fs.existsSync(file + ".html")) file += ".html"; // clean URLs: /shorts -> shorts.html (same as Cloudflare)
     if (!file.startsWith(path.join(__dirname, "public")) || !fs.existsSync(file)) { res.writeHead(404); return res.end("Not found"); }
-    const MIME = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg" };
+    const MIME = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".webmanifest": "application/manifest+json" };
     res.writeHead(200, { "Content-Type": MIME[path.extname(file)] || "application/octet-stream", "Cache-Control": "no-cache" });
     fs.createReadStream(file).pipe(res);
   } catch (e) {

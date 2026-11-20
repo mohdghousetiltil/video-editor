@@ -11,13 +11,14 @@
   };
   const items = [
     ['/', 'Single clip', ICON.clip, 'One prompt, one video'],
-    ['/story.html', 'Story mode', ICON.story, 'Scenes, narration, stitch'],
-    ['/ugc.html', 'UGC review', ICON.ugc, 'Influencer reviews a product'],
-    ['/motion.html', 'Poses & motion', ICON.motion, 'Poses for TikTok, copy motion'],
-    ['/shorts.html', 'Shorts maker', ICON.shorts, 'Long video → ready-to-post Short'],
-    ['/influencers.html', 'Influencers', ICON.people, 'Your AI influencer library'],
+    ['/story', 'Story mode', ICON.story, 'Scenes, narration, stitch'],
+    ['/ugc', 'UGC review', ICON.ugc, 'Influencer reviews a product'],
+    ['/motion', 'Poses & motion', ICON.motion, 'Poses for TikTok, copy motion'],
+    ['/shorts', 'Shorts maker', ICON.shorts, 'Long video → ready-to-post Short'],
+    ['/influencers', 'Influencers', ICON.people, 'Your AI influencer library'],
   ];
-  const here = location.pathname === '/index.html' ? '/' : location.pathname;
+  // clean URLs (/shorts) and old ones (/shorts.html, /index.html) both count as the same page
+  const here = location.pathname.replace(/\.html$/, '').replace(/^\/index$/, '/') || '/';
 
   const side = document.createElement('aside');
   side.className = 'sb';
@@ -29,7 +30,7 @@
   document.body.prepend(side);
 
   // Mobile tab bar: 4 main tabs + a centre "more" orb that fans the remaining pages out on an arc.
-  const PRIMARY = ['/', '/story.html', '/motion.html', '/shorts.html'];
+  const PRIMARY = ['/', '/story', '/motion', '/shorts'];
   const prim = items.filter((i) => PRIMARY.includes(i[0]));
   const more = items.filter((i) => !PRIMARY.includes(i[0]));
   const inMore = more.find((i) => i[0] === here);
@@ -84,6 +85,21 @@
   });
   addEventListener('resize', () => isOpen() && setOpen(false));
   addEventListener('pageshow', () => setOpen(false)); // back button shouldn't restore an open menu
+
+  // Browsers without speculation rules (Safari, Firefox): start fetching a page as soon as a nav link is
+  // touched or hovered, so the tap itself finds it ready.
+  if (!(HTMLScriptElement.supports && HTMLScriptElement.supports('speculationrules'))) {
+    const done = new Set([here]);
+    const warm = (e) => {
+      const a = e.target.closest && e.target.closest('.sb a, .tabbar a, .radial a');
+      if (!a || done.has(a.pathname)) return;
+      done.add(a.pathname);
+      fetch(a.href, { credentials: 'same-origin', priority: 'high' }).catch(() => {});
+    };
+    addEventListener('pointerdown', warm, { passive: true, capture: true });
+    addEventListener('mouseover', warm, { passive: true });
+    moreBtn.addEventListener('click', () => more.forEach((i) => warm({ target: radial.querySelector(`a[href="${i[0]}"]`) })));
+  }
 
   const wrap = document.querySelector('.wrap');
   const title = document.body.dataset.title;

@@ -1,0 +1,14 @@
+# Cloudflare static-asset caching. HTML always revalidates; shared CSS/JS are reused for a minute and
+# refreshed in the background after that, so page switches don't wait on them.
+/app.css
+  Cache-Control: public, max-age=60, stale-while-revalidate=86400
+/app.js
+  Cache-Control: public, max-age=60, stale-while-revalidate=86400
+/icon*
+  Cache-Control: public, max-age=604800
+/favicon-32.png
+  Cache-Control: public, max-age=604800
+/apple-touch-icon.png
+  Cache-Control: public, max-age=604800
+/manifest.webmanifest
+  Cache-Control: public, max-age=86400

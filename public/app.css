@@ -1,4 +1,3 @@
-@import url("https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;800&family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600&display=swap");
 /* Shared design layer: "neon HUD" gaming theme. Loaded after each page's own styles, so it wins on conflicts. */
 :root{
   --bg:#05060d;--panel:#0b0e1a;--panel2:#10142a;--line:#1d2542;--line2:#2b3768;--text:#e8f1ff;--mute:#8793b8;
@@ -23,7 +22,7 @@ body{
 }
 /* faint scanline overlay */
 body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:200;opacity:.5;
-  background:repeating-linear-gradient(0deg,rgba(0,0,0,.18) 0 1px,transparent 1px 3px);mix-blend-mode:multiply}
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,.18) 0 1px,transparent 1px 3px)}
 ::selection{background:rgba(0,229,255,.35)}
 *{scrollbar-width:thin;scrollbar-color:#27346a transparent}
 :focus-visible{outline:2px solid var(--acc);outline-offset:2px}
@@ -230,3 +229,17 @@ video{border-radius:0}
 .drop{max-height:340px}
 .photos .drop{aspect-ratio:3/4}
 .cands img{max-height:300px}
+
+/* ---------- smooth page switches ---------- */
+/* Cross-document view transitions (Chrome/Edge 126+, Safari 18.2+): quick fade, nav stays put. */
+@view-transition{navigation:auto}
+.sb{view-transition-name:sidebar}
+.tabbar{view-transition-name:tabbar}
+::view-transition-old(root){animation:vt-out .12s ease-in both}
+::view-transition-new(root){animation:vt-in .18s ease-out both}
+@keyframes vt-out{to{opacity:0}}
+@keyframes vt-in{from{opacity:0;transform:translateY(6px)}}
+@media(prefers-reduced-motion:reduce){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none !important}}
+/* phones: a fixed background re-paints the whole grid on every scroll frame */
+@media(max-width:900px){body{background-attachment:scroll !important}}
+.sb a,.tabbar a,.tb-more,.radial a{touch-action:manipulation}
