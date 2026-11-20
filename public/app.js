@@ -28,10 +28,62 @@
     '</div><div class="sb-foot"><span class="dot" id="sbDot"></span><span id="sbTxt">LINKING…</span></div>';
   document.body.prepend(side);
 
-  const tabs = document.createElement('div');
+  // Mobile tab bar: 4 main tabs + a centre "more" orb that fans the remaining pages out on an arc.
+  const PRIMARY = ['/', '/story.html', '/shorts.html', '/influencers.html'];
+  const prim = items.filter((i) => PRIMARY.includes(i[0]));
+  const more = items.filter((i) => !PRIMARY.includes(i[0]));
+  const inMore = more.find((i) => i[0] === here);
+  const tab = (i) => `<a href="${i[0]}" class="${i[0] === here ? 'on' : ''}"${i[0] === here ? ' aria-current="page"' : ''}><span>${i[2]}</span>${i[1].split(' ')[0]}</a>`;
+  const tabs = document.createElement('nav');
   tabs.className = 'tabbar';
-  tabs.innerHTML = items.map((i) => `<a href="${i[0]}" class="${i[0] === here ? 'on' : ''}"><span>${i[2]}</span>${i[1].split(' ')[0]}</a>`).join('');
+  tabs.setAttribute('aria-label', 'Pages');
+  tabs.innerHTML = tab(prim[0]) + tab(prim[1]) +
+    `<button type="button" class="tb-more${inMore ? ' on' : ''}" aria-label="More pages" aria-expanded="false" aria-controls="radial">` +
+    `<span class="tb-orb">${svg('<path d="M12 5v14M5 12h14"/>')}</span><small>${inMore ? inMore[1].split(' ')[0] : 'More'}</small></button>` +
+    tab(prim[2]) + tab(prim[3]);
   document.body.append(tabs);
+
+  const scrim = document.createElement('div');
+  scrim.className = 'radial-scrim';
+  const radial = document.createElement('div');
+  radial.className = 'radial';
+  radial.id = 'radial';
+  radial.setAttribute('role', 'menu');
+  radial.setAttribute('aria-label', 'More pages');
+  const R = 112, n = more.length, span = Math.min(140, 64 * (n - 1));
+  radial.innerHTML = '<span class="radial-ring" aria-hidden="true"></span>' + more.map((i, k) => {
+    const a = (-90 - span / 2 + (n > 1 ? (span * k) / (n - 1) : span / 2)) * Math.PI / 180;
+    return `<a role="menuitem" href="${i[0]}" class="${i[0] === here ? 'on' : ''}" style="--x:${(Math.cos(a) * R).toFixed(1)}px;--y:${(Math.sin(a) * R).toFixed(1)}px;--d:${k * 45}ms">` +
+      `<span class="ro">${i[2]}</span><b>${i[1]}</b></a>`;
+  }).join('');
+  document.body.append(scrim, radial);
+
+  const moreBtn = tabs.querySelector('.tb-more');
+  const setOpen = (open, refocus) => {
+    if (open) { // anchor the arc on the orb's centre
+      const r = moreBtn.querySelector('.tb-orb').getBoundingClientRect();
+      radial.style.left = r.left + r.width / 2 + 'px';
+      radial.style.top = r.top + r.height / 2 + 'px';
+    }
+    document.body.classList.toggle('radial-open', open);
+    moreBtn.setAttribute('aria-expanded', String(open));
+    if (open) setTimeout(() => radial.querySelector('a')?.focus({ preventScroll: true }), 60);
+    else if (refocus) moreBtn.focus();
+  };
+  const isOpen = () => document.body.classList.contains('radial-open');
+  moreBtn.onclick = () => setOpen(!isOpen());
+  scrim.onclick = () => setOpen(false);
+  document.addEventListener('keydown', (e) => {
+    if (!isOpen()) return;
+    if (e.key === 'Escape') { e.preventDefault(); setOpen(false, true); }
+    if (/^Arrow/.test(e.key)) { // move between items
+      const as = [...radial.querySelectorAll('a')], k = as.indexOf(document.activeElement);
+      const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : -1;
+      as[(k + step + as.length) % as.length].focus(); e.preventDefault();
+    }
+  });
+  addEventListener('resize', () => isOpen() && setOpen(false));
+  addEventListener('pageshow', () => setOpen(false)); // back button shouldn't restore an open menu
 
   const wrap = document.querySelector('.wrap');
   const title = document.body.dataset.title;
