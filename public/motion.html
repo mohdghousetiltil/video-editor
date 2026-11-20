@@ -491,7 +491,8 @@ async function mpoll(id){
     if(d.status==='failed') throw new Error(d.error||'Generation failed');
     if(d.status!=='completed'){ mshow(d.progress,`${d.status==='pending'?'Queued at provider':'Generating'} · ${d.elapsed}s elapsed (estimate)`); continue; }
     $('mStage').innerHTML=`<video src="${d.videoUrl}" controls autoplay loop playsinline></video>`;
-    $('mActions').innerHTML=`<a class="btn" href="${d.videoUrl}?download=1">⬇ Download MP4</a>`+(d.cost!=null?`<span class="meta">Cost $${d.cost} · job ${id}</span>`:''); return;
+    $('mActions').innerHTML=`<a class="btn" href="${d.videoUrl}?download=1">⬇ Download MP4</a>`+(d.cost!=null?`<span class="meta">Cost $${d.cost} · job ${id}</span>`:'');
+    mountShare($('mActions'),{url:d.videoUrl,name:'motion-'+id.slice(-8)+'.mp4',prompt:$('mPrompt').value}); return;
   }
 }
 

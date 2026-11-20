@@ -209,7 +209,7 @@ ta.addEventListener('drop',async ev=>{
 
 function getHist(){try{return JSON.parse(localStorage.getItem('jobs')||'[]')}catch{return[]}}
 function saveHist(h){try{localStorage.setItem('jobs',JSON.stringify(h.slice(0,20)))}catch{}}
-function addHist(id,text){const h=getHist().filter(x=>x.id!==id);h.unshift({id,text:text.slice(0,70),ts:Date.now()});saveHist(h);renderHist();}
+function addHist(id,text){const h=getHist().filter(x=>x.id!==id);h.unshift({id,text:text.slice(0,70),prompt:text.slice(0,2000),ts:Date.now()});saveHist(h);renderHist();}
 function renderHist(){
   const h=getHist();
   $('hist').innerHTML=h.length?h.map(x=>`<div class="item" data-id="${x.id}"><span class="t">${(x.text||x.id).replace(/</g,'&lt;')}</span><span class="s">${new Date(x.ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span></div>`).join(''):'<div class="none">No jobs yet.</div>';
@@ -238,6 +238,8 @@ async function poll(id){
   stop();
   $('stage').innerHTML=`<video controls autoplay loop playsinline src="${j.videoUrl}"></video>`;
   $('actions').innerHTML=`<a class="btn" href="${j.videoUrl}?download=1">⬇ Download MP4</a>`+(j.cost!=null?`<span class="meta" style="align-self:center">Cost $${j.cost}</span>`:'');
+  const h=getHist().find(x=>x.id===id);
+  mountShare($('actions'),{url:j.videoUrl,name:'video-'+id.slice(-8)+'.mp4',prompt:(h&&(h.prompt||h.text))||''});
 }
 
 $('go').onclick=async()=>{

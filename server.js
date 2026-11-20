@@ -591,6 +591,27 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    // Social caption for a finished video, written from the prompt that made it (used by the Share box)
+    if (req.method === "POST" && url.pathname === "/api/caption") {
+      if (!KEY) return send(res, 500, { error: "OPENROUTER_API_KEY missing." });
+      const b = await readBody(req);
+      const p = String(b.prompt || "").trim().slice(0, 3000);
+      if (!p) return send(res, 400, { error: "No prompt to write a caption from." });
+      const sys = "You write captions for short vertical videos posted on TikTok, Instagram Reels and YouTube Shorts. " +
+        "The user gives you the prompt that was used to generate the video. Write: one or two short, punchy sentences that make people want to watch (a hook, not a description of the prompt; max 1 emoji), " +
+        "then a blank line, then 4 to 6 relevant hashtags on one line (always include #shorts). Write in the language of the prompt. " +
+        "Never mention AI prompts, models or 'this video was generated'. Output ONLY the caption text.";
+      const r = await fetch(`${API}/chat/completions`, {
+        method: "POST", headers: orHeaders(),
+        body: JSON.stringify({ model: ENHANCE_MODEL, max_tokens: 400, reasoning: { enabled: false }, messages: [{ role: "system", content: sys }, { role: "user", content: p }] }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) return send(res, r.status, { error: j.error?.message || "Caption failed" });
+      const caption = (j.choices?.[0]?.message?.content || "").replace(/^["']|["']$/g, "").trim();
+      if (!caption) return send(res, 502, { error: "No caption came back, write your own." });
+      return send(res, 200, { caption });
+    }
+
     if (req.method === "POST" && url.pathname === "/api/enhance") {
       if (!KEY) return send(res, 500, { error: "OPENROUTER_API_KEY missing." });
       const b = await readBody(req);

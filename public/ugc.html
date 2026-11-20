@@ -315,6 +315,7 @@ async function poll(id){
   stop();
   $('stage').innerHTML=`<video controls autoplay loop playsinline src="${j.videoUrl}"></video>`;
   $('actions').innerHTML=`<a class="btn" href="${j.videoUrl}?download=1">⬇ Download MP4</a>`+(j.cost!=null?`<span class="meta">Cost $${j.cost}</span><span class="meta">· job ${id}</span>`:'');
+  mountShare($('actions'),{url:j.videoUrl,name:'ugc-'+id.slice(-8)+'.mp4',prompt:$('prompt').value});
 }
 $('go').onclick=async()=>{
   $('err').textContent=''; $('actions').innerHTML='';

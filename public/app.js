@@ -128,4 +128,73 @@
     box.append(t);
     setTimeout(() => t.remove(), 4500);
   };
+
+  // ---------- Share: the video file itself (posts straight into TikTok / Instagram / WhatsApp / YouTube on a
+  // phone) plus the caption; falls back to sharing a link, then to copying caption + link on desktops. ----------
+  // The file is fetched ahead of time: iPhone Safari only opens the share sheet if share() runs right after the
+  // tap, so there is no time to download the video once the button is pressed.
+  const files = new Map(); // url -> Promise (while downloading) | File | null
+  const canShareFiles = () => !!(navigator.share && navigator.canShare);
+  const prep = (url, name) => {
+    if (!canShareFiles() || files.has(url)) return;
+    const p = fetch(url)
+      .then((r) => (r.ok ? r.blob() : null))
+      .then((b) => (b && b.size && b.size < 300 * 1048576 ? new File([b], name, { type: "video/mp4" }) : null))
+      .catch(() => null)
+      .then((f) => { files.set(url, f); return f; });
+    files.set(url, p);
+  };
+  const copy = (t) => (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).catch(() => {});
+
+  async function shareVideo({ url, name, title, text }) {
+    const link = new URL(url, location.href).href;
+    text = (text || "").trim();
+    const f = files.get(url);
+    if (f instanceof File && navigator.canShare({ files: [f] })) {
+      if (text) copy(text); // some apps (Instagram, TikTok) drop shared text, so it's also on the clipboard to paste
+      try {
+        await navigator.share({ files: [f], title: title || undefined, text: text || undefined });
+        if (text) toast("Caption is copied too: paste it if the app didn't add it", "ok");
+        return;
+      } catch (e) { if (e.name === "AbortError") return; }
+    } else if (f && typeof f.then === "function") {
+      toast("Getting the video ready to share, tap Share again in a moment");
+      return;
+    }
+    if (navigator.share) {
+      try { await navigator.share({ title: title || undefined, text: text || undefined, url: link }); return; }
+      catch (e) { if (e.name === "AbortError") return; }
+    }
+    await copy((text ? text + "\n\n" : "") + link);
+    toast(text ? "Caption and video link copied" : "Video link copied", "ok");
+  }
+
+  // Adds a caption box (written by AI from the prompt unless `text` is given) and a Share button to `el`.
+  // getText: read the caption from somewhere else instead (Shorts has its own title/description fields).
+  window.mountShare = (el, { url, name = "video.mp4", title = "", prompt = "", text = "", getText } = {}) => {
+    if (!el || !url) return;
+    prep(url, name);
+    const box = document.createElement("div");
+    box.className = "sharebox";
+    box.innerHTML = (getText ? "" : '<label>Caption<textarea class="share-cap" rows="3" placeholder="Caption for your post"></textarea></label>') +
+      '<button class="btn primary share-go" type="button">⇪ Share video</button>';
+    el.append(box);
+    const cap = box.querySelector(".share-cap");
+    if (cap) {
+      const key = "cap:" + url;
+      let saved = null;
+      try { saved = localStorage.getItem(key); } catch {}
+      cap.value = text || saved || "";
+      cap.oninput = () => { try { localStorage.setItem(key, cap.value); } catch {} };
+      if (!cap.value && prompt) {
+        cap.placeholder = "Writing a caption…";
+        fetch("/api/caption", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt }) })
+          .then((r) => r.json())
+          .then((j) => { if (j.caption && !cap.value) { cap.value = j.caption; cap.oninput(); } })
+          .catch(() => {})
+          .finally(() => (cap.placeholder = "Caption for your post"));
+      }
+    }
+    box.querySelector(".share-go").onclick = () => shareVideo({ url, name, title, text: getText ? getText() : cap.value });
+  };
 })();

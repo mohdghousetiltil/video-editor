@@ -244,6 +244,12 @@ function showResult(j) {
   const tags = (j.hashtags || []).map((t) => '#' + t);
   $('oDesc').value = (j.description || '') + (tags.length ? '\n\n' + tags.join(' ') : '');
   $('oTags').innerHTML = tags.map((t) => `<span class="tag">${esc(t)}</span>`).join('');
+  // Share: the Short itself plus title + description + hashtags (as currently edited)
+  document.querySelector('#outPanel .sharebox')?.remove();
+  mountShare(document.querySelector('#outPanel .actions'), {
+    url: j.videoUrl, name: 'short-' + j.id + '.mp4', title: j.title || '',
+    getText: () => [$('oTitle').value.trim(), $('oDesc').value.trim()].filter(Boolean).join('\n\n'),
+  });
   $('oInfo').innerHTML = [
     j.source ? `From ${esc(j.source.title || 'your video')} · ${fmt(j.start)}–${fmt(j.end)} (${Math.round(j.end - j.start)} s)` : '',
     j.framing === 'crop' ? 'Smart crop' : 'Full frame on blurred background',
