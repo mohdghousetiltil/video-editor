@@ -1,0 +1,11 @@
+.env
+.dev.vars
+.git
+.wrangler
+node_modules
+data
+work
+videos
+functions
+*.bak
+*.bak2

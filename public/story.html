@@ -288,7 +288,7 @@ function retry(i,all){
 function pending(){ return scenes.map((_,i)=>jobs[i]&&jobs[i].id&&jobs[i].done&&!jobs[i].failed?-1:i).filter(i=>i>=0); }
 function updateGen(){
   const left=pending().length, done=scenes.length-left;
-  $('gen').innerHTML=done>0&&left>0?'Continue: generate remaining '+left+' scene(s) &amp; stitch':'Generate all scenes &amp; stitch';
+  $('gen').innerHTML=left===0&&done>0?'🎙️ Re-stitch existing clips with the current narration &amp; voice (no new video cost)':done>0?'Continue: generate remaining '+left+' scene(s) &amp; stitch':'Generate all scenes &amp; stitch';
   $('regen').classList.toggle('hidden',done===0);
 }
 $('gen').onclick=()=>{
@@ -325,7 +325,8 @@ function saveNow(){
   const h=hget().filter(x=>x.id!==projId); h.unshift(p); hset(h); renderHist();
 }
 function renderHist(){
-  const h=hget(); $('histPanel').classList.toggle('hidden',!h.length&&!diskList.length);
+  const h=hget(); $('histPanel').classList.remove('hidden');
+  if(!h.length) $('hist').innerHTML='<div class="meta">No saved stories yet. Plan a story below and it will appear here automatically.</div>'; else
   $('hist').innerHTML=h.map(p=>{
     const n=p.scenes.length, d=(p.jobs||[]).filter(j=>j&&j.done&&!j.failed).length;
     const st=p.final?'✅ finished':d?d+'/'+n+' scenes done':n+' scenes planned';

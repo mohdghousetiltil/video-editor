@@ -7,7 +7,9 @@ const { Readable } = require("stream");
 const { spawn } = require("child_process");
 const crypto = require("crypto");
 
-const DATA = path.join(__dirname, "data");
+// DATA_DIR: where influencers + generated files live. On Railway point it at a mounted volume (e.g. /data).
+const STORE = process.env.DATA_DIR || __dirname;
+const DATA = path.join(STORE, "data");
 const IMG = path.join(DATA, "img");
 const DB = path.join(DATA, "influencers.json");
 const readInf = () => { try { return JSON.parse(fs.readFileSync(DB, "utf8")); } catch { return []; } };
@@ -27,7 +29,7 @@ const run = (args, cwd) =>
   });
 // Download a finished job's video and return its last frame as a JPEG data URL
 async function lastFrame(id) {
-  const dir = path.join(__dirname, "work", "frames");
+  const dir = path.join(STORE, "work", "frames");
   fs.mkdirSync(dir, { recursive: true });
   const r = await fetch(`${API}/videos/${id}/content?index=0`, { headers: { Authorization: `Bearer ${KEY}` } });
   if (!r.ok) throw new Error(`download failed (${r.status})`);
@@ -94,7 +96,7 @@ const MODELS = {
 // ---- Motion page: share uploaded driving clips with the video provider (it needs a public HTTPS link) ----
 // A tiny separate server exposes ONLY ./work/share/<random>.mp4. A Cloudflare quick tunnel to that port is started
 // only when the user clicks the button on the Motion page, and can be stopped from there.
-const SHARE_DIR = path.join(__dirname, "work", "share");
+const SHARE_DIR = path.join(STORE, "work", "share");
 const SHARE_PORT = Number(process.env.SHARE_PORT || 3101);
 fs.mkdirSync(SHARE_DIR, { recursive: true });
 function serveMp4(req, res, f, download) {
@@ -115,9 +117,11 @@ http.createServer((req, res) => {
   serveMp4(req, res, m && path.join(SHARE_DIR, m[1] + ".mp4"));
 }).listen(SHARE_PORT, "127.0.0.1");
 
-const tunnel = { status: "off", url: null, proc: null, error: null };
+// PUBLIC_URL (e.g. https://your-app.up.railway.app): the server itself is already public, so no tunnel is needed.
+const PUBLIC_URL = (process.env.PUBLIC_URL || "").replace(/\/$/, "");
+const tunnel = PUBLIC_URL ? { status: "ready", url: PUBLIC_URL, proc: null, error: null } : { status: "off", url: null, proc: null, error: null };
 function startTunnel() {
-  if (tunnel.proc) return;
+  if (PUBLIC_URL || tunnel.proc) return;
   tunnel.status = "starting"; tunnel.url = null; tunnel.error = null;
   const win = "C:\\Program Files (x86)\\cloudflared\\cloudflared.exe";
   const exe = process.env.CLOUDFLARED_PATH || (fs.existsSync(win) ? win : "cloudflared");
@@ -138,7 +142,7 @@ function startTunnel() {
   p.on("error", (e) => { tunnel.status = "off"; tunnel.url = null; tunnel.proc = null; tunnel.error = "Could not start cloudflared: " + e.message; });
   p.on("close", () => { if (tunnel.proc === p) { tunnel.status = "off"; tunnel.url = null; tunnel.proc = null; } });
 }
-function stopTunnel() { if (tunnel.proc) tunnel.proc.kill(); tunnel.status = "off"; tunnel.url = null; tunnel.proc = null; }
+function stopTunnel() { if (PUBLIC_URL) return; if (tunnel.proc) tunnel.proc.kill(); tunnel.status = "off"; tunnel.url = null; tunnel.proc = null; }
 process.on("exit", () => { try { tunnel.proc && tunnel.proc.kill(); } catch {} });
 process.on("SIGINT", () => { stopTunnel(); process.exit(0); });
 
@@ -185,6 +189,12 @@ function progress(job) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://x");
   try {
+    // Clips shared with the video provider: public, but only by their random 24-hex name.
+    const sm0 = url.pathname.match(/^\/s\/([a-f0-9]{24})\.mp4$/);
+    if (sm0) return serveMp4(req, res, path.join(SHARE_DIR, sm0[1] + ".mp4"));
+    if (url.pathname === "/healthz") return send(res, 200, { ok: true }); // Railway health check (no key needed)
+    // When PROXY_KEY is set, only the Cloudflare Pages proxy (which adds this header) may use the backend.
+    if (process.env.PROXY_KEY && req.headers["x-proxy-key"] !== process.env.PROXY_KEY) { res.writeHead(401); return res.end("Unauthorized"); }
     if (req.method === "POST" && url.pathname === "/api/generate") {
       if (!KEY) return send(res, 500, { error: "OPENROUTER_API_KEY missing. Put it in .env and restart." });
       const b = await readBody(req);
@@ -313,7 +323,7 @@ const server = http.createServer(async (req, res) => {
       const nar = b.narration && Array.isArray(b.narration.lines) && b.narration.model ? b.narration : null;
       stitches.set(sid, st);
       (async () => {
-        const dir = path.join(__dirname, "work", sid);
+        const dir = path.join(STORE, "work", sid);
         fs.mkdirSync(dir, { recursive: true });
         const [W, H] = b.aspect === "16:9" ? [1280, 720] : b.aspect === "1:1" ? [720, 720] : [720, 1280];
         const vf = `scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,format=yuv420p`;
@@ -360,7 +370,7 @@ const server = http.createServer(async (req, res) => {
       return st ? send(res, 200, { ...st, url: st.status === "completed" ? `/api/final/${sm[1]}` : null }) : send(res, 404, { error: "Unknown stitch" });
     }
     if (req.method === "GET" && (sm = url.pathname.match(/^\/api\/final\/(\w+)$/))) {
-      const f = path.join(__dirname, "work", sm[1], "final.mp4");
+      const f = path.join(STORE, "work", sm[1], "final.mp4");
       if (!fs.existsSync(f)) { res.writeHead(404); return res.end("Not found"); }
       const size = fs.statSync(f).size, rg = (req.headers.range || "").match(/bytes=(\d*)-(\d*)/);
       const h = { "Content-Type": "video/mp4", "Accept-Ranges": "bytes" };
@@ -376,7 +386,7 @@ const server = http.createServer(async (req, res) => {
 
     // ---- Story mode: finished stitched videos still on disk (for history recovery) ----
     if (req.method === "GET" && url.pathname === "/api/finals") {
-      const wd = path.join(__dirname, "work"), out = [];
+      const wd = path.join(STORE, "work"), out = [];
       for (const d of fs.existsSync(wd) ? fs.readdirSync(wd) : []) {
         const f = path.join(wd, d, "final.mp4");
         if (!/^\w+$/.test(d) || !fs.existsSync(f)) continue;
@@ -624,7 +634,7 @@ const server = http.createServer(async (req, res) => {
     const file = path.join(__dirname, "public", url.pathname === "/" ? "index.html" : path.normalize(url.pathname));
     if (!file.startsWith(path.join(__dirname, "public")) || !fs.existsSync(file)) { res.writeHead(404); return res.end("Not found"); }
     const MIME = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg" };
-    res.writeHead(200, { "Content-Type": MIME[path.extname(file)] || "application/octet-stream" });
+    res.writeHead(200, { "Content-Type": MIME[path.extname(file)] || "application/octet-stream", "Cache-Control": "no-cache" });
     fs.createReadStream(file).pipe(res);
   } catch (e) {
     send(res, 500, { error: e.message });
