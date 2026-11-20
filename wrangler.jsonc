@@ -1,0 +1,14 @@
+// Frontend Worker: serves ./public, asks for the site password, and proxies /api/* to Railway (see worker.js).
+// "name" must match the Worker's name in the Cloudflare dashboard.
+{
+  "name": "video-editor",
+  "main": "worker.js",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  // keep BACKEND_URL / PROXY_KEY / APP_PASSWORD set in the dashboard when deploying
+  "keep_vars": true
+}

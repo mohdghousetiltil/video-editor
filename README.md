@@ -17,7 +17,7 @@ Run: copy `.env.example` to `.env`, add your OpenRouter key, then `node server.j
 | `SHORTS_MODEL` | optional, video model for the Shorts maker (default `google/gemini-3.5-flash-lite`) |
 | `YT_COOKIES` | optional, contents of a `cookies.txt` exported from a logged-in YouTube browser session; only needed if YouTube links fail with "blocked" |
 
-**Cloudflare Pages** (connect the same GitHub repo): build command empty, output directory `public`. The `functions/` folder is picked up automatically. Variables:
+**Cloudflare** (connect the same GitHub repo). As a **Worker** (current setup): `wrangler.jsonc` + `worker.js` serve `public/`, ask for the password and proxy `/api` to Railway; deploy command `npx wrangler deploy`, and the `name` in `wrangler.jsonc` must match the Worker name. As a **Pages** project instead: build command empty, output directory `public`, and `functions/` is picked up automatically. Variables (either way):
 
 | Variable | Value |
 |---|---|

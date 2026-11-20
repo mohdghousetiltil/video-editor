@@ -1,7 +1,7 @@
 // Forwards /api/* to the Railway backend. BACKEND_URL and PROXY_KEY are set in Cloudflare Pages settings.
 export async function onRequest({ request, env }) {
   const json = (status, error) => new Response(JSON.stringify({ error }), { status, headers: { "Content-Type": "application/json" } });
-  if (!env.BACKEND_URL) return json(500, "BACKEND_URL is not set in Cloudflare Pages settings.");
+  if (!env.BACKEND_URL) return json(500, "BACKEND_URL is not set in the Cloudflare settings (Variables and secrets).");
   // accept "xxx.up.railway.app", "http://…" or "https://…/" and always talk HTTPS (Railway redirects http with an empty body)
   const base = "https://" + env.BACKEND_URL.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
   const u = new URL(request.url);
