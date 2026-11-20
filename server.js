@@ -103,7 +103,7 @@ function serveMp4(req, res, f, download) {
   if (!f || !fs.existsSync(f)) { res.writeHead(404); return res.end("Not found"); }
   const size = fs.statSync(f).size, rg = (req.headers.range || "").match(/bytes=(\d*)-(\d*)/);
   const h = { "Content-Type": "video/mp4", "Accept-Ranges": "bytes" };
-  if (download) h["Content-Disposition"] = 'attachment; filename="motion-source.mp4"';
+  if (download) h["Content-Disposition"] = `attachment; filename="${typeof download === "string" ? download : "motion-source.mp4"}"`;
   if (rg) {
     const s = rg[1] ? +rg[1] : 0, e = rg[2] ? +rg[2] : size - 1;
     res.writeHead(206, { ...h, "Content-Range": `bytes ${s}-${e}/${size}`, "Content-Length": e - s + 1 });
@@ -174,6 +174,8 @@ const readBody = (req) =>
     req.on("end", () => { try { resolve(JSON.parse(d || "{}")); } catch (e) { reject(e); } });
   });
 const orHeaders = () => ({ Authorization: `Bearer ${KEY}`, "Content-Type": "application/json" });
+// Shorts maker (long video -> analysed, cut, captioned 9:16 Short + thumbnail + title); see shorts.js
+const shortsRoutes = require("./shorts")({ STORE, FFMPEG, API, getKey: () => KEY, run, send, serveMp4 });
 
 // OpenRouter reports only status (no %), so progress is estimated from elapsed time
 // and jumps to 100 only when the job is really completed.
@@ -195,6 +197,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/healthz") return send(res, 200, { ok: true }); // Railway health check (no key needed)
     // When PROXY_KEY is set, only the Cloudflare Pages proxy (which adds this header) may use the backend.
     if (process.env.PROXY_KEY && req.headers["x-proxy-key"] !== process.env.PROXY_KEY) { res.writeHead(401); return res.end("Unauthorized"); }
+    if (await shortsRoutes(req, res, url)) return;
     if (req.method === "POST" && url.pathname === "/api/generate") {
       if (!KEY) return send(res, 500, { error: "OPENROUTER_API_KEY missing. Put it in .env and restart." });
       const b = await readBody(req);

@@ -6,6 +6,7 @@
     story: svg('<rect x="2" y="6" width="9" height="12" rx="1.5"/><rect x="13" y="6" width="9" height="12" rx="1.5"/>'),
     ugc: svg('<circle cx="12" cy="8" r="3.5"/><path d="M5 20c.8-3.6 3.6-5.5 7-5.5s6.2 1.9 7 5.5"/>'),
     motion: svg('<path d="M4 7V5a1 1 0 0 1 1-1h2M17 4h2a1 1 0 0 1 1 1v2M20 17v2a1 1 0 0 1-1 1h-2M7 20H5a1 1 0 0 1-1-1v-2"/><circle cx="12" cy="12" r="3"/>'),
+    shorts: svg('<rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="m10.5 9.5 4 2.5-4 2.5z"/>'),
     people: svg('<circle cx="9" cy="8" r="3"/><path d="M3 19c.6-3 3-4.6 6-4.6s5.4 1.6 6 4.6"/><path d="M16 5.2a3 3 0 0 1 0 5.6M18 14.6c1.8.6 2.7 2 3 4.4"/>'),
   };
   const items = [
@@ -13,6 +14,7 @@
     ['/story.html', 'Story mode', ICON.story, 'Scenes, narration, stitch'],
     ['/ugc.html', 'UGC review', ICON.ugc, 'Influencer reviews a product'],
     ['/motion.html', 'Poses & motion', ICON.motion, 'Poses for TikTok, copy motion'],
+    ['/shorts.html', 'Shorts maker', ICON.shorts, 'Long video → ready-to-post Short'],
     ['/influencers.html', 'Influencers', ICON.people, 'Your AI influencer library'],
   ];
   const here = location.pathname === '/index.html' ? '/' : location.pathname;
