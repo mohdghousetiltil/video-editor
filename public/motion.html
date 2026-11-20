@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -139,7 +142,7 @@
       <div class="panel">
         <h2>1 · Driving video (the motion to copy)</h2>
         <label class="drop" id="drv"><span id="drvTxt">🎥 Click or drop a video<br><small>first 15 seconds are used, audio is removed</small></span><input type="file" accept="video/*"></label>
-        <video class="pv hidden" id="drvPv" controls muted loop></video>
+        <video class="pv hidden" id="drvPv" controls muted loop playsinline></video>
         <div class="meta" id="drvInfo"></div>
         <label style="margin-top:10px">…or paste a direct link to an MP4 file (YouTube, TikTok and Instagram page links do not work: save the clip and upload it above)<input type="text" id="drvUrl" placeholder="https://example.com/clip.mp4 (a direct MP4 file, not a YouTube page)"></label>
 
@@ -349,7 +352,7 @@ $('pStitch').onclick=async()=>{
     if(d.status==='running'){ $('pReel').textContent=d.step; continue; }
     $('pStitch').disabled=false;
     if(d.status==='failed'){ $('pReel').textContent='Failed: '+d.error; return; }
-    $('pReel').innerHTML=`<video src="${d.url}" controls style="width:100%;max-width:300px;border-radius:12px;background:#000"></video><div style="margin-top:8px"><a class="btn" href="${d.url}?download=1">⬇ Download reel</a></div>`; return; }
+    $('pReel').innerHTML=`<video src="${d.url}" controls playsinline style="width:100%;max-width:300px;border-radius:12px;background:#000"></video><div style="margin-top:8px"><a class="btn" href="${d.url}?download=1">⬇ Download reel</a></div>`; return; }
 };
 
 /* ---------------- COPY MOTION ---------------- */
@@ -487,7 +490,7 @@ async function mpoll(id){
     const d=await (await fetch('/api/jobs/'+id)).json();
     if(d.status==='failed') throw new Error(d.error||'Generation failed');
     if(d.status!=='completed'){ mshow(d.progress,`${d.status==='pending'?'Queued at provider':'Generating'} · ${d.elapsed}s elapsed (estimate)`); continue; }
-    $('mStage').innerHTML=`<video src="${d.videoUrl}" controls autoplay loop></video>`;
+    $('mStage').innerHTML=`<video src="${d.videoUrl}" controls autoplay loop playsinline></video>`;
     $('mActions').innerHTML=`<a class="btn" href="${d.videoUrl}?download=1">⬇ Download MP4</a>`+(d.cost!=null?`<span class="meta">Cost $${d.cost} · job ${id}</span>`:''); return;
   }
 }

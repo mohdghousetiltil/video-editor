@@ -243,3 +243,42 @@ video{border-radius:0}
 /* phones: a fixed background re-paints the whole grid on every scroll frame */
 @media(max-width:900px){body{background-attachment:scroll !important}}
 .sb a,.tabbar a,.tb-more,.radial a{touch-action:manipulation}
+
+/* ---------- iPhone / phone layout: one 16px rhythm, safe areas, no zoom-on-focus ---------- */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+@media(max-width:900px){
+  :root{--g:16px}
+  html,body{overflow-x:hidden}
+  body{font-size:16px;min-height:100dvh;-webkit-tap-highlight-color:transparent;
+    padding-bottom:calc(78px + env(safe-area-inset-bottom))}
+  /* 16px gutters, plus the notch / Dynamic Island / home-indicator insets */
+  .wrap{padding:calc(var(--g) + env(safe-area-inset-top)) calc(var(--g) + env(safe-area-inset-right)) calc(var(--g) * 5) calc(var(--g) + env(safe-area-inset-left)) !important;max-width:100% !important}
+  .pagehead{margin-bottom:var(--g);padding-bottom:var(--g)}
+  .pagehead h1{font-size:22px}
+  .pagehead p{font-size:16px}
+  /* panels and the gaps between them */
+  .panel{padding:var(--g) !important;margin-bottom:var(--g)}
+  .panel+.panel{margin-top:var(--g)}
+  .layout,.out,.hgrid,.grid,.grid4,.models,.methods,.chips,.actions,.tools,.fetch,.hist{gap:var(--g) !important}
+  .layout>*,.out>*{min-width:0}
+  .layout .panel:last-child,.layout>div>.panel:last-child{margin-bottom:0}
+  /* text inputs at 16px so iOS Safari does not zoom in on focus */
+  textarea,select,input,.btn{font-size:16px !important}
+  textarea,select,input[type=text],input[type=number],input:not([type]),input[type=search],input[type=url]{padding:12px var(--g) !important;min-height:48px}
+  select{padding-right:40px !important}
+  /* comfortable 44px+ touch targets */
+  .btn,button.btn{min-height:48px;padding:12px var(--g) !important}
+  .chip{min-height:44px;display:inline-flex;align-items:center;font-size:16px !important}
+  .model{padding:var(--g) !important}
+  .item{padding:12px var(--g) !important;min-height:48px}
+  .item .t{font-size:16px}
+  .err:not(:empty),.cost{padding:12px var(--g) !important;font-size:16px}
+  .stage video{max-height:70dvh}
+  img,video,canvas{max-width:100%}
+  /* tab bar and toasts respect the side insets in landscape */
+  .tabbar{padding-left:calc(8px + env(safe-area-inset-left));padding-right:calc(8px + env(safe-area-inset-right))}
+  #toasts{left:var(--g);right:var(--g);bottom:calc(88px + env(safe-area-inset-bottom))}
+  .toast{font-size:16px;padding:12px var(--g)}
+  /* the scanline overlay costs paint time on phones */
+  body::after{display:none}
+}

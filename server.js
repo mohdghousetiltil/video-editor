@@ -3,7 +3,6 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
-const { Readable } = require("stream");
 const { spawn } = require("child_process");
 const crypto = require("crypto");
 
@@ -82,6 +81,10 @@ const API = "https://openrouter.ai/api/v1";
 const ESTIMATE_SECS = 100; // time constant for the simulated progress curve
 
 const MODELS = {
+  "google/veo-3.1-fast": { audio: true },
+  "google/veo-3.1-lite": { audio: true },
+  "kwaivgi/kling-v3.0-pro": { audio: true },
+  "google/gemini-omni-1.2-flash": { audio: true },
   "bytedance/seedance-2.0-fast": { audio: true },
   "bytedance/seedance-2.0": { audio: true },
   "bytedance/seedance-2.5": { audio: true },
@@ -99,13 +102,19 @@ const MODELS = {
 const SHARE_DIR = path.join(STORE, "work", "share");
 const SHARE_PORT = Number(process.env.SHARE_PORT || 3101);
 fs.mkdirSync(SHARE_DIR, { recursive: true });
+// finished generations, downloaded once from OpenRouter so they can be served with proper range support
+const VIDEO_CACHE = path.join(STORE, "work", "videos");
+fs.mkdirSync(VIDEO_CACHE, { recursive: true });
+const videoFetches = new Map(); // id -> in-flight download, so parallel range requests share one fetch
 function serveMp4(req, res, f, download) {
   if (!f || !fs.existsSync(f)) { res.writeHead(404); return res.end("Not found"); }
   const size = fs.statSync(f).size, rg = (req.headers.range || "").match(/bytes=(\d*)-(\d*)/);
-  const h = { "Content-Type": "video/mp4", "Accept-Ranges": "bytes" };
+  const h = { "Content-Type": "video/mp4", "Accept-Ranges": "bytes", "Cache-Control": "private, max-age=86400" };
   if (download) h["Content-Disposition"] = `attachment; filename="${typeof download === "string" ? download : "motion-source.mp4"}"`;
-  if (rg) {
-    const s = rg[1] ? +rg[1] : 0, e = rg[2] ? +rg[2] : size - 1;
+  if (rg && (rg[1] || rg[2])) {
+    // "bytes=500-" (from 500), "bytes=-500" (last 500), "bytes=0-1" (Safari's first probe)
+    let s = rg[1] ? +rg[1] : Math.max(0, size - +rg[2]), e = rg[1] && rg[2] ? Math.min(+rg[2], size - 1) : size - 1;
+    if (s >= size || s > e) { res.writeHead(416, { "Content-Range": `bytes */${size}` }); return res.end(); }
     res.writeHead(206, { ...h, "Content-Range": `bytes ${s}-${e}/${size}`, "Content-Length": e - s + 1 });
     return fs.createReadStream(f, { start: s, end: e }).pipe(res);
   }
@@ -204,7 +213,12 @@ const server = http.createServer(async (req, res) => {
       const b = await readBody(req);
       if (!b.prompt || !b.prompt.trim()) return send(res, 400, { error: "Script/prompt is empty." });
       const model = MODELS[b.model] ? b.model : MODEL;
-      const body = { model, prompt: b.prompt.trim() };
+      // Models sometimes turn a prompt with several beats (or a cartoon style) into a comic page or split screen,
+      // e.g. three small panels next to one big one inside a 9:16 frame. Ask for one full-frame shot every time.
+      const ar = String(b.aspect_ratio || "");
+      const frameRule = " Framing: one single continuous full-frame shot" + (ar ? ` composed for ${ar}${ar === "9:16" ? " vertical" : ""}` : "") +
+        ". No split screen, no comic panels, no collage, no grid, no picture-in-picture, no borders or letterboxing.";
+      const body = { model, prompt: b.prompt.trim() + (MODELS[model]?.bare ? "" : frameRule) };
       if (b.duration) body.duration = Number(b.duration);
       if (b.resolution) body.resolution = b.resolution;
       if (b.aspect_ratio) body.aspect_ratio = b.aspect_ratio;
@@ -581,11 +595,21 @@ const server = http.createServer(async (req, res) => {
       if (!KEY) return send(res, 500, { error: "OPENROUTER_API_KEY missing." });
       const b = await readBody(req);
       if (!b.prompt || !b.prompt.trim()) return send(res, 400, { error: "Write something first." });
-      const sys = "You rewrite rough ideas into prompts for an AI text-to-video model. Output ONLY the final prompt, no preamble or quotes. " +
+      // No duration given: let the enhancer choose one the selected model accepts (e.g. Veo only does 4, 6 or 8 s).
+      const allowed = (Array.isArray(b.durations) ? b.durations : []).map(Number).filter((n) => n > 0 && n <= 60).sort((x, y) => x - y);
+      const auto = !(Number(b.duration) > 0);
+      const lenRule = auto
+        ? "Choose the clip length yourself: just long enough for the action to play out naturally without rushing or dead time" +
+          (allowed.length ? ", and it MUST be one of these numbers of seconds: " + allowed.join(", ") : ", between 4 and 15 seconds") +
+          '. Reply with ONLY JSON, no markdown: {"seconds":N,"prompt":"..."} where prompt is the final prompt written for exactly that length. '
+        : "Clip length: " + b.duration + " seconds. ";
+      const sys = "You rewrite rough ideas into prompts for an AI text-to-video model. " +
+        (auto ? "" : "Output ONLY the final prompt, no preamble or quotes. ") +
         "Write one vivid paragraph in present tense: subject and consistent appearance (hair, clothes, colors), setting, lighting, concrete visible action in time order that fits the clip length, camera shot and movement, mood. " +
         "Describe only what can be seen and heard in one continuous shot, following any timed beats given at the end; no abstract story, no on-screen text unless essential. " +
+        "Never describe split screens, comic panels, multiple frames or a storyboard: the whole frame shows one scene. " +
         "End with a short 'Sound:' line (ambience, effects, any short spoken line in quotes). Keep under " + (Number(b.max_words) || 140) + " words. " +
-        "Clip length: " + (b.duration || 7) + " seconds. Aspect ratio: " + (b.aspect_ratio || "9:16") + ". " +
+        lenRule + "Aspect ratio: " + (b.aspect_ratio || "9:16") + ". " +
         (b.style ? "Visual style to respect: " + b.style + " " : "") + (b.extra || "");
       const r = await fetch(`${API}/chat/completions`, {
         method: "POST", headers: orHeaders(),
@@ -595,7 +619,16 @@ const server = http.createServer(async (req, res) => {
       if (!r.ok) return send(res, r.status, { error: j.error?.message || "Enhance failed" });
       const out = j.choices?.[0]?.message?.content?.trim();
       if (!out) return send(res, 502, { error: "Enhancer returned nothing, try again." });
-      return send(res, 200, { prompt: out });
+      if (!auto) return send(res, 200, { prompt: out });
+      const raw = out.replace(/```(json)?/g, "").trim();
+      let pj = null;
+      try { pj = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1)); } catch {}
+      const text = (pj && typeof pj.prompt === "string" && pj.prompt.trim()) || raw;
+      let secs = Math.round(Number(pj && pj.seconds)) || 0;
+      if (!secs) secs = allowed.length ? allowed[Math.floor(allowed.length / 2)] : 6;
+      // snap to the nearest length the model supports
+      if (allowed.length) secs = allowed.reduce((best, n) => (Math.abs(n - secs) < Math.abs(best - secs) ? n : best), allowed[0]);
+      return send(res, 200, { prompt: text, duration: secs });
     }
 
     if (req.method === "GET" && url.pathname === "/api/jobs") {
@@ -624,14 +657,24 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && (m = url.pathname.match(/^\/api\/video\/([\w-]+)$/))) {
-      const r = await fetch(`${API}/videos/${m[1]}/content?index=0`, {
-        headers: { Authorization: `Bearer ${KEY}`, ...(req.headers.range ? { Range: req.headers.range } : {}) },
-      });
-      const h = { "Content-Type": r.headers.get("content-type") || "video/mp4" };
-      for (const k of ["content-length", "content-range", "accept-ranges"]) if (r.headers.get(k)) h[k] = r.headers.get(k);
-      if (url.searchParams.has("download")) h["Content-Disposition"] = 'attachment; filename="video.mp4"';
-      res.writeHead(r.status, h);
-      return Readable.fromWeb(r.body).pipe(res);
+      // iPhone Safari only plays video that answers byte-range requests with 206 + Content-Range. OpenRouter's
+      // content endpoint doesn't reliably do that, so keep one copy on disk and serve ranges from it ourselves.
+      const f = path.join(VIDEO_CACHE, m[1] + ".mp4");
+      if (!fs.existsSync(f)) {
+        let p = videoFetches.get(m[1]);
+        if (!p) {
+          p = (async () => {
+            const r = await fetch(`${API}/videos/${m[1]}/content?index=0`, { headers: { Authorization: `Bearer ${KEY}` } });
+            if (!r.ok) { const t = await r.text().catch(() => ""); throw Object.assign(new Error(t.slice(0, 300) || "video not available"), { status: r.status }); }
+            const tmp = f + "." + process.pid + ".part";
+            fs.writeFileSync(tmp, Buffer.from(await r.arrayBuffer()));
+            fs.renameSync(tmp, f);
+          })().finally(() => videoFetches.delete(m[1]));
+          videoFetches.set(m[1], p);
+        }
+        try { await p; } catch (e) { return send(res, e.status || 502, { error: "Couldn't load the video: " + e.message }); }
+      }
+      return serveMp4(req, res, f, url.searchParams.has("download") ? "video.mp4" : false);
     }
 
     // static files

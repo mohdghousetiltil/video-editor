@@ -146,7 +146,20 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       }),
     });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok || j.error) throw new Error("Video analysis failed: " + (j.error?.message || r.status));
+    if (!r.ok || j.error) {
+      const msg = j.error?.message || String(r.status);
+      // OpenRouter answers 402 both when the account is empty and when this API key's own spend limit is used up.
+      // The second is easy to miss: the account can show $5 while the key has only cents left.
+      if (r.status === 402 || /credit|limit|afford/i.test(msg)) {
+        const k = await fetch(`${API}/key`, { headers: { Authorization: `Bearer ${getKey()}` } }).then((x) => x.json()).catch(() => null);
+        const left = k?.data?.limit_remaining;
+        if (k?.data?.limit != null && left != null)
+          throw new Error(`Video analysis failed: this OpenRouter API key has a $${k.data.limit} spend limit and only $${left.toFixed(2)} of it is left, ` +
+            `even if your account has more credit. Raise or remove the key's limit at openrouter.ai/settings/keys. (OpenRouter said: ${msg})`);
+        throw new Error(`Video analysis failed: OpenRouter needs more credit for this video. Add credit at openrouter.ai/settings/credits, or try a shorter video. (OpenRouter said: ${msg})`);
+      }
+      throw new Error("Video analysis failed: " + msg);
+    }
     job.cost = (job.cost || 0) + (j.usage?.cost || 0);
     return parseJson(j.choices?.[0]?.message?.content);
   }

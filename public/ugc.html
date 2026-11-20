@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -310,7 +313,7 @@ async function poll(id){
     return show(j.progress,`${j.status==='pending'?'Queued at provider':'Generating'} · ${j.elapsed}s elapsed · ~${left}s left (estimate)`);
   }
   stop();
-  $('stage').innerHTML=`<video controls autoplay loop src="${j.videoUrl}"></video>`;
+  $('stage').innerHTML=`<video controls autoplay loop playsinline src="${j.videoUrl}"></video>`;
   $('actions').innerHTML=`<a class="btn" href="${j.videoUrl}?download=1">⬇ Download MP4</a>`+(j.cost!=null?`<span class="meta">Cost $${j.cost}</span><span class="meta">· job ${id}</span>`:'');
 }
 $('go').onclick=async()=>{

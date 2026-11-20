@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -101,7 +104,7 @@
 
         <h2>4 · Settings</h2>
         <div class="grid4">
-          <label>Duration (s)<input id="duration" type="number" value="7"></label>
+          <label><span>Duration (s) <small id="durHint" style="text-transform:none;letter-spacing:0;opacity:.7"></small></span><input id="duration" type="number" inputmode="numeric" placeholder="Auto"></label>
           <label>Resolution<select id="resolution"></select></label>
           <label>Aspect<select id="aspect"></select></label>
           <label>Audio<select id="audio"><option value="true">On</option><option value="false">Off</option></select></label>
@@ -136,11 +139,17 @@ if(location.protocol==='file:'){location.replace('http://localhost:3100/'+(locat
 
 const $=id=>document.getElementById(id);
 
+// OpenRouter video models. price[res] = [$/s with audio, $/s without audio]; durs = the only lengths the model accepts.
+const range=(a,b)=>Array.from({length:b-a+1},(_,i)=>a+i);
 const MODELS={
-  'bytedance/seedance-2.0-fast':{name:'Seedance 2.0 Fast',note:'Quality + audio · ~$0.04/s @480p',audio:true,min:4,max:15,
-    res:['480p','720p'],asp:['9:16','16:9','1:1','4:3','3:4','21:9'],price:{'480p':.0425,'720p':.0912}},
-  'x-ai/grok-imagine-video-1.5-lite':{name:'Grok Imagine 1.5 Lite',note:'Cheapest · ~$0.02/s @480p',audio:false,min:1,max:15,
-    res:['480p','720p','1080p'],asp:['9:16','16:9','1:1','4:3','3:4','3:2','2:3'],price:{'480p':.02,'720p':.03,'1080p':.14}},
+  'google/veo-3.1-fast':{name:'Google Veo 3.1 Fast',note:'Best quality + sound · ~$0.10/s @720p',audio:true,durs:[4,6,8],
+    res:['720p','1080p'],asp:['9:16','16:9'],price:{'720p':[.10,.08],'1080p':[.12,.10]}},
+  'kwaivgi/kling-v3.0-pro':{name:'Kling 3.0 Pro',note:'Strong motion, up to 15 s · ~$0.17/s',audio:true,durs:range(3,15),
+    res:['720p'],asp:['9:16','16:9','1:1'],price:{'720p':[.168,.112]}},
+  'google/gemini-omni-1.2-flash':{name:'Gemini Omni 1.2 Flash',note:'Newest, sound always on · ~$0.07/s @720p',audio:'always',durs:range(3,15),
+    res:['720p','1080p'],asp:['9:16','16:9'],price:{'720p':[.0695,.0695],'1080p':[.1043,.1043]}},
+  'google/veo-3.1-lite':{name:'Google Veo 3.1 Lite',note:'Budget pick · ~$0.05/s @720p',audio:true,durs:[4,6,8],
+    res:['720p','1080p'],asp:['9:16','16:9'],price:{'720p':[.05,.03],'1080p':[.08,.05]}},
 };
 const STYLES={
   movie:['🎥 Cinematic','Cinematic live-action movie style, shallow depth of field, dramatic lighting, smooth camera movement, film grain, high production value.'],
@@ -149,15 +158,18 @@ const STYLES={
   horror:['👻 Horror','Ultra-realistic cinematic horror, dark atmosphere, low-key dramatic lighting, suspenseful slow camera moves, realistic human expressions, no gore.'],
   pixar:['🎞️ 3D film','High-quality 3D animated feature-film style like Pixar, expressive characters, warm lighting, rich textures, smooth animation.'],
   doc:['📹 Realistic','Realistic documentary footage, natural lighting, handheld camera feel, true-to-life colors and detail.'],
-  comic:['✏️ 2D cartoon','Flat 2D cartoon style, bold outlines, bright simple colors, lively exaggerated motion.'],
+  comic:['✏️ 2D cartoon','Flat 2D hand-drawn animation like a TV cartoon episode, bold outlines, bright simple colors, lively exaggerated motion, one full-frame scene.'],
   none:['No style','']
 };
-let model='bytedance/seedance-2.0-fast', style='movie', timer=null;
+let model='google/veo-3.1-fast', style='movie', timer=null;
+try{const saved=localStorage.getItem('model'); if(MODELS[saved]) model=saved;}catch{}
+// snap a typed duration to the nearest length the model supports ('' stays '' = Auto)
+const snap=(v,durs)=>v===''||!(+v>0)?'':durs.reduce((b,n)=>Math.abs(n-v)<Math.abs(b-v)?n:b,durs[0]);
 
 function renderModels(){
   $('models').innerHTML=Object.entries(MODELS).map(([id,m])=>
     `<div class="model ${id===model?'sel':''}" data-id="${id}"><b>${m.name}</b><span>${m.note}</span></div>`).join('');
-  $('models').querySelectorAll('.model').forEach(el=>el.onclick=()=>{model=el.dataset.id;applyModel();});
+  $('models').querySelectorAll('.model').forEach(el=>el.onclick=()=>{model=el.dataset.id;try{localStorage.setItem('model',model)}catch{};applyModel();});
 }
 function renderStyles(){
   $('styles').innerHTML=Object.entries(STYLES).map(([k,v])=>`<div class="chip ${k===style?'sel':''}" data-k="${k}">${v[0]}</div>`).join('');
@@ -169,17 +181,20 @@ function fill(sel,opts,def){
 }
 function applyModel(){
   const m=MODELS[model]; renderModels();
-  fill($('resolution'),m.res,'480p'); fill($('aspect'),m.asp,'9:16');
-  $('duration').min=m.min; $('duration').max=m.max;
-  if(+$('duration').value<m.min) $('duration').value=m.min;
-  if(+$('duration').value>m.max) $('duration').value=m.max;
-  $('audio').disabled=!m.audio; updateCost();
+  fill($('resolution'),m.res,m.res[0]); fill($('aspect'),m.asp,'9:16');
+  $('duration').min=m.durs[0]; $('duration').max=m.durs[m.durs.length-1];
+  $('duration').value=snap($('duration').value,m.durs);
+  $('durHint').textContent=m.durs.length<6?m.durs.join(' / ')+' s':`${m.durs[0]}–${m.durs[m.durs.length-1]} s`;
+  if(m.audio==='always') $('audio').value='true';
+  $('audio').disabled=m.audio!==true; updateCost();
 }
 function updateCost(){
-  const p=MODELS[model].price[$('resolution').value]||0, d=+$('duration').value||0;
-  $('cost').textContent=d?`≈ $${(p*d).toFixed(2)}`:'—';
+  const p=MODELS[model].price[$('resolution').value]||[0,0], d=+$('duration').value||0;
+  const rate=p[$('audio').value==='true'?0:1];
+  $('cost').textContent=d?`≈ $${(rate*d).toFixed(2)}`:`≈ $${rate.toFixed(2)}/s`;
 }
-['duration','resolution'].forEach(i=>$(i).addEventListener('input',updateCost));
+['duration','resolution','audio'].forEach(i=>$(i).addEventListener('input',updateCost));
+$('duration').addEventListener('change',()=>{$('duration').value=snap($('duration').value,MODELS[model].durs);updateCost();});
 
 const ta=$('script');
 const cnt=()=>{$('count').textContent=ta.value.length+' chars'};
@@ -221,14 +236,27 @@ async function poll(id){
     return showProgress(j.progress,`${j.status==='pending'?'Queued at provider':'Generating'} · ${j.elapsed}s elapsed · ~${left}s left (estimate)`);
   }
   stop();
-  $('stage').innerHTML=`<video controls autoplay loop src="${j.videoUrl}"></video>`;
+  $('stage').innerHTML=`<video controls autoplay loop playsinline src="${j.videoUrl}"></video>`;
   $('actions').innerHTML=`<a class="btn" href="${j.videoUrl}?download=1">⬇ Download MP4</a>`+(j.cost!=null?`<span class="meta" style="align-self:center">Cost $${j.cost}</span>`:'');
 }
 
 $('go').onclick=async()=>{
   $('err').textContent=''; $('actions').innerHTML='';
   const text=ta.value.trim(); if(!text) return $('err').textContent='Write or drop a script first.';
-  $('go').disabled=true; showProgress(0,'Submitting to OpenRouter…');
+  $('go').disabled=true;
+  const m=MODELS[model];
+  if(!$('duration').value){
+    // Auto: let the enhancer pick the length (keeps the user's text as written), fall back to a mid value
+    showProgress(0,'Choosing the best length…');
+    try{
+      const r=await fetch('/api/enhance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+        prompt:text,durations:m.durs,aspect_ratio:$('aspect').value,style:STYLES[style][1]})});
+      const j=await r.json(); if(r.ok&&j.duration) $('duration').value=j.duration;
+    }catch{}
+    if(!$('duration').value) $('duration').value=m.durs.includes(6)?6:m.durs[Math.floor(m.durs.length/2)];
+    updateCost();
+  }
+  showProgress(0,'Submitting to OpenRouter…');
   const s=STYLES[style][1];
   try{
     const r=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
@@ -242,9 +270,10 @@ $('enh').onclick=async()=>{
   $('err').textContent=''; const b=$('enh'); b.disabled=true; b.textContent='Enhancing…';
   try{
     const r=await fetch('/api/enhance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-      prompt:ta.value,duration:+$('duration').value,aspect_ratio:$('aspect').value,style:STYLES[style][1]})});
+      prompt:ta.value,duration:+$('duration').value||0,durations:MODELS[model].durs,aspect_ratio:$('aspect').value,style:STYLES[style][1]})});
     const j=await r.json(); if(!r.ok) throw new Error(j.error||'Enhance failed');
     ta.value=j.prompt; cnt();
+    if(j.duration){ $('duration').value=j.duration; updateCost(); window.toast&&toast(`Length set to ${j.duration} s for this prompt`); }
   }catch(e){$('err').textContent=e.message;}
   b.disabled=false; b.textContent='✨ Enhance prompt';
 };
