@@ -243,3 +243,40 @@ test("studio (page helper): total cost line with Auto, and money formatting", ()
   assert.equal(S.money(0.0001, 3), "<$0.001");
   assert.ok(S.validJobId("gen-vid-abc123def") && !S.validJobId("x") && !S.validJobId("a b c d e f g h"));
 });
+
+// ---------- themes + enhance ----------
+const { createThemes, themeText, qualityText, PRESETS } = require("../lib/themes");
+const { enhanceFilter } = require("../lib/enhance");
+
+test("themes: presets, saving a preset makes a copy, theme text and quality text", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "thm-"));
+  const t = createThemes(dir);
+  assert.equal(PRESETS.length, 6);
+  assert.ok(t.get("p-3dstory").builtin);
+  const mine = t.save({ id: "p-3dstory", character: "A traveller with curly black hair", outfit: "mustard raincoat", name: "Passport Story" });
+  assert.notEqual(mine.id, "p-3dstory");
+  assert.equal(mine.builtin, false);
+  assert.equal(mine.palette, t.get("p-3dstory").palette); // copied from the preset
+  assert.equal(t.save({ id: mine.id, outfit: "red coat" }).outfit, "red coat");
+  t.setImage(mine.id, "style", "data:image/png;base64,iVBORw0KGgo=");
+  assert.match(t.pub(t.get(mine.id)).styleImage, /\/api\/themes\/t[a-f0-9]+\/image/);
+  assert.throws(() => t.setImage(mine.id, "style", "nope"));
+  const txt = themeText(t.get(mine.id));
+  assert.match(txt, /Style: 3D animated/);
+  assert.match(txt, /exactly as described.*curly black hair/);
+  assert.match(txt, /Outfit, unchanged in every shot: red coat/);
+  assert.match(themeText(t.get(mine.id), "Saved influencer words"), /Saved influencer words/);
+  assert.equal(themeText(null), "");
+  assert.match(qualityText({ negative: "logos" }), /^ Quality: sharp focus.*Avoid: warping.*logos\.$/);
+  assert.equal(qualityText({ booster: false }), "");
+  t.remove(mine.id);
+  assert.equal(t.get(mine.id), null);
+});
+
+test("enhance: filter chain only upscales, in the right orientation", () => {
+  assert.equal(enhanceFilter({ upscale: "720p", smooth: true }, 480, 854),
+    "hqdn3d=1.5:1.5:6:6,minterpolate=fps=30:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1,scale=-2:1280:flags=lanczos,unsharp=5:5:0.7:5:5:0.0,format=yuv420p");
+  assert.match(enhanceFilter({ upscale: "1080p" }, 1280, 720), /scale=-2:1080/);
+  assert.doesNotMatch(enhanceFilter({ upscale: "720p" }, 1080, 1920), /scale=/); // never shrinks
+  assert.equal(enhanceFilter({ upscale: "none", sharpen: false, denoise: false }, 480, 854), "format=yuv420p");
+});

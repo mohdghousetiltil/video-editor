@@ -16,6 +16,7 @@ const { startCleanup } = require("./lib/cleanup");
 const modelsLib = require("./lib/models");
 const { createHistory } = require("./lib/history");
 const providers = require("./lib/providers");
+const { createThemes, themeText, qualityText } = require("./lib/themes");
 
 // Tiny .env loader (first, so every setting below can come from .env)
 try {
@@ -120,6 +121,12 @@ const spend = createSpend({ DATA, API, getKey: () => KEY, getCap: () => settings
 const logSpend = spend.log;
 const prices = createPrices({ API, getKey: () => KEY });
 const history = createHistory(DATA);
+const themes = createThemes(DATA);
+// storyboard stills: one picture per scene, approved before any video is paid for (work/stills/<id>.<ext>)
+const STILLS = path.join(STORE, "work", "stills");
+fs.mkdirSync(STILLS, { recursive: true });
+const stillFile = (id) => /^s[a-f0-9]{16}$/.test(id || "") && ["jpg", "png", "webp"].map((e) => path.join(STILLS, `${id}.${e}`)).find((f) => fs.existsSync(f));
+const fileDataUrl = (f) => `data:image/${path.extname(f).slice(1).replace("jpg", "jpeg")};base64,` + fs.readFileSync(f).toString("base64");
 // every video model with live capabilities and prices merged in (see lib/models.js)
 const liveModels = async () => modelsLib.merge(await prices.live().catch(() => null), await prices().catch(() => ({})));
 const textModel = () => settings.get().textModel || ENHANCE_MODEL;
@@ -130,7 +137,7 @@ const UNLOCKED = !!PROXY_KEY || !PUBLIC_URL_RAW() || process.env.ALLOW_OPEN === 
 function PUBLIC_URL_RAW() { return (process.env.PUBLIC_URL || "").trim(); }
 if (!UNLOCKED) console.error("PROXY_KEY is not set but PUBLIC_URL is: the API is locked. Set PROXY_KEY (same value as in Cloudflare).");
 // Paid endpoints are refused once the monthly cap (Settings) is reached.
-const PAID = /^\/api\/(generate|plan|cast|keyframe|tts|stitch|lookframe|startframe|describe|portraits|caption|enhance|shorts(\/upload)?|shorts\/\w+\/retry|influencers\/[\w-]+\/check)$/;
+const PAID = /^\/api\/(generate|plan|cast|keyframe|tts|stitch|lookframe|startframe|describe|portraits|caption|enhance|still|shorts(\/upload)?|shorts\/\w+\/retry|influencers\/[\w-]+\/check)$/;
 
 const MODELS = modelsLib.VIDEO; // capabilities per model; lib/models.js
 // ---- Motion page: share uploaded driving clips with the video provider (it needs a public HTTPS link) ----
@@ -264,9 +271,11 @@ const orHeaders = () => ({ Authorization: `Bearer ${KEY}`, "Content-Type": "appl
 // Shorts maker (long video -> analysed, cut, captioned 9:16 Short + thumbnail + title); see shorts.js
 const shorts = require("./shorts")({ STORE, FFMPEG, API, getKey: () => KEY, run, send, serveMp4, tts, logSpend, orFetch, renderSlot, getModel: () => settings.get().visionModel, serveThumb, history });
 const shortsRoutes = shorts.handle;
-const ctx = { STORE, DATA, API, getKey: () => KEY, orFetch, orHeaders, send, readBody, run, tts, spend, settings, serveMp4, serveThumb, mediaDuration, hasAudio, glitchFilter, renderSlot, prices, imgFile, history, liveModels, jobs, ensureVideo };
+const ctx = { STORE, DATA, API, getKey: () => KEY, orFetch, orHeaders, send, readBody, run, tts, spend, settings, serveMp4, serveThumb, mediaDuration, hasAudio, glitchFilter, renderSlot, prices, imgFile, history, liveModels, jobs, ensureVideo, themes, themeText, readInf, STILLS, stillFile, fileDataUrl };
 const story = require("./routes/story")(ctx);
 const systemRoutes = require("./routes/system")(ctx);
+const themeRoutes = require("./routes/themes")(ctx);
+const enhanceRoutes = require("./lib/enhance").createEnhance({ ...ctx, FFMPEG, VIDEO_CACHE });
 startCleanup(STORE, () => settings.get(), (id) => story.busy(id) || shorts.busy(id));
 
 // OpenRouter reports only a status, never a percentage, so pages show the stage and the time elapsed (no countdown).
@@ -292,6 +301,8 @@ const server = http.createServer(async (req, res) => {
       if (blocked) return send(res, 402, { error: blocked, cap: true });
     }
     if (await systemRoutes(req, res, url)) return;
+    if (await themeRoutes(req, res, url)) return;
+    if (await enhanceRoutes(req, res, url)) return;
     if (await story.handle(req, res, url)) return;
     if (await shortsRoutes(req, res, url)) return;
     if (req.method === "POST" && url.pathname === "/api/generate") {
@@ -312,7 +323,13 @@ const server = http.createServer(async (req, res) => {
       const ar = String(b.aspect_ratio || "");
       const frameRule = " Framing: one single continuous full-frame shot" + (ar ? ` composed for ${ar}${ar === "9:16" ? " vertical" : ""}` : "") +
         ". No split screen, no comic panels, no collage, no grid, no picture-in-picture, no borders or letterboxing.";
-      const body = { model, prompt: b.prompt.trim() + (MODELS[model]?.bare ? "" : frameRule) };
+      // Theme Lock: the saved look (style, palette, lighting, camera, character, outfit) goes into every prompt.
+      // A page can pass theme_id to use a theme once, or no_theme to skip it (e.g. copying a real video's motion).
+      const st = settings.get();
+      const theme = b.no_theme ? null : themes.get(typeof b.theme_id === "string" ? b.theme_id : st.themeLock ? st.themeId : null);
+      const charDesc = theme && theme.influencerId ? (readInf().find((x) => x.id === theme.influencerId) || {}).desc : null;
+      const extra = MODELS[model]?.bare ? "" : themeText(theme, charDesc) + qualityText({ booster: b.quality !== false, negative: b.negative, theme });
+      const body = { model, prompt: b.prompt.trim() + (MODELS[model]?.bare ? "" : frameRule) + extra };
       if (b.duration) body.duration = Number(b.duration);
       if (b.resolution) body.resolution = b.resolution;
       if (b.aspect_ratio) body.aspect_ratio = b.aspect_ratio;
@@ -350,6 +367,10 @@ const server = http.createServer(async (req, res) => {
         if (refs.length) body.input_references = refs;
         if (MODELS[model]?.bare) { delete body.duration; delete body.resolution; delete body.aspect_ratio; delete body.seed; delete body.generate_audio; }
       }
+      // Storyboard stills: the approved picture is the first frame; the next scene's picture can be the last frame
+      const sf = stillFile(b.still_id), lf = stillFile(b.last_still_id);
+      if (sf && !body.frame_images) { body.frame_images = [{ type: "image_url", image_url: { url: fileDataUrl(sf) }, frame_type: "first_frame" }]; delete body.input_references; }
+      if (lf && (live.frames || []).includes("last_frame")) body.frame_images = [...(body.frame_images || []), { type: "image_url", image_url: { url: fileDataUrl(lf) }, frame_type: "last_frame" }];
       // A start frame composed on the UGC page (influencer + product)
       if (typeof b.frame_image === "string" && /^data:image\/(jpeg|png|webp);base64,/.test(b.frame_image) && !body.frame_images) {
         body.frame_images = [{ type: "image_url", image_url: { url: b.frame_image }, frame_type: "first_frame" }];
@@ -365,6 +386,11 @@ const server = http.createServer(async (req, res) => {
           delete body.input_references; // frame_images takes precedence anyway
           note = "Started from the saved influencer picture.";
         }
+      }
+      // the theme's style picture guides the look when the clip doesn't already start from a picture
+      if (theme && !body.frame_images && !MODELS[model]?.bare && (body.input_references || []).length < 4) {
+        const sd = themes.styleDataUrl(theme.id);
+        if (sd) { body.input_references = [...(body.input_references || []), { type: "image_url", image_url: { url: sd } }]; body.prompt += " Use the reference picture only for the visual style, colours and rendering."; refImageAdded = true; }
       }
       // cheapest configured provider for this model (fal.ai / BytePlus when their keys are set, else OpenRouter)
       // end frame (Kling, Seedance, Veo, Wan…): the clip ends on this picture, so the next scene can start from it
@@ -391,7 +417,7 @@ const server = http.createServer(async (req, res) => {
       }
       if (!r.ok && refImageAdded && /real person|sensitive/i.test(JSON.stringify(j))) {
         body.input_references = body.input_references.filter((x) => x.type !== "image_url");
-        note = "The influencer picture was rejected by the provider (looks like a real person), so this was made from the motion video and your text only.";
+        note = "A reference picture was rejected by the provider (it looks like a real person), so this was made without it.";
         ({ r, j } = await submit());
       }
       if (!r.ok) return send(res, r.status, { error: j.error?.message || JSON.stringify(j) });
@@ -401,7 +427,8 @@ const server = http.createServer(async (req, res) => {
       jobs.set(j.id, { startedAt: Date.now(), status: j.status || "pending", polling_url: j.polling_url, model, feature, ...(extJob || {}), estimate: +(rate * (body.duration || modelsLib.defaultDur(live))).toFixed(4) });
       history.put(j.id, { kind: FEATURE_KIND[feature] || "clip", title: String(b.title || b.prompt).slice(0, 140), model, duration: body.duration, res: body.resolution, status: "pending", provider: route.provider,
         url: `/api/video/${j.id}`, thumb: `/api/video/${j.id}/thumb.jpg`, retry: { endpoint: "/api/generate", body: retryBody(b) } });
-      return send(res, 202, { id: j.id, note, provider: route.provider });
+      if (theme) history.put(j.id, { theme: theme.name });
+      return send(res, 202, { id: j.id, note, provider: route.provider, seed: body.seed ?? null, theme: theme ? theme.name : null });
     }
 
     // ---- Motion page: upload a driving video, prepare it, and manage the public link ----

@@ -67,6 +67,7 @@
 </style>
 <link rel="stylesheet" href="/app.css">
 <script src="/studio.js"></script>
+<script src="/theme.js"></script>
 </head>
 <body data-title="Story mode" data-sub="Paste a story and press one button: AI plans the scenes, keeps your characters looking the same in every shot, voices it and stitches one video. Open Advanced to fine-tune anything.">
 <div class="wrap">
@@ -139,6 +140,13 @@
     <h2>2 · Scenes (edit anything, switch models per scene)</h2>
     <label>Character &amp; setting bible (added to every scene so the look stays consistent)<textarea id="bible" style="min-height:70px"></textarea></label>
     <div id="castBox" class="castbox hidden"><img id="castImg" alt="Character sheet"><div><b>🔒 Character sheet</b> <span class="meta" id="castCost"></span><p class="meta">Every scene starts from a picture drawn from this sheet. Edited the bible? Redraw it.</p><button class="btn" id="castRedo" type="button">↻ Redraw sheet</button></div></div>
+    <div style="margin-top:14px;padding:12px;border:1px solid var(--line2);background:var(--panel2)">
+      <h2 style="margin-bottom:8px">🖼 Storyboard</h2>
+      <label style="flex-direction:row;align-items:center;gap:8px;color:var(--text);font-size:14px"><input type="checkbox" id="pictureFirst" checked style="width:auto"> <span><b>Picture first</b>: draw every scene as a still (about $0.02 each), check them side by side, swap any that look off, then animate each scene from its picture. Faces and colours stay the same.</span></label>
+      <label style="flex-direction:row;align-items:center;gap:8px;color:var(--text);font-size:14px;margin-top:6px"><input type="checkbox" id="connect" checked style="width:auto"> <span><b>Connect scenes</b>: each clip ends on the next scene's picture (on models with end-frame support: Veo, Seedance, Wan, Gemini), so cuts flow smoothly.</span></label>
+      <div class="row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px"><button class="btn" id="drawBoard" type="button">🖼 Draw storyboard</button><span class="meta" id="boardMsg" aria-live="polite"></span></div>
+      <div class="sboard" id="board"></div>
+    </div>
     <div style="margin-top:14px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--panel2)">
       <label style="flex-direction:row;align-items:center;gap:8px;margin-bottom:10px;color:var(--text);font-size:14px"><input type="checkbox" id="narOn" checked style="width:auto"> 🎙️ Add voiceover narration (each scene's narration is voiced and mixed into that scene)</label>
       <div class="grid" id="narGrid" style="margin:0">
@@ -196,7 +204,10 @@ S.models().then(({map})=>{
 const BUDGET_VIDEO='x-ai/grok-imagine-video-1.5-lite', BUDGET_RESERVE=0.005; // reserve: planning + narration voice
 // character lock: one sheet (~$0.01) + per scene a first frame (~$0.01) and the video model reading it (~$0.01)
 const LOCK_SHEET=0.01, LOCK_SCENE=0.02;
-const lockCost=()=>$('lock').checked?LOCK_SHEET+scenes.filter((s,i)=>!(i>0&&s.continues&&$('chain').checked)).length*LOCK_SCENE:0;
+const STILL_COST=0.02; // one storyboard picture + the video model reading it
+const boardScenes=()=>scenes.map((s,i)=>i).filter(i=>!(i>0&&scenes[i].continues&&$('chain').checked));
+const stillCost=()=>$('pictureFirst')&&$('pictureFirst').checked?boardScenes().filter(i=>!scenes[i].still).length*STILL_COST:0;
+const lockCost=()=>$('lock').checked?LOCK_SHEET+($('pictureFirst')&&$('pictureFirst').checked?0:boardScenes().length*LOCK_SCENE):0;
 const minSec=m=>MIN[m]||4, maxSec=m=>MAX[m]||15;
 const NAME=m=>$('cheap').querySelector(`option[value="${m}"]`)?.textContent.split(' (')[0]||$('good').querySelector(`option[value="${m}"]`)?.textContent.split(' (')[0]||m;
 let scenes=[];
@@ -225,7 +236,7 @@ function render(){
     if(f==='model'||f==='seconds') el.closest('.scene').querySelector('[data-cost]').textContent='$'+price(scenes[i]).toFixed(2);
     totals();
   }));
-  totals();
+  totals(); renderBoard();
 }
 const TTS={
   'hexgrad/kokoro-82m':{label:'Kokoro 82M (cheapest)',perSec:.00003,voices:['am_adam','am_michael','am_onyx','bm_george','bm_daniel','af_heart','af_bella','af_nicole','bf_emma']},
@@ -246,7 +257,7 @@ function narCost(){ if(!$('narOn').checked) return 0; const p=TTS[$('ttsModel').
 function dur(s){const d=Math.max(minSec(s.model),Math.min(maxSec(s.model),Math.round(s.seconds)||minSec(s.model))), a=DURS[s.model]; return a&&a.length?a.reduce((b,n)=>Math.abs(n-d)<Math.abs(b-d)?n:b,a[0]):d}
 function price(s){return (PRICE[s.model]?.[$('res').value]||0)*dur(s)}
 function totals(){
-  const nc=narCost(), lc=lockCost(), t=scenes.reduce((a,s)=>a+price(s),0)+nc+lc, d=scenes.reduce((a,s)=>a+dur(s),0);
+  const nc=narCost(), lc=lockCost()+stillCost(), t=scenes.reduce((a,s)=>a+price(s),0)+nc+lc, d=scenes.reduce((a,s)=>a+dur(s),0);
   budgetNote();
   $('total$').textContent='≈ $'+t.toFixed(2); $('secs').textContent=`(${d}s of video, ${scenes.length} scenes)`;
   // breakdown: key vs filler, and savings vs rendering everything on the quality model
@@ -259,7 +270,7 @@ function totals(){
     `<div><span class="meta">Filler scenes (${fillS.length} · ${secs(fillS)}s)</span><b>$${sum(fillS).toFixed(2)}</b></div>`+
     `<div><span class="meta">All on ${NAME($('good').value)} would be</span><b>$${allGood.toFixed(2)}</b></div>`+
     `<div><span class="meta">Narration voiceover</span><b>${nc>0?'$'+nc.toFixed(3):'off'}</b></div>`+
-    `<div><span class="meta">🔒 Character lock</span><b>${lc>0?'$'+lc.toFixed(2):'off'}</b></div>`+
+    `<div><span class="meta">🔒 Character sheet + storyboard pictures still to draw</span><b>${lc>0?'$'+lc.toFixed(2):'none'}</b></div>`+
     `<div><span class="meta">You save</span><b style="color:var(--ok)">${save>0?'$'+save.toFixed(2)+' ('+Math.round(save/allGood*100)+'%)':'$0.00'}</b></div>`;
 }
 
@@ -349,7 +360,7 @@ async function planScenes(){
   let ok=false;
   try{
     const r=await fetch('/api/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-      script:$('script').value,total:+$('total').value,aspect:$('aspect').value,style:$('style').value})});
+      script:$('script').value,total:+$('total').value,aspect:$('aspect').value,style:(()=>{const t=S.theme&&S.theme(); return t?[t.style,t.palette&&'palette: '+t.palette,t.lighting&&'lighting: '+t.lighting,t.character&&'main character: '+t.character,t.outfit&&'outfit: '+t.outfit].filter(Boolean).join('; '):$('style').value;})()})});
     const j=await r.json(); if(!r.ok) throw new Error(j.error||'Planning failed');
     $('bible').value=j.bible||'';
     scenes=j.scenes.map(s=>({title:s.title,prompt:s.prompt,seconds:Math.round(s.seconds)||6,key:!!s.key,continues:!!s.continues,narration:s.narration||'',model:s.key?$('good').value:$('cheap').value}));
@@ -367,6 +378,14 @@ $('auto').onclick=async()=>{
   const b=$('auto'); b.disabled=true; b.textContent='Working…';
   applyPreset();
   if(await planScenes()){
+    if($('pictureFirst').checked){
+      const n=boardScenes().length, sheet=$('lock').checked?LOCK_SHEET:0;
+      if(await S.confirmSpend({title:`Draw the storyboard (${n} pictures)?`,total:n*STILL_COST+sheet,rows:[['Pictures',`${n} × about ${S.money(STILL_COST)}`],['Character sheet',sheet?S.money(sheet):'off'],['Video','not yet: you approve the pictures first']]})){
+        try{ await drawBoard(boardScenes(),true); }catch(e){ $('err').textContent=e.message; }
+        $('planPanel').scrollIntoView({behavior:'smooth'}); toast('Check the storyboard, swap any scene that looks off, then press Animate.');
+      }
+      b.disabled=false; b.textContent='✨ Make my video'; return;
+    }
     if(await confirmScenes(pending())){ $('outPanel').classList.remove('hidden'); $('outPanel').scrollIntoView({behavior:'smooth'}); execute(pending(),false); }
     else { $('planPanel').scrollIntoView({behavior:'smooth'}); toast('Scenes planned: review them below, nothing was charged for video.'); }
   }
@@ -416,21 +435,24 @@ async function run(i){
     if(jobs[i-1].failed) return failJob(i,'skipped because the previous scene failed',true);
     prev=jobs[i-1].id;
   }
+  const pf=$('pictureFirst').checked&&s.still&&!prev;
+  const nx=scenes[i+1], endStill=pf&&$('connect').checked&&nx&&nx.still&&!(nx.continues&&$('chain').checked)?nx.still.id:undefined;
   if(!job.id){
     try{
-      if($('lock').checked&&!prev&&projCast&&!s._frame){
+      if(!pf&&$('lock').checked&&!prev&&projCast&&!s._frame){
         $('m'+i).textContent='🔒 drawing this scene\'s first frame from the character sheet…';
         const k=await fetch('/api/keyframe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cast:projCast.id,prompt:s.prompt,aspect_ratio:$('aspect').value,style:$('style').value})});
         const kj=await k.json(); if(!k.ok) throw new Error(kj.error||'Scene frame failed');
         s._frame=kj.image;
       }
-      if(s._frame&&!prev) $('r'+i).innerHTML=`<img class="kf" src="${s._frame}" alt="First frame">`;
+      if(pf) $('r'+i).innerHTML=`<img class="kf" src="${s.still.url}" alt="Scene ${i+1} picture">`;
+      else if(s._frame&&!prev) $('r'+i).innerHTML=`<img class="kf" src="${s._frame}" alt="First frame">`;
       const r=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
         model:s.model,prompt:(bible?bible+' ':'')+s.prompt+(style?' Visual style: '+style:''),duration:dur(s),
         resolution:$('res').value,aspect_ratio:$('aspect').value,generate_audio:false,frame_from_job:prev,seed:storySeed(),title:'Scene '+(i+1)+': '+(s.title||''),
-        ...(s._frame&&!prev?{frame_image:s._frame,frame_note:'🔒 Started from the locked character frame.'}:{})})});
+        ...(pf?{still_id:s.still.id,last_still_id:endStill}:s._frame&&!prev?{frame_image:s._frame,frame_note:'🔒 Started from the locked character frame.'}:{})})});
       const j=await r.json(); if(!r.ok) throw new Error(j.error||'failed');
-      job.id=j.id; note=j.note?'⚠ '+j.note+' · ':(prev?'↪ from previous last frame · ':''); save();
+      job.id=j.id; note=j.note?'⚠ '+j.note+' · ':(prev?'↪ from previous last frame · ':pf?'🖼 from its picture'+(endStill?' → next picture':'')+' · ':''); save();
     }catch(e){ return failJob(i,e.message); }
   }
   for(;;){
@@ -449,6 +471,9 @@ async function execute(idxs,keep){
   if($('lock').checked&&!projCast){
     try{ await ensureCast(); }catch(e){ $('final').textContent='❌ '+e.message+' (untick "Keep characters consistent" to go without it)'; $('gen').disabled=false; return; }
     $('final').textContent='Starting scenes…';
+  }
+  if($('pictureFirst').checked&&idxs.some(i=>boardScenes().includes(i)&&!scenes[i].still)){
+    try{ await drawBoard(idxs.filter(i=>!scenes[i].still),true); }catch(e){ $('final').textContent='❌ '+e.message; $('gen').disabled=false; return; }
   }
   if(!keep) idxs.forEach(i=>{ jobs[i]={i,id:null,done:false,failed:false}; if($('r'+i)) $('r'+i).innerHTML=''; if($('f'+i)) $('f'+i).style.width='0'; if($('m'+i)) $('m'+i).textContent=''; });
   idxs.forEach(i=>{ runP[i]=run(i); });
@@ -472,18 +497,18 @@ async function retry(i,all){
 }
 function pending(){ return scenes.map((_,i)=>jobs[i]&&jobs[i].id&&jobs[i].done&&!jobs[i].failed?-1:i).filter(i=>i>=0); }
 function updateGen(){
-  const left=pending().length, done=scenes.length-left;
-  $('gen').innerHTML=left===0&&done>0?'🎙️ Re-stitch existing clips with the current narration &amp; voice (no new video cost)':done>0?'Continue: generate remaining '+left+' scene(s) &amp; stitch':'Generate all scenes &amp; stitch';
+  const left=pending().length, done=scenes.length-left, board=$('pictureFirst').checked&&scenes.some(s=>s.still);
+  $('gen').innerHTML=board&&done===0?'🎬 Animate all scenes from their pictures &amp; stitch':left===0&&done>0?'🎙️ Re-stitch existing clips with the current narration &amp; voice (no new video cost)':done>0?'Continue: generate remaining '+left+' scene(s) &amp; stitch':'Generate all scenes &amp; stitch';
   $('regen').classList.toggle('hidden',done===0);
 }
 async function confirmScenes(todo){
   if(!todo.length) return true;
   const vid=todo.reduce((a,i)=>a+price(scenes[i]),0), secs=todo.reduce((a,i)=>a+dur(scenes[i]),0);
-  const lock=$('lock').checked&&!projCast?lockCost():0, nc=narCost();
+  const lock=($('lock').checked&&!projCast?lockCost():0)+stillCost(), nc=narCost();
   const names=[...new Set(todo.map(i=>NAME(scenes[i].model)))].join(', ');
   return S.confirmSpend({title:`Generate ${todo.length} scene${todo.length>1?'s':''} and stitch?`,total:vid+lock+nc,rows:[
     ['Models',names],['Video',`${secs} s in ${todo.length} clips`],['Resolution',$('res').value],['Aspect',$('aspect').value],
-    ['Character lock',lock?S.money(lock):'off'],['Narration',nc?S.money(nc,3)+' (estimate)':'off']],
+    ['Pictures / character sheet',lock?S.money(lock):'already drawn'],['Narration',nc?S.money(nc,3)+' (estimate)':'off'],['Theme',S.theme&&S.theme()?S.theme().name+' (locked)':'off']],
     note:$('budget').checked?$('budgetWarn').textContent:'Finished scenes are reused and never charged twice.'});
 }
 $('gen').onclick=async()=>{
@@ -506,10 +531,63 @@ async function stitch(ids){
     const actual=jobs.reduce((a,x)=>a+(x&&x.cost||0),0), est=scenes.reduce((a,s)=>a+price(s),0);
     const costLine=actual?`<p class="meta">Video cost reported by OpenRouter for these scenes: <b>${S.money(actual,3)}</b> (estimate was ${S.money(est,3)}). Character pictures and narration are on top; the month total in the sidebar is OpenRouter's own figure.</p>`:'';
     $('final').innerHTML=costLine+(d.warnings&&d.warnings.length?'<div style="color:var(--warn);margin-bottom:8px">⚠ '+d.warnings.join('<br>⚠ ')+'</div>':'')+`<video controls autoplay loop playsinline src="${d.url}"></video><a class="btn" href="${d.url}?download=1" style="text-decoration:none;display:inline-block">⬇ Download MP4</a>`;
+    S.mountEnhance&&S.mountEnhance($('final'),{src:d.url});
     mountShare($('final'),{url:d.url,name:'story.mp4',prompt:$('script').value});
     window.dispatchEvent(new Event('spend-changed'));
   },1500);
 }
+
+/* ---------------- storyboard: one picture per scene, approved before paying for video ---------------- */
+function renderBoard(){
+  const on=$('pictureFirst').checked, b=$('board');
+  b.className='sboard'+($('aspect').value==='16:9'?' r169':$('aspect').value==='1:1'?' r11':'');
+  $('drawBoard').disabled=!scenes.length; if(!on){ b.innerHTML=''; $('boardMsg').textContent='Off: scenes are made from text'+($('lock').checked?' and the character sheet.':'.'); return; }
+  const need=boardScenes().filter(i=>!scenes[i].still).length;
+  $('drawBoard').textContent=need===boardScenes().length?'🖼 Draw storyboard':need?`🖼 Draw the ${need} missing picture${need>1?'s':''}`:'↻ Redraw all pictures';
+  $('boardMsg').textContent=scenes.length?(need?`≈ ${S.money(need*STILL_COST)} for ${need} picture${need>1?'s':''}`:'All pictures ready. Scene 3 looks off? Redraw or swap it before animating.'):'';
+  b.innerHTML=scenes.map((s,i)=>{ const cont=i>0&&s.continues&&$('chain').checked;
+    return `<div class="sb-cell" data-i="${i}"><div class="sb-img" style="${s.still?`background-image:url('${s.still.url}')`:''}">${s.still?'':cont?'↪ continues':'no picture'}</div>
+      <b>${i+1}. ${esc((s.title||'Scene').slice(0,22))}</b>${cont?'<span class="meta">starts from scene '+i+'\'s end</span>':`<div class="row2"><button class="btn" type="button" data-redo title="Draw this picture again (about ${S.money(STILL_COST)})">↻</button><label class="btn" title="Use your own picture (AI-made)">⬆<input type="file" accept="image/jpeg,image/png,image/webp" hidden data-up></label></div>`}</div>`; }).join('');
+  b.querySelectorAll('.sb-cell').forEach(c=>{ const i=+c.dataset.i;
+    const r=c.querySelector('[data-redo]'); if(r) r.onclick=async()=>{ if(!(await S.confirmSpend({title:`Redraw scene ${i+1}'s picture?`,total:STILL_COST,rows:[['Scene',scenes[i].title||'']]}))) return; r.disabled=true; try{ await drawBoard([i],false,true); }catch(e){ toast(e.message,'err'); } };
+    const u=c.querySelector('[data-up]'); if(u) u.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
+      try{ const data=await new Promise((res,rej)=>{const fr=new FileReader();fr.onload=()=>res(fr.result);fr.onerror=rej;fr.readAsDataURL(f);});
+        const rr=await fetch('/api/stills/upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:data})}); const j=await rr.json(); if(!rr.ok) throw new Error(j.error);
+        scenes[i].still={id:j.id,url:j.url}; resetJob(i); save(); renderBoard(); toast('Scene '+(i+1)+' now starts from your picture. Real people\'s photos get blocked by the video models.'); }catch(err){ toast(err.message||'Upload failed','err'); } };
+  });
+  updateGen(); totals0();
+}
+function totals0(){ if(scenes.length) { const t=$('total$'); if(t){ const nc=narCost(), lc=lockCost()+stillCost(); t.textContent='≈ $'+(scenes.reduce((a,s)=>a+price(s),0)+nc+lc).toFixed(2); } } }
+// a scene whose picture changed has to be made again
+function resetJob(i){ if(jobs[i]&&jobs[i].done){ jobs[i]=undefined; } }
+async function drawBoard(idxs,confirmed,redo){
+  idxs=idxs.filter(i=>boardScenes().includes(i)); if(!idxs.length) return;
+  if(!confirmed&&!redo&&!(await S.confirmSpend({title:`Draw ${idxs.length} storyboard picture${idxs.length>1?'s':''}?`,total:idxs.length*STILL_COST+($('lock').checked&&!projCast?LOCK_SHEET:0),rows:[['Pictures',`${idxs.length} × about ${S.money(STILL_COST)}`],['Theme',S.theme&&S.theme()?S.theme().name:'off'],['Character sheet',$('lock').checked?(projCast?'already drawn':S.money(LOCK_SHEET)):'off']]}))) return;
+  if($('lock').checked&&!projCast) await ensureCast();
+  $('drawBoard').disabled=true; let done=0, failed=0;
+  const bible=$('bible').value.trim(), th=S.theme&&S.theme();
+  const one=async(i)=>{ const s=scenes[i];
+    $('boardMsg').textContent=`Drawing pictures… ${done}/${idxs.length}`;
+    try{
+      const r=await fetch('/api/still',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:(bible?bible+' ':'')+s.prompt,aspect_ratio:$('aspect').value,cast:$('lock').checked&&projCast?projCast.id:undefined,influencer_id:$('castInf').value||undefined,style:th?undefined:$('style').value})});
+      const j=await r.json(); if(!r.ok) throw new Error(j.error||'Picture failed');
+      s.still={id:j.id,url:j.url}; resetJob(i);
+    }catch(e){ failed++; if(failed===1) toast('Scene '+(i+1)+': '+e.message,'err'); }
+    done++; renderBoard();
+  };
+  const q=[...idxs]; await Promise.all(Array.from({length:Math.min(3,q.length)},async()=>{ while(q.length) await one(q.shift()); }));
+  save(); renderBoard(); window.dispatchEvent(new Event('spend-changed'));
+  $('boardMsg').textContent=failed?`${failed} picture${failed>1?'s':''} failed: press Draw again for the missing ones.`:'Pictures ready. Swap any that look off, then animate.';
+  if(failed&&confirmed) throw new Error(failed+' storyboard picture(s) failed. Draw the missing ones, then try again.');
+}
+$('drawBoard').onclick=()=>{ const need=boardScenes().filter(i=>!scenes[i].still); drawBoard(need.length?need:boardScenes()); };
+['pictureFirst','connect','chain','aspect'].forEach(id=>$(id).addEventListener('change',()=>{ if(scenes.length) render(); }));
+// Theme Lock: the theme's look replaces the Style choice; picking a theme switches to its models and resolution
+addEventListener('theme-changed',e=>{
+  const t=e.detail.theme;
+  $('style').disabled=!!t; $('style').title=t?'Style comes from the '+t.name+' theme':'';
+  if(t&&e.detail.picked&&t.models){ $('preset').value='custom'; if([...$('cheap').options].some(o=>o.value===t.models.cheap)) $('cheap').value=t.models.cheap; if([...$('good').options].some(o=>o.value===t.models.good)) $('good').value=t.models.good; else if(!$('good').querySelector(`option[value="${t.models.good}"]`)){ $('good').insertAdjacentHTML('beforeend',`<option value="${t.models.good}">${t.models.good}</option>`); $('good').value=t.models.good; } $('res').value=['480p','720p'].includes(t.models.res)?t.models.res:'720p'; $('glitch').checked=t.look==='glitch'; $('budget').checked=false; ['res','cheap','good'].forEach(id=>$(id).dispatchEvent(new Event('change'))); presetNote(); toast(`${t.name}: ${NAME(t.models.cheap)} for B-roll, ${NAME(t.models.good)} for key scenes`); }
+});
 
 /* ---------------- history (saved on the server, so every device sees it) ---------------- */
 const HKEY='storyHistory', FIELDS=['script','total','aspect','res','style','cheap','good','bible','ttsModel','ttsVoice','ttsTone','budgetAmt','preset','quickLen','quickLook','castInf'];
