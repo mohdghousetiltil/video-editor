@@ -154,14 +154,22 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
     if (a < 0 || b < a) throw new Error("The model didn't return JSON");
     return JSON.parse(s.slice(a, b + 1));
   };
-  async function askVideo(job, file, prompt, maxTokens = 3000) {
+  // Models now and then send JSON with a stray character in it; ask once more (stricter) before giving up.
+  async function askVideo(job, file, prompt, maxTokens = 3000, retry = true) {
+    try { return await askVideoOnce(job, file, prompt, maxTokens, 0.4); }
+    catch (e) {
+      if (!retry || !e.badJson) throw e;
+      return askVideoOnce(job, file, prompt + "\nIMPORTANT: answer with ONE valid JSON object only: double-quoted keys and strings, no comments, no trailing commas.", maxTokens, 0.1);
+    }
+  }
+  async function askVideoOnce(job, file, prompt, maxTokens, temperature) {
     const b64 = fs.readFileSync(file).toString("base64");
     const model = modelNow();
     const r = await orFetch(`${API}/chat/completions`, {
       method: "POST",
       headers: { Authorization: `Bearer ${getKey()}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model, max_tokens: Math.max(maxTokens, /muse-spark/.test(model) ? 8000 : 0), temperature: 0.4,
+        model, max_tokens: Math.max(maxTokens, /muse-spark/.test(model) ? 8000 : 0), temperature,
         messages: [{ role: "user", content: [{ type: "text", text: prompt }, { type: "video_url", video_url: { url: `data:video/mp4;base64,${b64}` } }] }],
       }),
     });
@@ -181,7 +189,8 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       throw new Error("Video analysis failed: " + msg);
     }
     job.cost = (job.cost || 0) + (j.usage?.cost || 0);
-    return parseJson(j.choices?.[0]?.message?.content);
+    try { return parseJson(j.choices?.[0]?.message?.content); }
+    catch (e) { throw Object.assign(new Error("The AI's answer couldn't be read (" + e.message + "). Try again."), { badJson: true }); }
   }
 
   const hms = (s) => { s = Math.max(0, Math.round(s)); return `${Math.floor(s / 3600)}:${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; };
@@ -364,28 +373,37 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       //    (the "beat" rhythm short-form editors use) so the picture never sits still for long.
       setStep(job, 3, 50);
       const zoom = opts.edit !== "clean";
-      const beats = [];
+      // Each beat is rendered on its own (seek, frame it, zoom, encode) and the beats are then joined without
+      // re-encoding. Doing it in one filter graph (split -> trim -> concat) made every later beat buffer full-size
+      // frames while waiting its turn: gigabytes of memory on a 30 s clip, and the server killed ffmpeg.
+      // Lengths are whole frames so the separately cut audio stays in sync.
+      const FPS = 30, beats = [], audioSegs = [];
       for (const s of segs) {
-        const d = s.end - s.start, k = zoom ? Math.max(1, Math.round(d / 4.5)) : 1;
-        for (let i = 0; i < k; i++) beats.push({ start: s.start + (d * i) / k - start, end: s.start + (d * (i + 1)) / k - start, z: zoom && beats.length % 2 === 1 });
+        const F = Math.max(1, Math.round((s.end - s.start) * FPS)), k = zoom ? Math.max(1, Math.round(F / FPS / 4.5)) : 1;
+        let f0 = 0;
+        for (let i = 0; i < k; i++) {
+          const f1 = Math.round((F * (i + 1)) / k);
+          beats.push({ t: s.start + f0 / FPS, frames: f1 - f0, z: zoom && beats.length % 2 === 1 });
+          f0 = f1;
+        }
+        audioSegs.push({ a: s.start - start, b: s.start - start + F / FPS });
       }
-      let fc = `[0:v]fps=30,split=${beats.length}${beats.map((_, i) => `[s${i}]`).join("")};`;
-      beats.forEach((b, i) => {
-        fc += frameFilter(src, framing, focusX, `[s${i}]trim=start=${b.start.toFixed(3)}:end=${b.end.toFixed(3)},setpts=PTS-STARTPTS,`, i) +
-          (b.z ? ",scale=1210:2150,crop=1080:1920,setsar=1" : "") + `[v${i}];`;
-      });
-      fc += beats.map((_, i) => `[v${i}]`).join("") + `concat=n=${beats.length}:v=1:a=0[vc]`;
+      await pool(beats, 2, (b, i) => run(["-y", "-ss", b.t.toFixed(3), "-i", srcFile, "-filter_complex",
+        frameFilter(src, framing, focusX, "[0:v]fps=30,", i) + (b.z ? ",scale=1210:2150,crop=1080:1920,setsar=1" : "") + ",format=yuv420p[v]",
+        "-map", "[v]", "-frames:v", String(b.frames), "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "17", "-video_track_timescale", "15360", `beat${i}.mp4`], dir)
+        .then(() => setStep(job, 3, 50 + ((i + 1) / beats.length) * 10)));
+      fs.writeFileSync(path.join(dir, "beats.txt"), beats.map((_, i) => `file 'beat${i}.mp4'`).join("\n"));
+      let afc = "";
       if (src.audio) {
-        fc += `;[0:a]asplit=${segs.length}${segs.map((_, i) => `[as${i}]`).join("")};`;
-        segs.forEach((s, i) => {
-          const a = s.start - start, b = s.end - start;
-          fc += `[as${i}]atrim=start=${a.toFixed(3)}:end=${b.toFixed(3)},asetpts=PTS-STARTPTS,afade=t=in:d=0.03,afade=t=out:st=${(b - a - 0.04).toFixed(3)}:d=0.04[a${i}];`;
+        afc = `[1:a]asplit=${audioSegs.length}${audioSegs.map((_, i) => `[as${i}]`).join("")};`;
+        audioSegs.forEach(({ a, b }, i) => {
+          afc += `[as${i}]atrim=start=${a.toFixed(4)}:end=${b.toFixed(4)},asetpts=PTS-STARTPTS,afade=t=in:d=0.03,afade=t=out:st=${(b - a - 0.04).toFixed(3)}:d=0.04[a${i}];`;
         });
-        fc += segs.map((_, i) => `[a${i}]`).join("") + `concat=n=${segs.length}:v=0:a=1[ac]`;
+        afc += audioSegs.map((_, i) => `[a${i}]`).join("") + `concat=n=${audioSegs.length}:v=0:a=1[ac]`;
       }
-      await run(["-y", "-ss", start.toFixed(3), "-t", (end - start + 0.1).toFixed(3), "-i", srcFile, "-filter_complex", fc, "-map", "[vc]",
-        ...(src.audio ? ["-map", "[ac]", "-c:a", "aac", "-b:a", "192k", "-ar", "48000"] : ["-an"]),
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "17", "cut.mp4"], dir);
+      await run(["-y", "-f", "concat", "-safe", "0", "-i", "beats.txt",
+        ...(src.audio ? ["-ss", start.toFixed(3), "-t", (end - start + 0.1).toFixed(3), "-i", srcFile, "-filter_complex", afc, "-map", "0:v", "-map", "[ac]", "-c:a", "aac", "-b:a", "192k", "-ar", "48000"] : ["-map", "0:v", "-an"]),
+        "-c:v", "copy", "cut.mp4"], dir);
       const cutLen = (await audioLen(path.join(dir, "cut.mp4"))) || len;
 
       // 4. captions + voiceover script, from the finished cut (so timings match what viewers see)
@@ -514,7 +532,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       saveMeta(id, { id, status: "failed", createdAt: job.createdAt, error: job.error, source: job.source || null });
     } finally {
       logSpend("Shorts", (job.cost || 0) - (job.ttsCost || 0), modelNow(), "short-" + id); // voice is logged by tts() itself
-      for (const f of fs.readdirSync(dir)) if (/^(src\.|proxy\.mp4|part\d+\.mp4|win\d+\.mp4|wins\.txt|reel\.mp4|cut\.mp4|cap\.mp4|vo\d+\.mp3|cookies\.txt|.*\.part$)/.test(f)) fs.rm(path.join(dir, f), { force: true }, () => {});
+      for (const f of fs.readdirSync(dir)) if (/^(src\.|proxy\.mp4|part\d+\.mp4|win\d+\.mp4|wins\.txt|beat\d+\.mp4|beats\.txt|reel\.mp4|cut\.mp4|cap\.mp4|vo\d+\.mp3|cookies\.txt|.*\.part$)/.test(f)) fs.rm(path.join(dir, f), { force: true }, () => {});
       setTimeout(() => jobs.delete(id), 60 * 60 * 1000);
     }
   }

@@ -14,6 +14,14 @@ const { createPrices } = require("./lib/prices");
 const { persistentMap } = require("./lib/store");
 const { startCleanup } = require("./lib/cleanup");
 
+// Tiny .env loader (first, so every setting below can come from .env)
+try {
+  for (const line of fs.readFileSync(path.join(__dirname, ".env"), "utf8").split(/\r?\n/)) {
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/i);
+    if (m && !(m[1] in process.env)) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
+  }
+} catch {}
+
 // DATA_DIR: where influencers + generated files live. On Railway point it at a mounted volume (e.g. /data).
 const STORE = process.env.DATA_DIR || __dirname;
 const DATA = path.join(STORE, "data");
@@ -33,15 +41,29 @@ const pageFeature = (req) => {
 const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
 // Rendering limits: at most FFMPEG_SLOTS ffmpeg processes at once, and at most RENDER_JOBS whole jobs (a Short, a
 // Story stitch) at once; the rest wait in line. Keeps a small server from running out of memory.
-const ffSlot = createLimiter(Math.max(1, Number(process.env.FFMPEG_SLOTS) || 2));
+// On a public server (PUBLIC_URL set) defaults are for a small machine: one ffmpeg at a time, 2 threads each.
+const SMALL = !!(process.env.PUBLIC_URL || "").trim();
+const ffSlot = createLimiter(Math.max(1, Number(process.env.FFMPEG_SLOTS) || (SMALL ? 1 : 2)));
+const FF_THREADS = process.env.FFMPEG_THREADS != null && process.env.FFMPEG_THREADS !== "" ? Math.max(0, Number(process.env.FFMPEG_THREADS) || 0) : SMALL ? 2 : 0;
 const renderSlot = createLimiter(Math.max(1, Number(process.env.RENDER_JOBS) || (process.env.PUBLIC_URL ? 1 : 2)));
 const run = (args, cwd) => ffSlot(() =>
   new Promise((resolve, reject) => {
-    const p = spawn(FFMPEG, args, { cwd });
+    // -nostats: no "frame= … speed=" progress lines, so a failure shows ffmpeg's real error instead of them.
+    // Threads: x264 and the filters start one thread per CPU core and each holds frames; at 1080x1920 that alone
+    // reached 600-800 MB per process. Capped, a step stays under ~500 MB (FFMPEG_THREADS, 0 = no cap).
+    const th = FF_THREADS ? ["-filter_threads", String(FF_THREADS), "-filter_complex_threads", String(FF_THREADS)] : [];
+    const out = FF_THREADS ? [...args.slice(0, -1), "-threads", String(FF_THREADS), args[args.length - 1]] : args;
+    const p = spawn(FFMPEG, ["-hide_banner", "-nostats", ...th, ...out], { cwd });
     let err = "";
-    p.stderr.on("data", (d) => (err += d));
+    p.stderr.on("data", (d) => { err += d; if (err.length > 200000) err = err.slice(-100000); });
     p.on("error", (e) => reject(new Error("ffmpeg not found. Install it or set FFMPEG_PATH in .env (" + e.message + ")")));
-    p.on("close", (code) => (code === 0 ? resolve(err) : reject(new Error(err.slice(-400)))));
+    p.on("close", (code, signal) => {
+      if (code === 0) return resolve(err);
+      if (signal || code === 137 || code === -9) // stopped from outside: on a server that's almost always the memory limit
+        return reject(new Error(`The video renderer was stopped by the server (${signal || "code " + code}), most likely because it ran out of memory. Try a shorter clip, "Clean" editing, or give the server more memory.`));
+      const lines = err.split(/\r?\n/).filter((l) => l.trim() && !/^\s*(frame=|size=|Press \[q\]|Stream mapping|  Stream #|Input #|Output #|  Metadata|  Duration|\s{4})/.test(l));
+      reject(new Error("Video render failed: " + (lines.slice(-6).join(" · ") || err.slice(-300)).slice(-500)));
+    });
   }));
 // Download a finished job's video and return its last frame as a JPEG data URL
 async function lastFrame(id) {
@@ -81,14 +103,6 @@ const hasAudio = (file) =>
     p.on("error", () => resolve(false));
     p.on("close", () => resolve(/Audio:/.test(err)));
   });
-
-// Tiny .env loader
-try {
-  for (const line of fs.readFileSync(path.join(__dirname, ".env"), "utf8").split(/\r?\n/)) {
-    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/i);
-    if (m && !(m[1] in process.env)) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
-  }
-} catch {}
 
 const KEY = process.env.OPENROUTER_API_KEY;
 const MODEL = process.env.VIDEO_MODEL || "bytedance/seedance-2.0-fast";

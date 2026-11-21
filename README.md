@@ -57,7 +57,7 @@ Options → "Search only this part": give a From / To time (12:30, 1:02:03) and 
 ## Reliability
 
 - **PROXY_KEY is required** when `PUBLIC_URL` is set: without it the API answers 503 so nobody who finds the backend address can spend your credit (set `ALLOW_OPEN=1` only for testing).
-- Rendering is queued: `RENDER_JOBS` whole jobs at once (default 1 on a public server, 2 locally) and `FFMPEG_SLOTS` ffmpeg processes (default 2).
+- Rendering is queued and sized for a small server: `RENDER_JOBS` whole jobs at once (default 1 on a public server, 2 locally), `FFMPEG_SLOTS` ffmpeg processes (default 1 public / 2 local) and `FFMPEG_THREADS` threads per process (default 2 public / no cap locally; 0 = no cap). Each step then peaks around 500 MB. Shorts edits render one jump-cut piece at a time, so memory no longer grows with the Short's length.
 - Video jobs (`data/jobs.json`), Story stitches (`work/<id>/status.json`) and Shorts survive restarts; anything cut off mid-way is marked as failed with a clear message instead of spinning forever.
 - OpenRouter calls retry twice on rate limits and passing server errors; calls that start paid work are only retried when it's safe (429 or never sent), so nothing is charged twice.
 - Old working files are cleaned up every 6 hours (Settings → Storage).
