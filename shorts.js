@@ -7,6 +7,8 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { spawn } = require("child_process");
+const { glitchFilter } = require("./glitch");
+const { toSec, cleanSegments, parseTime } = require("./lib/cut");
 
 // Narrator voices (OpenRouter /audio/speech). Kokoro costs ~$0.002 per minute; ElevenLabs sounds more natural.
 const VOICES = [
@@ -20,9 +22,10 @@ const VOICES = [
   { voice: "jessica", model: "elevenlabs/eleven-turbo-v2.5", label: "Jessica (ElevenLabs)" },
 ];
 
-module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, serveMp4, tts }) {
+module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, serveMp4, tts, logSpend = () => {}, orFetch = fetch, renderSlot = (fn) => fn(), getModel = () => null, serveThumb }) {
   const DIR = path.join(STORE, "work", "shorts");
-  const MODEL = process.env.SHORTS_MODEL || "google/gemini-3.5-flash-lite";
+  // video-understanding model: Settings page choice, else SHORTS_MODEL, else Gemini Flash Lite
+  const modelNow = () => getModel() || process.env.SHORTS_MODEL || "google/gemini-3.5-flash-lite";
   const FONTS = path.join(__dirname, "fonts"); // Anton (SIL OFL), used by the caption/thumbnail styles
   const MAX_UPLOAD = 500 * 1024 * 1024;
   const MAX_LINK = 1500 * 1024 * 1024; // direct-link downloads (same cap as yt-dlp)
@@ -153,11 +156,12 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
   };
   async function askVideo(job, file, prompt, maxTokens = 3000) {
     const b64 = fs.readFileSync(file).toString("base64");
-    const r = await fetch(`${API}/chat/completions`, {
+    const model = modelNow();
+    const r = await orFetch(`${API}/chat/completions`, {
       method: "POST",
       headers: { Authorization: `Bearer ${getKey()}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: MODEL, max_tokens: maxTokens, temperature: 0.4,
+        model, max_tokens: Math.max(maxTokens, /muse-spark/.test(model) ? 8000 : 0), temperature: 0.4,
         messages: [{ role: "user", content: [{ type: "text", text: prompt }, { type: "video_url", video_url: { url: `data:video/mp4;base64,${b64}` } }] }],
       }),
     });
@@ -180,13 +184,6 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
     return parseJson(j.choices?.[0]?.message?.content);
   }
 
-  // Times can come back as seconds (123.4) or as "HH:MM:SS(.mmm)" read off the burned-in clock.
-  const toSec = (v) => {
-    if (typeof v === "number") return v;
-    const p = String(v ?? "").trim().split(":").map(Number);
-    if (!p.length || p.some((n) => !isFinite(n))) return NaN;
-    return p.reduce((a, n) => a * 60 + n, 0);
-  };
   const hms = (s) => { s = Math.max(0, Math.round(s)); return `${Math.floor(s / 3600)}:${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; };
   const CLOCK_NOTE = "Every frame shows a yellow clock in its top-left corner: that is the frame's exact time in the ORIGINAL full video (H:MM:SS.mmm). Read all times from that clock and give them as seconds from the start of the original video.";
   const WHAT_WORKS = "What works as a Short: a hook in the first 1-2 seconds (a bold claim, a question, a surprising visual, mid-action), a clear payoff (punchline, reveal, result, emotional peak), it makes sense without the rest of the video, and nothing boring in between. Avoid intros, greetings, sponsor reads, 'subscribe' asks, setup that needs earlier context, and dead air.";
@@ -199,12 +196,13 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
     `Return ONLY JSON: {"moments":[{"start":0,"end":0,"score":0,"summary":""}]}  (summary: one sentence on what happens and why it hooks)`;
 
   // Final pass: choose and edit the moment (on the whole video if short, else on a reel of the best candidates).
-  const editPrompt = ({ duration, w, h, min, max, hint, title, candidates }) =>
+  const editPrompt = ({ duration, w, h, min, max, hint, title, candidates, range }) =>
     `You are a top short-form editor (TikTok, Reels, YouTube Shorts). ` +
+    (range && !candidates ? `The creator chose the part ${hms(range[0])}-${hms(range[1])} of a ${hms(duration)} long video${title ? ` ("${title}")` : ""}; this clip is that part. Pick ONLY from it. ` : "") +
     (candidates
       ? `This clip is a reel of ${candidates.length} candidate windows cut from a ${hms(duration)} long video${title ? ` ("${title}")` : ""}. Scouts noted:\n` +
         candidates.map((c, i) => `${i + 1}) ${hms(c.start)}-${hms(c.end)}, score ${c.score}: ${c.summary}`).join("\n") + "\n"
-      : `Watch this ${Math.round(duration)} s video${title ? ` ("${title}")` : ""}. `) +
+      : range ? "" : `Watch this ${Math.round(duration)} s video${title ? ` ("${title}")` : ""}. `) +
     `Source frame size ${w}x${h}. ${CLOCK_NOTE}\n${WHAT_WORKS}${hint ? ` The creator asked for: ${hint}.` : ""}\n` +
     `Pick the single best moment and EDIT it into a ${min}-${max} second vertical Short: keep the strongest part, and cut out pauses, filler words, repetition and slow bits with jump cuts. The edit is a list of 1-4 pieces in time order, all from the same moment, each at least 2 seconds; together they must total ${min}-${max} seconds. Use one piece if it already flows. Never cut mid-word or mid-sentence. The first piece must open on the hook.\n` +
     `Return ONLY this JSON, no other text:\n{"segments":[{"start":0,"end":0}],"framing":"crop","focus_x":0.5,"hook":"","title":"","description":"","hashtags":[],"thumbnail_time":0,"thumbnail_text":"","has_speech":true,"reason":""}\n` +
@@ -282,39 +280,10 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
   }
 
   // Clean up the model's edit: in-range, ordered, no overlaps, each piece >= 1.5 s, total within [min, max].
-  function cleanSegments(plan, total, min, max) {
-    let segs = (Array.isArray(plan.segments) ? plan.segments : [])
-      .map((s) => ({ start: Math.max(0, toSec(s.start)), end: Math.min(total, toSec(s.end)) }))
-      .filter((s) => isFinite(s.start) && isFinite(s.end) && s.end - s.start >= 1.5)
-      .sort((a, b) => a.start - b.start);
-    const merged = [];
-    for (const s of segs) {
-      const last = merged[merged.length - 1];
-      if (last && s.start < last.end + 0.3) last.end = Math.max(last.end, s.end); else merged.push({ ...s });
-    }
-    segs = merged.slice(0, 4);
-    if (!segs.length) { // older-style answer or nothing usable: one piece from start/end
-      const st = Math.max(0, Math.min(toSec(plan.start) || 0, total));
-      segs = [{ start: st, end: Math.min(total, toSec(plan.end) || st + max) }];
-    }
-    const sum = () => segs.reduce((a, s) => a + s.end - s.start, 0);
-    while (sum() > max + 0.01) { // too long: shorten from the end
-      const last = segs[segs.length - 1], over = sum() - max;
-      if (last.end - last.start - over >= 1.5) last.end -= over; else segs.pop();
-    }
-    if (sum() < min) { // too short: grow the last piece, then the first one backwards
-      const last = segs[segs.length - 1];
-      last.end = Math.min(total, last.end + (min - sum()));
-      if (sum() < min) segs[0].start = Math.max(0, segs[0].start - (min - sum()));
-    }
-    if (total <= min) segs = [{ start: 0, end: total }];
-    return segs.map((s) => ({ start: +s.start.toFixed(2), end: +s.end.toFixed(2) }));
-  }
-
   // ---------- the pipeline ----------
   async function runShort(id, opts) {
     const job = jobs.get(id), dir = dirOf(id);
-    const [min, max] = opts.len === "30-60" ? [30, 60] : [15, 30];
+    let [min, max] = opts.len === "30-60" ? [30, 60] : [15, 30];
     try {
       setStep(job, 0, 1);
       let srcFile = opts.file, srcTitle = opts.title || "";
@@ -327,21 +296,30 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       const src = await probe(srcFile);
       if (!src) throw new Error("That file isn't a readable video.");
       job.source = { title: srcTitle, link: opts.link || null, duration: Math.round(src.duration), w: src.w, h: src.h };
-      const total = Math.min(src.duration, ANALYSE_MAX);
-      if (total < src.duration) job.warning = `Only the first ${hms(ANALYSE_MAX)} was searched.`;
-      const base = { ...src, duration: total, min, max, hint: opts.hint, title: srcTitle };
+      // the part to search: the creator's time range, or the whole video
+      let lo = 0, hi = src.duration;
+      if (opts.from != null || opts.to != null) {
+        const a = Math.max(0, Math.min(opts.from ?? 0, src.duration)), b = Math.min(src.duration, opts.to ?? src.duration);
+        if (b - a >= 3) { lo = a; hi = b; } else job.warning = `The time range ${hms(opts.from ?? 0)}-${hms(opts.to ?? src.duration)} doesn't fit this ${hms(src.duration)} video, so the whole video was searched.`;
+      }
+      if (hi - lo > ANALYSE_MAX) { hi = lo + ANALYSE_MAX; job.warning = `Only ${hms(lo)}-${hms(hi)} was searched (3 hour limit).`; }
+      const span = hi - lo, ranged = lo > 0 || hi < src.duration;
+      if (span < min) { min = Math.max(3, Math.floor(span)); max = Math.max(min, Math.floor(span)); } // a short range is used as it is
+      job.range = ranged ? [Math.round(lo), Math.round(hi)] : null;
+      const total = hi;
+      const base = { ...src, duration: src.duration, min, max, hint: opts.hint, title: srcTitle, range: ranged ? [lo, hi] : null };
 
       // 1. watch the WHOLE video. Short ones in one go; long ones in ~10 min parts (timestamps stay accurate),
       //    then the best candidates from every part are compared side by side.
       setStep(job, 1, 16);
       let plan;
-      if (total <= SINGLE_MAX) {
-        const proxy = await proxyClip(dir, srcFile, src, 0, total, "proxy.mp4");
+      if (span <= SINGLE_MAX) {
+        const proxy = await proxyClip(dir, srcFile, src, lo, span, "proxy.mp4");
         setStep(job, 2, 30);
         plan = await askVideo(job, proxy, editPrompt(base));
       } else {
-        const n = Math.round(total / CHUNK) || 1, size = total / n;
-        const parts = Array.from({ length: n }, (_, i) => ({ from: i * size, to: Math.min(total, (i + 1) * size) }));
+        const n = Math.round(span / CHUNK) || 1, size = span / n;
+        const parts = Array.from({ length: n }, (_, i) => ({ from: lo + i * size, to: Math.min(hi, lo + (i + 1) * size) }));
         let done = 0;
         const found = await pool(parts, 3, async (p, i) => {
           const f = await proxyClip(dir, srcFile, src, p.from, p.to - p.from, `part${i}.mp4`);
@@ -363,7 +341,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
         cands.sort((a, b) => a.start - b.start);
         const list = [];
         for (let i = 0; i < cands.length; i++) {
-          const ws = Math.max(0, cands[i].start - 6), we = Math.min(total, cands[i].end + 6);
+          const ws = Math.max(lo, cands[i].start - 6), we = Math.min(hi, cands[i].end + 6);
           await proxyClip(dir, srcFile, src, ws, we - ws, `win${i}.mp4`, 360, 2);
           list.push(`file 'win${i}.mp4'`);
         }
@@ -373,7 +351,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       }
 
       // 2. sanity-check the edit
-      const segs = cleanSegments(plan, total, min, max);
+      const segs = cleanSegments(plan, lo, hi, min, max);
       const start = segs[0].start, end = segs[segs.length - 1].end;
       const len = segs.reduce((a, s) => a + s.end - s.start, 0);
       const framing = plan.framing === "crop" ? "crop" : "fit";
@@ -463,6 +441,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
           l.end = l.start + Math.min(room, l.dur / l.tempo);
           cursor = l.end + 0.15;
           voiced.push(l);
+          job.ttsCost = (job.ttsCost || 0) + l.dur * (/eleven/.test(model) ? 0.0005 : 0.00003);
           job.cost = (job.cost || 0) + l.dur * (/eleven/.test(model) ? 0.0005 : 0.00003);
         }
       }
@@ -498,7 +477,8 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       if (!src.audio) ins.push("-f", "lavfi", "-t", cutLen.toFixed(3), "-i", "anullsrc=r=48000:cl=stereo");
       voiced.forEach((l) => ins.push("-i", l.file));
       const o = src.audio ? "0:a" : "1:a", first = src.audio ? 1 : 2;
-      let af = `[0:v]subtitles=subs.ass:fontsdir=${fontsArg(dir)}[v];`;
+      // optional neon-glitch look goes under the captions, so the text stays sharp
+      let af = (opts.look === "glitch" ? glitchFilter("[0:v]", "[gv];[gv]", 1080, 1920, cutLen, cutLen) : "[0:v]") + `subtitles=subs.ass:fontsdir=${fontsArg(dir)}[v];`;
       if (voiced.length) {
         const duck = voiced.map((l) => `between(t,${(l.start - 0.1).toFixed(2)},${(l.end + 0.2).toFixed(2)})`).join("+");
         af += `[${o}]volume='if(${duck},0.22,1)':eval=frame[orig];`;
@@ -522,10 +502,10 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       if (!tags.some((t) => t.toLowerCase() === "shorts")) tags.push("shorts");
       const meta = {
         id, status: "done", createdAt: job.createdAt, source: job.source,
-        start, end, segments: segs, length: +cutLen.toFixed(1), framing, hook, captions: captions.length, reason: plan.reason || "",
+        start, end, segments: segs, range: job.range, length: +cutLen.toFixed(1), framing, hook, captions: captions.length, reason: plan.reason || "",
         voiceover: voiced.map((l) => l.text), candidates: job.candidates || 0,
         title: String(plan.title || srcTitle || "").slice(0, 100), description: String(plan.description || ""), hashtags: tags.slice(0, 8),
-        thumbnailText: tt, cost: +(job.cost || 0).toFixed(4), warning: job.warning || null,
+        look: opts.look, thumbnailText: tt, cost: +(job.cost || 0).toFixed(4), warning: job.warning || null,
       };
       saveMeta(id, meta);
       Object.assign(job, { status: "done", pct: 100, step: "Done" });
@@ -533,6 +513,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       Object.assign(job, { status: "failed", error: e.message.slice(0, 500) });
       saveMeta(id, { id, status: "failed", createdAt: job.createdAt, error: job.error, source: job.source || null });
     } finally {
+      logSpend("Shorts", (job.cost || 0) - (job.ttsCost || 0), modelNow(), "short-" + id); // voice is logged by tts() itself
       for (const f of fs.readdirSync(dir)) if (/^(src\.|proxy\.mp4|part\d+\.mp4|win\d+\.mp4|wins\.txt|reel\.mp4|cut\.mp4|cap\.mp4|vo\d+\.mp3|cookies\.txt|.*\.part$)/.test(f)) fs.rm(path.join(dir, f), { force: true }, () => {});
       setTimeout(() => jobs.delete(id), 60 * 60 * 1000);
     }
@@ -540,10 +521,21 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
 
   const publicView = (id) => {
     const live = jobs.get(id);
-    const m = live && live.status !== "done" ? { id, status: live.status, step: live.step, pct: live.pct, error: live.error, source: live.source, plan: live.plan, createdAt: live.createdAt } : readMeta(id);
+    const m = live && live.status !== "done" ? { id, status: live.status, step: live.step, pct: live.pct, error: live.error, source: live.source, plan: live.plan, range: live.range, createdAt: live.createdAt } : readMeta(id);
     if (!m) return null;
     if (m.status === "done") Object.assign(m, { videoUrl: `/api/shorts/${id}/short.mp4`, thumbUrl: `/api/shorts/${id}/thumb.jpg` });
     return m;
+  };
+  // Shorts that were mid-way when the server stopped can't be resumed; mark them so they don't spin forever.
+  for (const d of fs.readdirSync(DIR)) {
+    const m = /^\w+$/.test(d) && readMeta(d);
+    if (m && m.status === "running") saveMeta(d, { ...m, status: "failed", error: "The server restarted while this Short was being made. Make it again." });
+  }
+  const start = (id, opts) => {
+    const job = jobs.get(id);
+    job.step = "Waiting for a free render slot"; // another Short or Story is rendering
+    saveMeta(id, { id, status: "running", createdAt: job.createdAt, source: { title: opts.title || "", link: opts.link || null } });
+    renderSlot(() => runShort(id, opts));
   };
   const newJob = () => {
     const id = Date.now().toString(36) + crypto.randomBytes(4).toString("hex");
@@ -558,10 +550,13 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
     narration: ["auto", "intro", "full"].includes(get("narration")) ? get("narration") : "off",
     voice: VOICES.some((v) => v.voice === get("voice")) ? get("voice") : VOICES[0].voice,
     edit: get("edit") === "clean" ? "clean" : "dynamic",
+    from: parseTime(get("from")), to: parseTime(get("to")),
+    look: get("look") === "glitch" ? "glitch" : "clean",
   });
 
   // ---------- routes; returns true when the request was handled ----------
-  return async function handle(req, res, url) {
+  const busy = (id) => jobs.get(id)?.status === "running";
+  return { busy, handle: async function handle(req, res, url) {
     if (!url.pathname.startsWith("/api/shorts")) return false;
     let m;
     if (req.method === "POST" && url.pathname === "/api/shorts/upload") {
@@ -577,7 +572,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       await new Promise((r) => ws.end(r));
       if (!size) { jobs.delete(id); fs.rm(dirOf(id), { recursive: true, force: true }, () => {}); return send(res, 400, { error: "Empty upload." }), true; }
       const name = decodeURIComponent(req.headers["x-filename"] || "").replace(/\.[a-z0-9]+$/i, "").slice(0, 120);
-      runShort(id, { ...readOpts((k) => url.searchParams.get(k)), file, title: name });
+      start(id, { ...readOpts((k) => url.searchParams.get(k)), file, title: name });
       return send(res, 200, { id }), true;
     }
     if (req.method === "POST" && url.pathname === "/api/shorts/check") {
@@ -601,7 +596,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       const link = safeLink(String(body.url || "").trim());
       if (!link) return send(res, 400, { error: "Paste a full video link starting with https://" }), true;
       const id = newJob();
-      runShort(id, { ...readOpts((k) => (body[k] == null ? null : String(body[k]))), link });
+      start(id, { ...readOpts((k) => (body[k] == null ? null : String(body[k]))), link });
       return send(res, 200, { id }), true;
     }
     if (req.method === "GET" && url.pathname === "/api/shorts/voices") return send(res, 200, { voices: VOICES.map(({ voice, label }) => ({ voice, label })) }), true;
@@ -629,5 +624,5 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       return fs.createReadStream(f).pipe(res), true;
     }
     return false;
-  };
+  } };
 };

@@ -151,6 +151,16 @@ const MODELS={
   'google/veo-3.1-lite':{name:'Google Veo 3.1 Lite',note:'Budget pick · ~$0.05/s @720p',audio:true,durs:[4,6,8],
     res:['720p','1080p'],asp:['9:16','16:9'],price:{'720p':[.05,.03],'1080p':[.08,.05]}},
 };
+// live prices from OpenRouter replace the numbers above (and the "~$x/s" in each note) when they arrive
+fetch('/api/prices').then(r=>r.json()).then(j=>{
+  for(const [id,m] of Object.entries(MODELS)){
+    const p=j.prices&&j.prices[id]; if(!p) continue;
+    for(const r of m.res) if(p[r]!=null) m.price[r]=[(p.audio&&p.audio[r])??p[r],p[r]];
+    const r0=m.res[0], a=m.price[r0]&&m.price[r0][m.audio?0:1];
+    if(a!=null) m.note=m.note.replace(/~\$[\d.]+\/s( @\d+p)?/,'~$'+(+a.toFixed(3))+'/s @'+r0);
+  }
+  renderModels(); updateCost(); // keeps whatever the user already picked
+}).catch(()=>{});
 const STYLES={
   movie:['🎥 Cinematic','Cinematic live-action movie style, shallow depth of field, dramatic lighting, smooth camera movement, film grain, high production value.'],
   kids:['🧸 Kids cartoon','Bright colorful 3D animated kids cartoon in the style of CoComelon: cute round characters with big expressive eyes, soft glossy shading, cheerful saturated colors, simple friendly backgrounds, gentle playful motion.'],

@@ -1,0 +1,10 @@
+{
+  "name": "video-studio",
+  "private": true,
+  "description": "AI video studio: single clips, story mode, UGC, poses and motion, and a Shorts maker.",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  }
+}

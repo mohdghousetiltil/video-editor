@@ -1,10 +1,18 @@
-// Minimal backend: proxies OpenRouter video generation so the API key stays server-side.
-// Run: node server.js   (Node 18+, no dependencies)
+// Backend: proxies OpenRouter (video, images, text, voice) so the API key stays server-side, renders with ffmpeg.
+// Run: node server.js   (Node 18+, no dependencies). Tests: node --test
+// Route files: routes/story.js (Story mode), routes/system.js (settings, spend, prices), shorts.js (Shorts maker).
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
+const { glitchFilter } = require("./glitch");
 const crypto = require("crypto");
+const { orFetch } = require("./lib/openrouter");
+const { createLimiter } = require("./lib/queue");
+const { createSpend, TTS_PER_SEC } = require("./lib/spend");
+const { createPrices } = require("./lib/prices");
+const { persistentMap } = require("./lib/store");
+const { startCleanup } = require("./lib/cleanup");
 
 // DATA_DIR: where influencers + generated files live. On Railway point it at a mounted volume (e.g. /data).
 const STORE = process.env.DATA_DIR || __dirname;
@@ -15,24 +23,32 @@ const readInf = () => { try { return JSON.parse(fs.readFileSync(DB, "utf8")); } 
 const writeInf = (a) => { fs.mkdirSync(IMG, { recursive: true }); fs.writeFileSync(DB, JSON.stringify(a, null, 2)); };
 const imgFile = (id) => ["jpg", "png", "webp"].map((e) => path.join(IMG, `${id}.${e}`)).find((f) => fs.existsSync(f));
 
+// which page asked (from the Referer), so video costs can be split by feature
+const pageFeature = (req) => {
+  let p = "";
+  try { p = new URL(req.headers.referer || "").pathname.replace(/\.html$/, ""); } catch {}
+  return ({ "/story": "Story", "/ugc": "UGC", "/motion": "Poses & motion", "/influencers": "Influencers" })[p] || "Single clips";
+};
 // ---- ffmpeg helpers for Story mode (stitch clips from different models into one MP4) ----
 const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
-const stitches = new Map(); // sid -> { status, step, error }
-const run = (args, cwd) =>
+// Rendering limits: at most FFMPEG_SLOTS ffmpeg processes at once, and at most RENDER_JOBS whole jobs (a Short, a
+// Story stitch) at once; the rest wait in line. Keeps a small server from running out of memory.
+const ffSlot = createLimiter(Math.max(1, Number(process.env.FFMPEG_SLOTS) || 2));
+const renderSlot = createLimiter(Math.max(1, Number(process.env.RENDER_JOBS) || (process.env.PUBLIC_URL ? 1 : 2)));
+const run = (args, cwd) => ffSlot(() =>
   new Promise((resolve, reject) => {
     const p = spawn(FFMPEG, args, { cwd });
     let err = "";
     p.stderr.on("data", (d) => (err += d));
     p.on("error", (e) => reject(new Error("ffmpeg not found. Install it or set FFMPEG_PATH in .env (" + e.message + ")")));
     p.on("close", (code) => (code === 0 ? resolve(err) : reject(new Error(err.slice(-400)))));
-  });
+  }));
 // Download a finished job's video and return its last frame as a JPEG data URL
 async function lastFrame(id) {
   const dir = path.join(STORE, "work", "frames");
   fs.mkdirSync(dir, { recursive: true });
-  const r = await fetch(`${API}/videos/${id}/content?index=0`, { headers: { Authorization: `Bearer ${KEY}` } });
-  if (!r.ok) throw new Error(`download failed (${r.status})`);
-  fs.writeFileSync(path.join(dir, `${id}.mp4`), Buffer.from(await r.arrayBuffer()));
+  await ensureVideo(id);
+  fs.copyFileSync(path.join(VIDEO_CACHE, id + ".mp4"), path.join(dir, `${id}.mp4`));
   await run(["-y", "-sseof", "-0.1", "-i", `${id}.mp4`, "-update", "1", "-frames:v", "1", "-vf", "scale='min(1024,iw)':-2", "-q:v", "2", `${id}.jpg`], dir);
   return "data:image/jpeg;base64," + fs.readFileSync(path.join(dir, `${id}.jpg`)).toString("base64");
 }
@@ -41,8 +57,9 @@ async function tts({ model, voice, text, instructions }) {
   const body = { model, input: text, response_format: "mp3" };
   if (voice) body.voice = voice;
   if (instructions) body.instructions = instructions;
-  const r = await fetch(`${API}/audio/speech`, { method: "POST", headers: orHeaders(), body: JSON.stringify(body) });
+  const r = await orFetch(`${API}/audio/speech`, { method: "POST", headers: orHeaders(), body: JSON.stringify(body) });
   if (!r.ok) throw new Error("Narration failed: " + (await r.text()).slice(0, 200));
+  spend.log("Voiceover", (String(text).length / 15) * (TTS_PER_SEC[model] ?? 0.0005), model);
   return Buffer.from(await r.arrayBuffer());
 }
 const mediaDuration = (file) =>
@@ -79,6 +96,19 @@ const PORT = process.env.PORT || 3000;
 const ENHANCE_MODEL = process.env.ENHANCE_MODEL || "nvidia/nemotron-3-super-120b-a12b";
 const API = "https://openrouter.ai/api/v1";
 const ESTIMATE_SECS = 100; // time constant for the simulated progress curve
+const settings = require("./lib/settings")(DATA);
+const spend = createSpend({ DATA, API, getKey: () => KEY, getCap: () => settings.get().monthlyCap });
+const logSpend = spend.log;
+const prices = createPrices({ API, getKey: () => KEY });
+const textModel = () => settings.get().textModel || ENHANCE_MODEL;
+// Backend locked to the Cloudflare proxy: a public server (PUBLIC_URL) without PROXY_KEY would let anyone who finds
+// its address spend your OpenRouter credit, so then every /api call is refused until PROXY_KEY is set.
+const PROXY_KEY = (process.env.PROXY_KEY || "").trim().replace(/^["']|["']$/g, "");
+const UNLOCKED = !!PROXY_KEY || !PUBLIC_URL_RAW() || process.env.ALLOW_OPEN === "1";
+function PUBLIC_URL_RAW() { return (process.env.PUBLIC_URL || "").trim(); }
+if (!UNLOCKED) console.error("PROXY_KEY is not set but PUBLIC_URL is: the API is locked. Set PROXY_KEY (same value as in Cloudflare).");
+// Paid endpoints are refused once the monthly cap (Settings) is reached.
+const PAID = /^\/api\/(generate|plan|cast|keyframe|tts|stitch|lookframe|startframe|describe|portraits|caption|enhance|shorts(\/upload)?|influencers\/[\w-]+\/check)$/;
 
 const MODELS = {
   "google/veo-3.1-fast": { audio: true },
@@ -106,10 +136,46 @@ fs.mkdirSync(SHARE_DIR, { recursive: true });
 const VIDEO_CACHE = path.join(STORE, "work", "videos");
 fs.mkdirSync(VIDEO_CACHE, { recursive: true });
 const videoFetches = new Map(); // id -> in-flight download, so parallel range requests share one fetch
+function ensureVideo(id) {
+  const f = path.join(VIDEO_CACHE, id + ".mp4");
+  if (fs.existsSync(f)) return Promise.resolve(f);
+  let p = videoFetches.get(id);
+  if (!p) {
+    p = (async () => {
+      const r = await orFetch(`${API}/videos/${id}/content?index=0`, { headers: { Authorization: `Bearer ${KEY}` } });
+      if (!r.ok) { const t = await r.text().catch(() => ""); throw Object.assign(new Error(t.slice(0, 300) || "video not available"), { status: r.status }); }
+      const tmp = f + "." + process.pid + ".part";
+      fs.writeFileSync(tmp, Buffer.from(await r.arrayBuffer()));
+      fs.renameSync(tmp, f);
+      return f;
+    })().finally(() => videoFetches.delete(id));
+    videoFetches.set(id, p);
+  }
+  return p;
+}
+// a JPEG frame (1 s in) for sharing alongside a video; made once and kept next to it
+const thumbMaking = new Map();
+async function serveThumb(res, video, thumb) {
+  try {
+    if (!fs.existsSync(thumb)) {
+      if (!fs.existsSync(video)) { res.writeHead(404); return res.end("Not found"); }
+      let p = thumbMaking.get(thumb);
+      if (!p) {
+        const d = await mediaDuration(video);
+        p = run(["-y", "-ss", String(Math.min(1, d / 3)), "-i", video, "-frames:v", "1", "-vf", "scale='min(1080,iw)':-2", "-q:v", "3", thumb], path.dirname(thumb)).finally(() => thumbMaking.delete(thumb));
+        thumbMaking.set(thumb, p);
+      }
+      await p;
+    }
+    res.writeHead(200, { "Content-Type": "image/jpeg", "Cache-Control": "private, max-age=86400" });
+    fs.createReadStream(thumb).pipe(res);
+  } catch (e) { send(res, 500, { error: "Thumbnail failed: " + e.message.slice(-200) }); }
+}
 function serveMp4(req, res, f, download) {
   if (!f || !fs.existsSync(f)) { res.writeHead(404); return res.end("Not found"); }
   const size = fs.statSync(f).size, rg = (req.headers.range || "").match(/bytes=(\d*)-(\d*)/);
   const h = { "Content-Type": "video/mp4", "Accept-Ranges": "bytes", "Cache-Control": "private, max-age=86400" };
+  if (req.method === "HEAD") { res.writeHead(200, { ...h, "Content-Length": size }); return res.end(); }
   if (download) h["Content-Disposition"] = `attachment; filename="${typeof download === "string" ? download : "motion-source.mp4"}"`;
   if (rg && (rg[1] || rg[2])) {
     // "bytes=500-" (from 500), "bytes=-500" (last 500), "bytes=0-1" (Safari's first probe)
@@ -170,21 +236,30 @@ async function checkVideoLink(u) {
   return null;
 }
 
-const jobs = new Map(); // id -> { startedAt, status, error, prompt }
+// video jobs (id -> { startedAt, status, model, feature, error }), kept in data/jobs.json so a restart doesn't lose them
+const jobs = persistentMap(path.join(DATA, "jobs.json"), { max: 400 });
 
 const send = (res, code, obj) => {
   res.writeHead(code, { "Content-Type": "application/json" });
   res.end(JSON.stringify(obj));
 };
-const readBody = (req) =>
+// JSON body, refused past `max` bytes (pictures arrive as data URLs, so the default allows ~25 MB)
+const readBody = (req, max = 25e6) =>
   new Promise((resolve, reject) => {
-    let d = "";
-    req.on("data", (c) => (d += c));
-    req.on("end", () => { try { resolve(JSON.parse(d || "{}")); } catch (e) { reject(e); } });
+    let d = "", n = 0;
+    // past the limit: answer 413 straight away and let the rest of the upload drain into nothing
+    req.on("data", (c) => { n += c.length; if (n > max) { if (d !== null) reject(Object.assign(new Error("Request too large."), { status: 413 })); d = null; } else if (d !== null) d += c; });
+    req.on("end", () => { try { resolve(JSON.parse(d || "{}")); } catch (e) { reject(Object.assign(new Error("Bad JSON in request."), { status: 400 })); } });
+    req.on("error", reject);
   });
 const orHeaders = () => ({ Authorization: `Bearer ${KEY}`, "Content-Type": "application/json" });
 // Shorts maker (long video -> analysed, cut, captioned 9:16 Short + thumbnail + title); see shorts.js
-const shortsRoutes = require("./shorts")({ STORE, FFMPEG, API, getKey: () => KEY, run, send, serveMp4, tts });
+const shorts = require("./shorts")({ STORE, FFMPEG, API, getKey: () => KEY, run, send, serveMp4, tts, logSpend, orFetch, renderSlot, getModel: () => settings.get().visionModel, serveThumb });
+const shortsRoutes = shorts.handle;
+const ctx = { STORE, DATA, API, getKey: () => KEY, orFetch, orHeaders, send, readBody, run, tts, spend, settings, serveMp4, serveThumb, mediaDuration, hasAudio, glitchFilter, renderSlot, prices, imgFile };
+const story = require("./routes/story")(ctx);
+const systemRoutes = require("./routes/system")(ctx);
+startCleanup(STORE, () => settings.get(), (id) => story.busy(id) || shorts.busy(id));
 
 // OpenRouter reports only status (no %), so progress is estimated from elapsed time
 // and jumps to 100 only when the job is really completed.
@@ -204,9 +279,16 @@ const server = http.createServer(async (req, res) => {
     const sm0 = url.pathname.match(/^\/s\/([a-f0-9]{24})\.mp4$/);
     if (sm0) return serveMp4(req, res, path.join(SHARE_DIR, sm0[1] + ".mp4"));
     if (url.pathname === "/healthz") return send(res, 200, { ok: true }); // Railway health check (no key needed)
-    // When PROXY_KEY is set, only the Cloudflare Pages proxy (which adds this header) may use the backend.
-    const PK = (process.env.PROXY_KEY || "").trim().replace(/^["']|["']$/g, "");
-    if (PK && String(req.headers["x-proxy-key"] || "").trim() !== PK) { res.writeHead(401); return res.end("Unauthorized"); }
+    // When PROXY_KEY is set, only the Cloudflare proxy (which adds this header) may use the backend.
+    if (PROXY_KEY && String(req.headers["x-proxy-key"] || "").trim() !== PROXY_KEY) { res.writeHead(401); return res.end("Unauthorized"); }
+    if (!UNLOCKED && url.pathname.startsWith("/api/")) return send(res, 503, { error: "This server is public (PUBLIC_URL is set) but PROXY_KEY isn't, so the API is locked to protect your credit. Set PROXY_KEY on the server and in Cloudflare." });
+    if (req.method === "POST" && PAID.test(url.pathname)) {
+      if (!KEY) return send(res, 500, { error: "OPENROUTER_API_KEY missing. Put it in .env and restart." });
+      const blocked = await spend.capBlock();
+      if (blocked) return send(res, 402, { error: blocked, cap: true });
+    }
+    if (await systemRoutes(req, res, url)) return;
+    if (await story.handle(req, res, url)) return;
     if (await shortsRoutes(req, res, url)) return;
     if (req.method === "POST" && url.pathname === "/api/generate") {
       if (!KEY) return send(res, 500, { error: "OPENROUTER_API_KEY missing. Put it in .env and restart." });
@@ -260,7 +342,7 @@ const server = http.createServer(async (req, res) => {
       if (typeof b.frame_image === "string" && /^data:image\/(jpeg|png|webp);base64,/.test(b.frame_image) && !body.frame_images) {
         body.frame_images = [{ type: "image_url", image_url: { url: b.frame_image }, frame_type: "first_frame" }];
         delete body.input_references;
-        note = "Started from your start frame (influencer holding the product).";
+        note = typeof b.frame_note === "string" ? b.frame_note.slice(0, 200) : "Started from your start frame (influencer holding the product).";
       }
       // Saved influencer picture as the first frame (keeps the same face)
       if (b.influencer_id && b.use_frame && /^[\w-]+$/.test(b.influencer_id) && !body.frame_images) {
@@ -273,7 +355,7 @@ const server = http.createServer(async (req, res) => {
         }
       }
       const submit = async () => {
-        const r = await fetch(`${API}/videos`, { method: "POST", headers: orHeaders(), body: JSON.stringify(body) });
+        const r = await orFetch(`${API}/videos`, { method: "POST", headers: orHeaders(), body: JSON.stringify(body) }, { safe: false });
         return { r, j: await r.json().catch(() => ({})) };
       };
       let { r, j } = await submit();
@@ -288,141 +370,8 @@ const server = http.createServer(async (req, res) => {
         ({ r, j } = await submit());
       }
       if (!r.ok) return send(res, r.status, { error: j.error?.message || JSON.stringify(j) });
-      jobs.set(j.id, { startedAt: Date.now(), status: j.status || "pending", polling_url: j.polling_url });
+      jobs.set(j.id, { startedAt: Date.now(), status: j.status || "pending", polling_url: j.polling_url, model, feature: pageFeature(req) });
       return send(res, 202, { id: j.id, note });
-    }
-
-    // ---- Story mode: split a script into scenes, flag key scenes ----
-    if (req.method === "POST" && url.pathname === "/api/plan") {
-      if (!KEY) return send(res, 500, { error: "OPENROUTER_API_KEY missing." });
-      const b = await readBody(req);
-      if (!b.script || !b.script.trim()) return send(res, 400, { error: "Paste a script first." });
-      const total = Number(b.total) || 30;
-      const sys = "You are a video director planning a short video for an AI text-to-video model. Split the user's script into scenes. " +
-        `Total length about ${total} seconds; each scene 4 to 8 seconds (integers) and the seconds must add up to about ${total}. ` +
-        "Set continues:true on a scene only when it directly continues the previous scene in the same place with the same characters and uninterrupted action (so it can start from the previous scene's last frame); set continues:false for the first scene and for any cut to a new location or time. Mark scenes as key:true ONLY for the roughly 30% that matter most visually (the hook, the big reveal, the twist, the emotional peak); the rest are key:false filler/transition scenes. " +
-        "Write a short 'bible': one sentence describing each recurring character's exact appearance and clothing plus the main setting, so every scene stays consistent. " +
-        "Each scene prompt must be self-contained, one vivid present-tense sentence or two, describing only visible action, camera and mood, naming characters by their bible appearance. No on-screen text. For every scene also write \"narration\": the voiceover a calm narrator speaks during that scene, natural spoken language, at most 2.3 words per second of the scene length, so the narration of all scenes reads as one continuous story (use an empty string only for a deliberately silent scene). " +
-        `Aspect ratio ${b.aspect || "9:16"}. ` + (b.style ? "Visual style: " + b.style + " " : "") +
-        'Reply with ONLY valid JSON, no markdown: {"bible":"...","scenes":[{"title":"...","prompt":"...","seconds":6,"key":true,"continues":false,"narration":"..."}]}';
-      const r = await fetch(`${API}/chat/completions`, {
-        method: "POST", headers: orHeaders(),
-        body: JSON.stringify({ model: ENHANCE_MODEL, max_tokens: 3000, reasoning: { enabled: false }, messages: [{ role: "system", content: sys }, { role: "user", content: b.script.trim() }] }),
-      });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) return send(res, r.status, { error: j.error?.message || "Planning failed" });
-      const txt = j.choices?.[0]?.message?.content || "";
-      try {
-        const plan = JSON.parse(txt.slice(txt.indexOf("{"), txt.lastIndexOf("}") + 1));
-        if (!Array.isArray(plan.scenes) || !plan.scenes.length) throw new Error("no scenes");
-        return send(res, 200, plan);
-      } catch {
-        return send(res, 502, { error: "Planner returned invalid JSON. Try again." });
-      }
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/tts") {
-      const b = await readBody(req);
-      if (!b.text || !b.model) return send(res, 400, { error: "text and model required" });
-      try {
-        const buf = await tts({ model: b.model, voice: b.voice, text: String(b.text).slice(0, 600), instructions: b.instructions });
-        res.writeHead(200, { "Content-Type": "audio/mpeg", "Content-Length": buf.length });
-        return res.end(buf);
-      } catch (e) { return send(res, 502, { error: e.message }); }
-    }
-
-    // ---- Story mode: download finished clips, normalize, concatenate ----
-    if (req.method === "POST" && url.pathname === "/api/stitch") {
-      const b = await readBody(req);
-      const ids = Array.isArray(b.ids) ? b.ids : [];
-      if (!ids.length || !ids.every((i) => /^[\w-]+$/.test(i))) return send(res, 400, { error: "Bad job ids." });
-      const sid = crypto.randomBytes(6).toString("hex");
-      const st = { status: "running", step: "Starting…", warnings: [] };
-      const nar = b.narration && Array.isArray(b.narration.lines) && b.narration.model ? b.narration : null;
-      // budget mode: clips shorter than their narration are slowed down (up to 1.5x) and then hold their last
-      // frame, instead of cutting the narration off
-      const extend = !!b.extend;
-      stitches.set(sid, st);
-      (async () => {
-        const dir = path.join(STORE, "work", sid);
-        fs.mkdirSync(dir, { recursive: true });
-        const [W, H] = b.aspect === "16:9" ? [1280, 720] : b.aspect === "1:1" ? [720, 720] : [720, 1280];
-        const vf = `scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,format=yuv420p`;
-        const enc = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-ar", "44100", "-ac", "2"];
-        let list = "";
-        for (let i = 0; i < ids.length; i++) {
-          const line = nar ? String(nar.lines[i] || "").trim() : "";
-          st.step = `Downloading clip ${i + 1}/${ids.length}`;
-          const r = await fetch(`${API}/videos/${ids[i]}/content?index=0`, { headers: { Authorization: `Bearer ${KEY}` } });
-          if (!r.ok) throw new Error(`Clip ${i + 1} download failed (${r.status})`);
-          fs.writeFileSync(path.join(dir, `raw${i}.mp4`), Buffer.from(await r.arrayBuffer()));
-          st.step = `Preparing clip ${i + 1}/${ids.length}`;
-          const audio = await hasAudio(path.join(dir, `raw${i}.mp4`));
-          let args;
-          if (line && extend) {
-            st.step = `Voicing scene ${i + 1}/${ids.length}`;
-            fs.writeFileSync(path.join(dir, `nar${i}.mp3`), await tts({ model: nar.model, voice: nar.voice, text: line, instructions: nar.instructions }));
-            const vd = await mediaDuration(path.join(dir, `raw${i}.mp4`)), ad = await mediaDuration(path.join(dir, `nar${i}.mp3`));
-            const D = Math.max(vd, ad + 0.4), slow = vd ? Math.max(1, Math.min(1.5, D / vd)) : 1;
-            const v = `[0:v]setpts=${slow.toFixed(3)}*PTS,${vf},tpad=stop_mode=clone:stop_duration=${Math.max(0, D - vd * slow + 0.1).toFixed(3)}[v]`;
-            const fc = audio ? `${v};[0:a]volume=0.25,apad[a0];[1:a]apad[a1];[a0][a1]amix=inputs=2:duration=longest:dropout_transition=0[a]` : `${v};[1:a]apad[a]`;
-            args = ["-y", "-i", `raw${i}.mp4`, "-i", `nar${i}.mp3`, "-filter_complex", fc, "-map", "[v]", "-map", "[a]", "-t", D.toFixed(3), ...enc, `n${i}.mp4`];
-          } else if (line) {
-            st.step = `Voicing scene ${i + 1}/${ids.length}`;
-            fs.writeFileSync(path.join(dir, `nar${i}.mp3`), await tts({ model: nar.model, voice: nar.voice, text: line, instructions: nar.instructions }));
-            const vd = await mediaDuration(path.join(dir, `raw${i}.mp4`)), ad = await mediaDuration(path.join(dir, `nar${i}.mp3`));
-            const tempo = vd && ad ? Math.max(1, Math.min(1.35, (ad / vd) * 0.98)) : 1;
-            if (vd && ad / tempo > vd + 0.2) st.warnings.push(`Scene ${i + 1}: narration is longer than the clip and was cut off. Shorten the text.`);
-            const a1 = `[1:a]atempo=${tempo.toFixed(3)},apad[a1]`;
-            const fc = audio
-              ? `[0:v]${vf}[v];[0:a]volume=0.25[a0];${a1};[a0][a1]amix=inputs=2:duration=first:dropout_transition=0[a]`
-              : `[0:v]${vf}[v];${a1.replace("[a1]", "[a]")}`;
-            args = ["-y", "-i", `raw${i}.mp4`, "-i", `nar${i}.mp3`, "-filter_complex", fc, "-map", "[v]", "-map", "[a]", "-shortest", ...enc, `n${i}.mp4`];
-          } else {
-            args = audio
-              ? ["-y", "-i", `raw${i}.mp4`, "-vf", vf, ...enc, `n${i}.mp4`]
-              : ["-y", "-i", `raw${i}.mp4`, "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-vf", vf, "-shortest", ...enc, `n${i}.mp4`];
-          }
-          await run(args, dir);
-          list += `file 'n${i}.mp4'\n`;
-        }
-        st.step = "Joining clips";
-        fs.writeFileSync(path.join(dir, "list.txt"), list);
-        await run(["-y", "-f", "concat", "-safe", "0", "-i", "list.txt", "-c", "copy", "final.mp4"], dir);
-        st.status = "completed";
-      })().catch((e) => { st.status = "failed"; st.error = e.message; });
-      return send(res, 202, { id: sid });
-    }
-    let sm;
-    if (req.method === "GET" && (sm = url.pathname.match(/^\/api\/stitch\/(\w+)$/))) {
-      const st = stitches.get(sm[1]);
-      return st ? send(res, 200, { ...st, url: st.status === "completed" ? `/api/final/${sm[1]}` : null }) : send(res, 404, { error: "Unknown stitch" });
-    }
-    if (req.method === "GET" && (sm = url.pathname.match(/^\/api\/final\/(\w+)$/))) {
-      const f = path.join(STORE, "work", sm[1], "final.mp4");
-      if (!fs.existsSync(f)) { res.writeHead(404); return res.end("Not found"); }
-      const size = fs.statSync(f).size, rg = (req.headers.range || "").match(/bytes=(\d*)-(\d*)/);
-      const h = { "Content-Type": "video/mp4", "Accept-Ranges": "bytes" };
-      if (url.searchParams.has("download")) h["Content-Disposition"] = 'attachment; filename="story.mp4"';
-      if (rg) {
-        const s = rg[1] ? +rg[1] : 0, e = rg[2] ? +rg[2] : size - 1;
-        res.writeHead(206, { ...h, "Content-Range": `bytes ${s}-${e}/${size}`, "Content-Length": e - s + 1 });
-        return fs.createReadStream(f, { start: s, end: e }).pipe(res);
-      }
-      res.writeHead(200, { ...h, "Content-Length": size });
-      return fs.createReadStream(f).pipe(res);
-    }
-
-    // ---- Story mode: finished stitched videos still on disk (for history recovery) ----
-    if (req.method === "GET" && url.pathname === "/api/finals") {
-      const wd = path.join(STORE, "work"), out = [];
-      for (const d of fs.existsSync(wd) ? fs.readdirSync(wd) : []) {
-        const f = path.join(wd, d, "final.mp4");
-        if (!/^\w+$/.test(d) || !fs.existsSync(f)) continue;
-        const files = fs.readdirSync(path.join(wd, d));
-        out.push({ id: d, ts: fs.statSync(f).mtimeMs, size: fs.statSync(f).size, clips: files.filter((x) => /^raw\d+\.mp4$/.test(x)).length, narrated: files.some((x) => /^nar\d+\.mp3$/.test(x)), url: `/api/final/${d}` });
-      }
-      return send(res, 200, { finals: out.sort((a, b) => b.ts - a.ts) });
     }
 
     // ---- Motion page: upload a driving video, prepare it, and manage the public link ----
@@ -463,11 +412,12 @@ const server = http.createServer(async (req, res) => {
         (makeup ? `Change ONLY their makeup to: ${makeup}. ` : "Keep the makeup exactly the same. ") +
         "Realistic vertical 9:16 smartphone selfie photo, natural skin texture, no beauty filter, nothing else changed.";
       try {
-        const r = await fetch(`${API}/images`, { method: "POST", headers: orHeaders(), body: JSON.stringify({ model, prompt, n: 1, aspect_ratio: "9:16", input_references: [{ type: "image_url", image_url: { url: person } }, ...(outfitImg ? [{ type: "image_url", image_url: { url: outfitImg } }] : [])] }) });
+        const r = await orFetch(`${API}/images`, { method: "POST", headers: orHeaders(), body: JSON.stringify({ model, prompt, n: 1, aspect_ratio: "9:16", input_references: [{ type: "image_url", image_url: { url: person } }, ...(outfitImg ? [{ type: "image_url", image_url: { url: outfitImg } }] : [])] }) }, { safe: false });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) return send(res, r.status, { error: j.error?.message || "Look change failed (" + r.status + ")" });
         const d = j.data?.[0];
         if (!d?.b64_json) return send(res, 502, { error: "The image model returned no picture." });
+        logSpend("Images", j.usage?.cost, model);
         return send(res, 200, { image: `data:${d.media_type || "image/png"};base64,${d.b64_json}`, cost: j.usage?.cost || 0 });
       } catch (e) { return send(res, 502, { error: e.message }); }
     }
@@ -486,11 +436,12 @@ const server = http.createServer(async (req, res) => {
       const prompt = "Image 1 shows a person. Image 2 shows a product. Create one realistic vertical 9:16 smartphone selfie photo of exactly the same person as image 1 (identical face, hair, skin tone and outfit) holding exactly the product from image 2 up near the camera with its label facing the lens. " +
         "The product must keep its exact shape, size, colors, label text and packaging from image 2, with nothing added or changed. Natural window light, casual home setting, natural skin texture, no beauty filter, relaxed friendly expression, looking at the camera. " + String(b.extra || "").slice(0, 300);
       try {
-        const r = await fetch(`${API}/images`, { method: "POST", headers: orHeaders(), body: JSON.stringify({ model, prompt, n: 1, aspect_ratio: "9:16", input_references: [{ type: "image_url", image_url: { url: person } }, { type: "image_url", image_url: { url: b.product } }] }) });
+        const r = await orFetch(`${API}/images`, { method: "POST", headers: orHeaders(), body: JSON.stringify({ model, prompt, n: 1, aspect_ratio: "9:16", input_references: [{ type: "image_url", image_url: { url: person } }, { type: "image_url", image_url: { url: b.product } }] }) }, { safe: false });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) return send(res, r.status, { error: j.error?.message || "Start frame failed (" + r.status + ")" });
         const d = j.data?.[0];
         if (!d?.b64_json) return send(res, 502, { error: "The image model returned no picture." });
+        logSpend("Images", j.usage?.cost, model);
         return send(res, 200, { image: `data:${d.media_type || "image/png"};base64,${d.b64_json}`, cost: j.usage?.cost || 0 });
       } catch (e) { return send(res, 502, { error: e.message }); }
     }
@@ -506,13 +457,14 @@ const server = http.createServer(async (req, res) => {
       }
       if (!img) return send(res, 400, { error: "That influencer has no picture to describe." });
       const prompt = "Describe the person in this picture so an AI image or video generator can recreate the same look. Write 2 to 3 plain sentences covering: apparent age range, gender presentation, skin tone, face shape, hair color, length and style, facial hair if any, eye color, notable features, and clothing and accessories. No names, no opinions, no background description.";
-      const r = await fetch(`${API}/chat/completions`, {
+      const r = await orFetch(`${API}/chat/completions`, {
         method: "POST", headers: orHeaders(),
         body: JSON.stringify({ model: process.env.DESCRIBE_MODEL || "nvidia/nemotron-3.5-super-vl", max_tokens: 600, reasoning: { enabled: false },
           messages: [{ role: "user", content: [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: img } }] }] }),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) return send(res, r.status, { error: j.error?.message || "Describe failed" });
+      logSpend("Influencers", j.usage?.cost, "describe");
       const text = j.choices?.[0]?.message?.content?.trim();
       return text ? send(res, 200, { description: text }) : send(res, 502, { error: "The model returned no description. Try again." });
     }
@@ -529,7 +481,7 @@ const server = http.createServer(async (req, res) => {
       const prompt = `${lead}${desc}. Head and shoulders, looking at the camera, front-facing, relaxed expression with a slight smile, soft natural light, clean simple background${(b.style || "photo") === "photo" ? ", natural skin texture and pores, no beauty filter" : ""}. Vertical 9:16 framing.`;
       const n = Math.max(1, Math.min(4, Number(b.count) || 4));
       const call = async (k) => {
-        const r = await fetch(`${API}/images`, { method: "POST", headers: orHeaders(), body: JSON.stringify({ model, prompt, n: k, aspect_ratio: "9:16" }) });
+        const r = await orFetch(`${API}/images`, { method: "POST", headers: orHeaders(), body: JSON.stringify({ model, prompt, n: k, aspect_ratio: "9:16" }) }, { safe: false });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error?.message || "Image generation failed (" + r.status + ")");
         return j;
@@ -539,6 +491,7 @@ const server = http.createServer(async (req, res) => {
         try { parts = [await call(n)]; } catch (e) { if (n === 1) throw e; parts = await Promise.all(Array.from({ length: n }, () => call(1))); }
         const images = parts.flatMap((j) => (j.data || []).map((d) => `data:${d.media_type || "image/png"};base64,${d.b64_json}`));
         const cost = parts.reduce((a, j) => a + (j.usage?.cost || 0), 0);
+        logSpend("Influencers", cost, model);
         return send(res, 200, { images, cost });
       } catch (e) { return send(res, 502, { error: e.message }); }
     }
@@ -571,17 +524,17 @@ const server = http.createServer(async (req, res) => {
       const all = readInf(), p = all.find((x) => x.id === cm[1]), f = p && imgFile(p.id);
       if (!f) return send(res, 400, { error: "This influencer has no picture to test." });
       const dataUrl = `data:image/${path.extname(f).slice(1).replace("jpg", "jpeg")};base64,` + fs.readFileSync(f).toString("base64");
-      const r = await fetch(`${API}/videos`, { method: "POST", headers: orHeaders(), body: JSON.stringify({
+      const r = await orFetch(`${API}/videos`, { method: "POST", headers: orHeaders(), body: JSON.stringify({
         model: "bytedance/seedance-2.0-mini", prompt: "The person smiles and waves at the camera, natural handheld selfie video.",
         duration: 4, resolution: "480p", aspect_ratio: "9:16", generate_audio: false,
-        input_references: [{ type: "image_url", image_url: { url: dataUrl } }] }) });
+        input_references: [{ type: "image_url", image_url: { url: dataUrl } }] }) }, { safe: false });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) {
         if (/real person|sensitive/i.test(JSON.stringify(j))) { p.seedance = "blocked"; writeInf(all); return send(res, 200, { result: "blocked" }); }
         return send(res, r.status, { error: j.error?.message || JSON.stringify(j).slice(0, 200) });
       }
       p.seedance = "ok"; writeInf(all);
-      jobs.set(j.id, { startedAt: Date.now(), status: j.status || "pending", polling_url: j.polling_url });
+      jobs.set(j.id, { startedAt: Date.now(), status: j.status || "pending", polling_url: j.polling_url, model: "bytedance/seedance-2.0-mini", feature: "Influencers" });
       return send(res, 200, { result: "ok", id: j.id });
     }
     let im;
@@ -612,12 +565,13 @@ const server = http.createServer(async (req, res) => {
         "The user gives you the prompt that was used to generate the video. Write: one or two short, punchy sentences that make people want to watch (a hook, not a description of the prompt; max 1 emoji), " +
         "then a blank line, then 4 to 6 relevant hashtags on one line (always include #shorts). Write in the language of the prompt. " +
         "Never mention AI prompts, models or 'this video was generated'. Output ONLY the caption text.";
-      const r = await fetch(`${API}/chat/completions`, {
+      const r = await orFetch(`${API}/chat/completions`, {
         method: "POST", headers: orHeaders(),
-        body: JSON.stringify({ model: ENHANCE_MODEL, max_tokens: 400, reasoning: { enabled: false }, messages: [{ role: "system", content: sys }, { role: "user", content: p }] }),
+        body: JSON.stringify({ model: textModel(), max_tokens: 400, reasoning: { enabled: false }, messages: [{ role: "system", content: sys }, { role: "user", content: p }] }),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) return send(res, r.status, { error: j.error?.message || "Caption failed" });
+      logSpend("Captions", j.usage?.cost, textModel());
       const caption = (j.choices?.[0]?.message?.content || "").replace(/^["']|["']$/g, "").trim();
       if (!caption) return send(res, 502, { error: "No caption came back, write your own." });
       return send(res, 200, { caption });
@@ -643,12 +597,13 @@ const server = http.createServer(async (req, res) => {
         "End with a short 'Sound:' line (ambience, effects, any short spoken line in quotes). Keep under " + (Number(b.max_words) || 140) + " words. " +
         lenRule + "Aspect ratio: " + (b.aspect_ratio || "9:16") + ". " +
         (b.style ? "Visual style to respect: " + b.style + " " : "") + (b.extra || "");
-      const r = await fetch(`${API}/chat/completions`, {
+      const r = await orFetch(`${API}/chat/completions`, {
         method: "POST", headers: orHeaders(),
-        body: JSON.stringify({ model: ENHANCE_MODEL, max_tokens: 2000, reasoning: { enabled: false }, messages: [{ role: "system", content: sys }, { role: "user", content: b.prompt.trim() }] }),
+        body: JSON.stringify({ model: textModel(), max_tokens: 2000, reasoning: { enabled: false }, messages: [{ role: "system", content: sys }, { role: "user", content: b.prompt.trim() }] }),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) return send(res, r.status, { error: j.error?.message || "Enhance failed" });
+      logSpend("Prompt writing", j.usage?.cost, textModel());
       const out = j.choices?.[0]?.message?.content?.trim();
       if (!out) return send(res, 502, { error: "Enhancer returned nothing, try again." });
       if (!auto) return send(res, 200, { prompt: out });
@@ -673,11 +628,13 @@ const server = http.createServer(async (req, res) => {
       const id = m[1];
       const job = jobs.get(id) || { startedAt: Date.now(), status: "pending" };
       jobs.set(id, job);
-      const r = await fetch(`${API}/videos/${id}`, { headers: orHeaders() });
+      const r = await orFetch(`${API}/videos/${id}`, { headers: orHeaders() });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) return send(res, r.status, { error: j.error?.message || "poll failed" });
       job.status = j.status;
       if (j.status === "failed") job.error = typeof j.error === "string" ? j.error : j.error?.message || "Generation failed";
+      if (j.status === "completed") logSpend(job.feature || "Video clips", j.usage?.cost, job.model, id);
+      jobs.save();
       return send(res, 200, {
         status: job.status,
         progress: progress(job),
@@ -688,36 +645,27 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    if (req.method === "GET" && (m = url.pathname.match(/^\/api\/video\/([\w-]+)$/))) {
+    if ((req.method === "GET" || req.method === "HEAD") && (m = url.pathname.match(/^\/api\/video\/([\w-]+)$/))) {
       // iPhone Safari only plays video that answers byte-range requests with 206 + Content-Range. OpenRouter's
       // content endpoint doesn't reliably do that, so keep one copy on disk and serve ranges from it ourselves.
-      const f = path.join(VIDEO_CACHE, m[1] + ".mp4");
-      if (!fs.existsSync(f)) {
-        let p = videoFetches.get(m[1]);
-        if (!p) {
-          p = (async () => {
-            const r = await fetch(`${API}/videos/${m[1]}/content?index=0`, { headers: { Authorization: `Bearer ${KEY}` } });
-            if (!r.ok) { const t = await r.text().catch(() => ""); throw Object.assign(new Error(t.slice(0, 300) || "video not available"), { status: r.status }); }
-            const tmp = f + "." + process.pid + ".part";
-            fs.writeFileSync(tmp, Buffer.from(await r.arrayBuffer()));
-            fs.renameSync(tmp, f);
-          })().finally(() => videoFetches.delete(m[1]));
-          videoFetches.set(m[1], p);
-        }
-        try { await p; } catch (e) { return send(res, e.status || 502, { error: "Couldn't load the video: " + e.message }); }
-      }
+      let f;
+      try { f = await ensureVideo(m[1]); } catch (e) { return send(res, e.status || 502, { error: "Couldn't load the video: " + e.message }); }
       return serveMp4(req, res, f, url.searchParams.has("download") ? "video.mp4" : false);
+    }
+    if (req.method === "GET" && (m = url.pathname.match(/^\/api\/video\/([\w-]+)\/thumb\.jpg$/))) {
+      try { await ensureVideo(m[1]); } catch (e) { return send(res, e.status || 502, { error: e.message }); }
+      return serveThumb(res, path.join(VIDEO_CACHE, m[1] + ".mp4"), path.join(VIDEO_CACHE, m[1] + ".jpg"));
     }
 
     // static files
     let file = path.join(__dirname, "public", url.pathname === "/" ? "index.html" : path.normalize(url.pathname));
     if (!path.extname(file) && fs.existsSync(file + ".html")) file += ".html"; // clean URLs: /shorts -> shorts.html (same as Cloudflare)
     if (!file.startsWith(path.join(__dirname, "public")) || !fs.existsSync(file)) { res.writeHead(404); return res.end("Not found"); }
-    const MIME = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".webmanifest": "application/manifest+json" };
+    const MIME = { ".webp": "image/webp", ".ico": "image/x-icon", ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".webmanifest": "application/manifest+json" };
     res.writeHead(200, { "Content-Type": MIME[path.extname(file)] || "application/octet-stream", "Cache-Control": "no-cache" });
     fs.createReadStream(file).pipe(res);
   } catch (e) {
-    send(res, 500, { error: e.message });
+    if (!res.headersSent) send(res, e.status || 500, { error: e.message });
   }
 });
 

@@ -56,10 +56,18 @@
   .sum b{color:var(--warn);font-size:17px}
   video{width:100%;max-width:420px;border-radius:12px;background:#000;display:block;margin-bottom:10px}
   .hidden{display:none}
+  .quick{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin:12px 0 8px}
+  .lockrow{flex-direction:row !important;align-items:flex-start;gap:10px;color:var(--text) !important;font-size:14px !important;text-transform:none !important;letter-spacing:0 !important;font-weight:500 !important;cursor:pointer}
+  .lockrow input{width:auto;margin-top:3px}
+  #adv summary{cursor:pointer;color:var(--acc);font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:13px}
+  .castbox{display:flex;gap:14px;align-items:center;margin-top:12px;padding:12px;border:1px solid var(--line);background:var(--panel2)}
+  .castbox img{width:220px;max-width:45%;aspect-ratio:16/9;object-fit:cover;background:#000}
+  .castbox p{margin:4px 0 8px}
+  .kf{width:72px;aspect-ratio:9/16;object-fit:cover;margin-top:8px;display:block;border:1px solid var(--line)}
 </style>
 <link rel="stylesheet" href="/app.css">
 </head>
-<body data-title="Story mode" data-sub="Split a script into scenes, choose a model per scene, add narration, and stitch it all into one video.">
+<body data-title="Story mode" data-sub="Paste a story and press one button: AI plans the scenes, keeps your characters looking the same in every shot, voices it and stitches one video. Open Advanced to fine-tune anything.">
 <div class="wrap">
   <div class="panel hidden" id="histPanel">
     <h2>History (continue where you left off)</h2>
@@ -70,6 +78,25 @@
   <div class="panel">
     <h2>1 · Script</h2>
     <textarea id="script" placeholder="Paste your full script / story here…"></textarea>
+    <div class="quick">
+      <label>Quality<select id="preset">
+        <option value="budget">💰 Budget: about $0.15, small model, 480p</option>
+        <option value="balanced" selected>⚖ Balanced: good look, fair price</option>
+        <option value="best">💎 Best: sharpest, 720p</option>
+        <option value="custom">🛠 Custom (use Advanced settings)</option>
+      </select></label>
+      <label>Length<select id="quickLen"><option value="15">15 s</option><option value="30" selected>30 s</option><option value="45">45 s</option><option value="60">60 s</option></select></label>
+      <label>Look<select id="quickLook"><option value="clean">Clean</option><option value="glitch">⚡ Neon glitch</option></select></label>
+      <label>Main character (optional)<select id="castInf"><option value="">Invent from the story</option></select></label>
+    </div>
+    <label class="lockrow"><input type="checkbox" id="lock" checked> <span>🔒 <b>Keep characters consistent</b>: AI draws one character sheet, then starts every scene from a picture made from it, so faces, hair and clothes stay the same across the video. Adds about $0.02 per scene.</span></label>
+    <div class="meta" id="presetNote" style="margin:8px 0 12px"></div>
+    <div class="actions" style="display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn primary" id="auto" type="button">✨ Make my video</button>
+      <button class="btn" id="plan" type="button">Plan scenes first (review before paying)</button>
+    </div>
+    <div class="err" id="err"></div>
+    <details id="adv" style="margin-top:14px"><summary>Advanced settings</summary>
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel2);margin:12px 0 0">
       <label style="flex-direction:row;align-items:center;gap:10px;color:var(--text);font-size:14px;cursor:pointer;flex:1;min-width:240px">
         <input type="checkbox" id="budget" style="width:auto"> <span>💰 <b>Budget mode</b>: every scene is a real AI video clip on the cheapest small model (Grok Imagine 1.5 Lite, 480p, $0.02 per second). Scene lengths are trimmed to fit your budget, and the narration carries the story.</span>
@@ -101,13 +128,13 @@
         <option value="bytedance/seedance-2.5">Seedance 2.5 (~$0.11/s)</option>
       </select></label>
     </div>
-    <button class="btn primary" id="plan">Plan scenes</button>
-    <div class="err" id="err"></div>
+    </details>
   </div>
 
   <div class="panel hidden" id="planPanel">
     <h2>2 · Scenes (edit anything, switch models per scene)</h2>
     <label>Character &amp; setting bible (added to every scene so the look stays consistent)<textarea id="bible" style="min-height:70px"></textarea></label>
+    <div id="castBox" class="castbox hidden"><img id="castImg" alt="Character sheet"><div><b>🔒 Character sheet</b><p class="meta">Every scene starts from a picture drawn from this sheet. Edited the bible? Redraw it.</p><button class="btn" id="castRedo" type="button">↻ Redraw sheet</button></div></div>
     <div style="margin-top:14px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--panel2)">
       <label style="flex-direction:row;align-items:center;gap:8px;margin-bottom:10px;color:var(--text);font-size:14px"><input type="checkbox" id="narOn" checked style="width:auto"> 🎙️ Add voiceover narration (each scene's narration is voiced and mixed into that scene)</label>
       <div class="grid" id="narGrid" style="margin:0">
@@ -119,6 +146,7 @@
       <audio id="ttsAudio" controls class="hidden" style="width:100%;margin-top:10px"></audio>
       <div class="meta" id="ttsMsg" style="margin-top:6px"></div>
     </div>
+    <label style="flex-direction:row;align-items:center;gap:8px;margin-top:12px"><input type="checkbox" id="glitch" style="width:auto"> ⚡ Neon glitch look on the final video (horizontal tearing bursts, RGB split, scanlines). Free, added when stitching.</label>
     <label style="flex-direction:row;align-items:center;gap:8px;margin-top:12px"><input type="checkbox" id="chain" checked style="width:auto"> Chain scenes: start flagged scenes from the previous scene's last frame (keeps characters consistent, but those scenes run one after another so it takes longer)</label>
     <div id="scenes" style="margin-top:12px"></div>
     <div class="meta hidden" id="budgetNote" style="margin:12px 0;padding:10px 12px;border:1px solid var(--line);border-radius:10px"></div>
@@ -149,9 +177,17 @@ const PRICE={
   'bytedance/seedance-2.0':{'480p':.07,'720p':.15},
   'bytedance/seedance-2.5':{'480p':.11,'720p':.23},
 };
+// live prices from OpenRouter (silent $/s), replacing the numbers above when they arrive
+fetch('/api/prices').then(r=>r.json()).then(j=>{
+  for(const m of Object.keys(PRICE)){ const p=j.prices&&j.prices[m]; if(!p) continue; ['480p','720p'].forEach(r=>{ if(p[r]!=null) PRICE[m][r]=p[r]; }); }
+  presetNote(); if(scenes.length) render();
+}).catch(()=>{});
 const MIN={'x-ai/grok-imagine-video-1.5-lite':1,'heygen/heygen-video-1':5};
 const MAX={};
 const BUDGET_VIDEO='x-ai/grok-imagine-video-1.5-lite', BUDGET_RESERVE=0.005; // reserve: planning + narration voice
+// character lock: one sheet (~$0.01) + per scene a first frame (~$0.01) and the video model reading it (~$0.01)
+const LOCK_SHEET=0.01, LOCK_SCENE=0.02;
+const lockCost=()=>$('lock').checked?LOCK_SHEET+scenes.filter((s,i)=>!(i>0&&s.continues&&$('chain').checked)).length*LOCK_SCENE:0;
 const minSec=m=>MIN[m]||4, maxSec=m=>MAX[m]||15;
 const NAME=m=>$('cheap').querySelector(`option[value="${m}"]`)?.textContent.split(' (')[0]||$('good').querySelector(`option[value="${m}"]`)?.textContent.split(' (')[0]||m;
 let scenes=[];
@@ -195,19 +231,20 @@ function narCost(){ if(!$('narOn').checked) return 0; const p=TTS[$('ttsModel').
 function dur(s){return Math.max(minSec(s.model),Math.min(maxSec(s.model),Math.round(s.seconds)||minSec(s.model)))}
 function price(s){return (PRICE[s.model]?.[$('res').value]||0)*dur(s)}
 function totals(){
-  const nc=narCost(), t=scenes.reduce((a,s)=>a+price(s),0)+nc, d=scenes.reduce((a,s)=>a+dur(s),0);
+  const nc=narCost(), lc=lockCost(), t=scenes.reduce((a,s)=>a+price(s),0)+nc+lc, d=scenes.reduce((a,s)=>a+dur(s),0);
   budgetNote();
   $('total$').textContent='≈ $'+t.toFixed(2); $('secs').textContent=`(${d}s of video, ${scenes.length} scenes)`;
   // breakdown: key vs filler, and savings vs rendering everything on the quality model
   const keyS=scenes.filter(s=>s.key), fillS=scenes.filter(s=>!s.key);
   const sum=(a)=>a.reduce((x,s)=>x+price(s),0), secs=(a)=>a.reduce((x,s)=>x+dur(s),0);
   const allGood=scenes.reduce((a,s)=>a+(PRICE[$('good').value]?.[$('res').value]||0)*dur(s),0);
-  const save=allGood-(t-nc);
+  const save=allGood-(t-nc-lc);
   $('breakdown').innerHTML=
     `<div><span class="meta">Key scenes (${keyS.length} · ${secs(keyS)}s)</span><b>$${sum(keyS).toFixed(2)}</b></div>`+
     `<div><span class="meta">Filler scenes (${fillS.length} · ${secs(fillS)}s)</span><b>$${sum(fillS).toFixed(2)}</b></div>`+
     `<div><span class="meta">All on ${NAME($('good').value)} would be</span><b>$${allGood.toFixed(2)}</b></div>`+
     `<div><span class="meta">Narration voiceover</span><b>${nc>0?'$'+nc.toFixed(3):'off'}</b></div>`+
+    `<div><span class="meta">🔒 Character lock</span><b>${lc>0?'$'+lc.toFixed(2):'off'}</b></div>`+
     `<div><span class="meta">You save</span><b style="color:var(--ok)">${save>0?'$'+save.toFixed(2)+' ('+Math.round(save/allGood*100)+'%)':'$0.00'}</b></div>`;
 }
 
@@ -219,7 +256,7 @@ function applyBudget(){
   $('res').value='480p'; $('cheap').value=BUDGET_VIDEO; $('good').value=BUDGET_VIDEO;
   const rate=PRICE[BUDGET_VIDEO]['480p'];
   scenes.forEach(s=>{ s.planned=s.planned||s.seconds; s.model=BUDGET_VIDEO; });
-  const secs=Math.max(scenes.length,Math.floor((budgetAmt()-BUDGET_RESERVE)/rate+1e-9));
+  const secs=Math.max(scenes.length,Math.floor((budgetAmt()-BUDGET_RESERVE-lockCost())/rate+1e-9));
   const want=scenes.reduce((a,s)=>a+s.planned,0);
   const share=scenes.map(s=>Math.max(1,Math.min(s.planned,Math.floor(secs*s.planned/want))));
   let left=secs-share.reduce((a,b)=>a+b,0);
@@ -231,7 +268,7 @@ function applyBudget(){
 function budgetNote(){
   const on=$('budget').checked; $('budgetNote').classList.toggle('hidden',!on); if(!on) return;
   const v=scenes.reduce((a,s)=>a+dur(s),0), p=scenes.reduce((a,s)=>a+(s.planned||s.seconds),0);
-  const t=scenes.reduce((a,s)=>a+price(s),0)+narCost();
+  const t=scenes.reduce((a,s)=>a+price(s),0)+narCost()+lockCost();
   $('budgetNote').innerHTML=`💰 Budget mode: ${scenes.length} real video clips, ${v} s of generated video (≈ $${t.toFixed(2)} of your $${budgetAmt().toFixed(2)}).`+
     (v<p?` The story was planned for ${p} s, so clips are shorter than planned: where the narration runs longer than a clip, the clip is slowed down (up to 1.5×) and then holds its last frame. Raise the budget for more motion.`:'');
 }
@@ -240,8 +277,49 @@ function budgetNote(){
   if(!$('budget').checked) scenes.forEach(s=>{ if(s.planned) s.seconds=s.planned; s.model=s.key?$('good').value:$('cheap').value; });
   applyBudget(); render();
 }));
-$('plan').onclick=async()=>{
+// Quality presets fill in the Advanced settings, so most people never need to open them.
+const PRESETS={
+  budget:{budget:true,res:'480p',cheap:BUDGET_VIDEO,good:BUDGET_VIDEO},
+  balanced:{budget:false,res:'480p',cheap:'x-ai/grok-imagine-video-1.5-lite',good:'bytedance/seedance-2.0-mini'},
+  best:{budget:false,res:'720p',cheap:'bytedance/seedance-2.0-mini',good:'bytedance/seedance-2.0-fast'},
+};
+function applyPreset(){
+  const p=PRESETS[$('preset').value];
+  $('total').value=$('quickLen').value; $('glitch').checked=$('quickLook').value==='glitch';
+  if(p){ $('budget').checked=p.budget; $('res').value=p.res; $('cheap').value=p.cheap; $('good').value=p.good; }
+  presetNote();
+}
+function presetNote(){
+  const p=PRESETS[$('preset').value], secs=+$('quickLen').value||30;
+  if(!p){ $('presetNote').textContent='Custom: your Advanced settings are used as they are.'; return; }
+  const n=Math.max(2,Math.round(secs/6)), keys=Math.max(1,Math.round(n*.3));
+  const est=p.budget?+$('budgetAmt').value||0.15:
+    ((PRICE[p.good]?.[p.res]||0)*secs*keys/n+(PRICE[p.cheap]?.[p.res]||0)*secs*(n-keys)/n);
+  const lock=$('lock').checked&&!p.budget?LOCK_SHEET+n*LOCK_SCENE:0; // in budget mode the lock is paid out of the budget
+  $('presetNote').textContent=`About ${n} scenes · estimated ≈ $${(est+lock).toFixed(2)} for ${secs} s`+(p.budget?' (budget cap; clips trimmed to fit)':'')+' · you see the exact cost before anything is charged when you plan first.';
+}
+['preset','quickLen','quickLook','lock'].forEach(id=>$(id).addEventListener('change',()=>{ applyPreset(); if(scenes.length){ if($('budget').checked) applyBudget(); render(); } }));
+// saved influencers as the optional main character
+fetch('/api/influencers').then(r=>r.json()).then(j=>{
+  for(const p of j.influencers||[]) if(p.image) $('castInf').insertAdjacentHTML('beforeend',`<option value="${esc(p.id)}">${esc(p.name)}</option>`);
+}).catch(()=>{});
+
+// ---- character lock: the cast sheet, made once per story ----
+let projCast=null;
+function showCast(){ $('castBox').classList.toggle('hidden',!projCast||!$('lock').checked); if(projCast) $('castImg').src=projCast.url; }
+async function ensureCast(force){
+  if(projCast&&!force) return projCast;
+  $('final').textContent='🔒 Drawing the character sheet…';
+  const r=await fetch('/api/cast',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bible:$('bible').value,style:$('style').value,influencer_ids:$('castInf').value?[$('castInf').value]:[]})});
+  const j=await r.json(); if(!r.ok) throw new Error(j.error||'Character sheet failed');
+  projCast={id:j.id,url:j.url}; scenes.forEach(s=>{ delete s._frame; }); showCast(); save(); return projCast;
+}
+$('castRedo').onclick=async()=>{ const b=$('castRedo'); b.disabled=true; try{ await ensureCast(true); toast('New character sheet drawn','ok'); }catch(e){ toast(e.message,'err'); } b.disabled=false; };
+$('lock').addEventListener('change',showCast);
+
+async function planScenes(){
   $('err').textContent=''; const b=$('plan'); b.disabled=true; b.textContent='Planning…';
+  let ok=false;
   try{
     const r=await fetch('/api/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       script:$('script').value,total:+$('total').value,aspect:$('aspect').value,style:$('style').value})});
@@ -249,10 +327,20 @@ $('plan').onclick=async()=>{
     $('bible').value=j.bible||'';
     scenes=j.scenes.map(s=>({title:s.title,prompt:s.prompt,seconds:Math.round(s.seconds)||6,key:!!s.key,continues:!!s.continues,narration:s.narration||'',model:s.key?$('good').value:$('cheap').value}));
     applyBudget();
-    jobs=[]; runP=[]; projFinal=null; projId='p'+Date.now().toString(36); $('outPanel').classList.add('hidden');
-    $('planPanel').classList.remove('hidden'); render(); updateGen(); saveNow();
+    jobs=[]; runP=[]; projFinal=null; projCast=null; showCast(); projId='p'+Date.now().toString(36); $('outPanel').classList.add('hidden');
+    $('planPanel').classList.remove('hidden'); render(); updateGen(); saveNow(); ok=true;
   }catch(e){$('err').textContent=e.message}
-  b.disabled=false; b.textContent='Plan scenes';
+  b.disabled=false; b.textContent='Plan scenes first (review before paying)';
+  return ok;
+}
+$('plan').onclick=()=>{ applyPreset(); planScenes(); };
+// one button: plan, lock the cast, generate every scene, stitch
+$('auto').onclick=async()=>{
+  if(!$('script').value.trim()) return $('err').textContent='Paste a story first.';
+  const b=$('auto'); b.disabled=true; b.textContent='Working…';
+  applyPreset();
+  if(await planScenes()){ $('outPanel').classList.remove('hidden'); $('outPanel').scrollIntoView({behavior:'smooth'}); $('gen').onclick(); }
+  b.disabled=false; b.textContent='✨ Make my video';
 };
 ['res','cheap','good'].forEach(id=>$(id).addEventListener('change',()=>{
   if(id!=='res'&&!$('budget').checked) scenes.forEach(s=>{ s.model=s.key?$('good').value:$('cheap').value });
@@ -298,9 +386,17 @@ async function run(i){
   }
   if(!job.id){
     try{
+      if($('lock').checked&&!prev&&projCast&&!s._frame){
+        $('m'+i).textContent='🔒 drawing this scene\'s first frame from the character sheet…';
+        const k=await fetch('/api/keyframe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cast:projCast.id,prompt:s.prompt,aspect_ratio:$('aspect').value,style:$('style').value})});
+        const kj=await k.json(); if(!k.ok) throw new Error(kj.error||'Scene frame failed');
+        s._frame=kj.image;
+      }
+      if(s._frame&&!prev) $('r'+i).innerHTML=`<img class="kf" src="${s._frame}" alt="First frame">`;
       const r=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
         model:s.model,prompt:(bible?bible+' ':'')+s.prompt+(style?' Visual style: '+style:''),duration:dur(s),
-        resolution:$('res').value,aspect_ratio:$('aspect').value,generate_audio:false,frame_from_job:prev})});
+        resolution:$('res').value,aspect_ratio:$('aspect').value,generate_audio:false,frame_from_job:prev,
+        ...(s._frame&&!prev?{frame_image:s._frame,frame_note:'🔒 Started from the locked character frame.'}:{})})});
       const j=await r.json(); if(!r.ok) throw new Error(j.error||'failed');
       job.id=j.id; note=j.note?'⚠ '+j.note+' · ':(prev?'↪ from previous last frame · ':''); save();
     }catch(e){ return failJob(i,e.message); }
@@ -318,6 +414,10 @@ async function run(i){
 }
 async function execute(idxs,keep){
   $('gen').disabled=true; $('outPanel').classList.remove('hidden'); $('final').textContent='Starting scenes…';
+  if($('lock').checked&&!projCast){
+    try{ await ensureCast(); }catch(e){ $('final').textContent='❌ '+e.message+' (untick "Keep characters consistent" to go without it)'; $('gen').disabled=false; return; }
+    $('final').textContent='Starting scenes…';
+  }
   if(!keep) idxs.forEach(i=>{ jobs[i]={i,id:null,done:false,failed:false}; if($('r'+i)) $('r'+i).innerHTML=''; if($('f'+i)) $('f'+i).style.width='0'; if($('m'+i)) $('m'+i).textContent=''; });
   idxs.forEach(i=>{ runP[i]=run(i); });
   await Promise.all(idxs.map(i=>runP[i]));
@@ -350,7 +450,7 @@ $('gen').onclick=()=>{
 $('regen').onclick=()=>{ if(!confirm('Regenerate every scene from scratch? Finished scenes will be charged again.')) return; jobs=[]; runP=[]; projFinal=null; execute(scenes.map((_,i)=>i)); };
 async function stitch(ids){
   $('final').textContent='Stitching…';
-  const r=await fetch('/api/stitch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids,aspect:$('aspect').value,extend:$('budget').checked,narration:$('narOn').checked?{model:$('ttsModel').value,voice:$('ttsVoice').value,instructions:$('ttsTone').value||undefined,lines:scenes.map(s=>s.narration||'')}:undefined})});
+  const r=await fetch('/api/stitch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids,aspect:$('aspect').value,extend:$('budget').checked,look:$('glitch').checked?'glitch':'clean',narration:$('narOn').checked?{model:$('ttsModel').value,voice:$('ttsVoice').value,instructions:$('ttsTone').value||undefined,lines:scenes.map(s=>s.narration||'')}:undefined})});
   const j=await r.json(); if(!r.ok){ $('final').textContent=j.error; $('gen').disabled=false; return; }
   const t=setInterval(async()=>{
     const d=await (await fetch('/api/stitch/'+j.id)).json();
@@ -360,22 +460,25 @@ async function stitch(ids){
     projFinal={url:d.url,warnings:d.warnings||[]}; save();
     $('final').innerHTML=(d.warnings&&d.warnings.length?'<div style="color:var(--warn);margin-bottom:8px">⚠ '+d.warnings.join('<br>⚠ ')+'</div>':'')+`<video controls autoplay loop playsinline src="${d.url}"></video><a class="btn" href="${d.url}?download=1" style="text-decoration:none;display:inline-block">⬇ Download MP4</a>`;
     mountShare($('final'),{url:d.url,name:'story.mp4',prompt:$('script').value});
+    window.dispatchEvent(new Event('spend-changed'));
   },1500);
 }
 
-/* ---------------- history (saved in this browser) ---------------- */
-const HKEY='storyHistory', FIELDS=['script','total','aspect','res','style','cheap','good','bible','ttsModel','ttsVoice','ttsTone','budgetAmt'];
-let projId=null, projFinal=null;
-const hget=()=>{try{return JSON.parse(localStorage.getItem(HKEY)||'[]')}catch{return[]}};
-const hset=h=>{try{localStorage.setItem(HKEY,JSON.stringify(h.slice(0,2)))}catch{}};
+/* ---------------- history (saved on the server, so every device sees it) ---------------- */
+const HKEY='storyHistory', FIELDS=['script','total','aspect','res','style','cheap','good','bible','ttsModel','ttsVoice','ttsTone','budgetAmt','preset','quickLen','quickLook','castInf'];
+let projId=null, projFinal=null, HIST=[];
+const hget=()=>HIST;
+// scene first-frames are big pictures: they stay in memory only (made again if needed)
+const slim=(p)=>({...p,scenes:p.scenes.map(({_frame,...x})=>x)});
+const putStory=(p)=>fetch('/api/stories/'+p.id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(slim(p))}).catch(()=>{});
 let saveT=null;
 function save(){ clearTimeout(saveT); saveT=setTimeout(saveNow,300); }
 function saveNow(){
   if(!projId||!scenes.length) return;
-  const f={}; FIELDS.forEach(k=>f[k]=$(k).value); f.narOn=$('narOn').checked; f.chain=$('chain').checked; f.budget=$('budget').checked;
+  const f={}; FIELDS.forEach(k=>f[k]=$(k).value); f.narOn=$('narOn').checked; f.chain=$('chain').checked; f.budget=$('budget').checked; f.glitch=$('glitch').checked; f.lock=$('lock').checked;
   const p={id:projId,ts:Date.now(),title:($('script').value.trim().replace(/\s+/g,' ').slice(0,48))||'Untitled story',fields:f,scenes,
-    jobs:jobs.map(j=>j?{id:j.id,done:!!j.done,failed:!!j.failed,skipped:!!j.skipped}:null),final:projFinal};
-  const h=hget().filter(x=>x.id!==projId); h.unshift(p); hset(h); renderHist();
+    jobs:jobs.map(j=>j?{id:j.id,done:!!j.done,failed:!!j.failed,skipped:!!j.skipped}:null),final:projFinal,cast:projCast};
+  HIST=[p,...HIST.filter(x=>x.id!==projId)]; putStory(p); renderHist();
 }
 function renderHist(){
   const h=hget(); $('histPanel').classList.remove('hidden');
@@ -387,14 +490,15 @@ function renderHist(){
   }).join('');
   $('hist').querySelectorAll('.item').forEach(el=>{
     el.querySelector('[data-a=open]').onclick=()=>restore(el.dataset.id);
-    el.querySelector('[data-a=del]').onclick=()=>{ if(!confirm('Delete this saved story from history?')) return; hset(hget().filter(x=>x.id!==el.dataset.id)); if(projId===el.dataset.id) projId=null; renderHist(); };
+    el.querySelector('[data-a=del]').onclick=()=>{ if(!confirm('Delete this saved story from history?')) return; HIST=HIST.filter(x=>x.id!==el.dataset.id); fetch('/api/stories/'+el.dataset.id,{method:'DELETE'}).catch(()=>{}); if(projId===el.dataset.id) projId=null; renderHist(); };
   });
 }
 function restore(id){
   const p=hget().find(x=>x.id===id); if(!p) return;
-  ['script','total','aspect','res','style','cheap','good','bible','ttsModel'].forEach(k=>{ if(p.fields[k]!==undefined) $(k).value=p.fields[k]; });
+  ['script','total','aspect','res','style','cheap','good','bible','ttsModel','preset','quickLen','quickLook','castInf'].forEach(k=>{ if(p.fields[k]!==undefined) $(k).value=p.fields[k]; });
+  $('lock').checked=p.fields.lock!==undefined?!!p.fields.lock:false; projCast=p.cast||null; showCast(); presetNote();
   fillVoices(); $('ttsVoice').value=p.fields.ttsVoice; $('ttsTone').value=p.fields.ttsTone||'';
-  $('narOn').checked=p.fields.narOn!==false; $('narGrid').style.opacity=$('narOn').checked?1:.4; $('chain').checked=p.fields.chain!==false; $('budget').checked=!!p.fields.budget; if(p.fields.budgetAmt) $('budgetAmt').value=p.fields.budgetAmt;
+  $('narOn').checked=p.fields.narOn!==false; $('narGrid').style.opacity=$('narOn').checked?1:.4; $('chain').checked=p.fields.chain!==false; $('budget').checked=!!p.fields.budget; $('glitch').checked=!!p.fields.glitch; if(p.fields.budgetAmt) $('budgetAmt').value=p.fields.budgetAmt;
   projId=p.id; projFinal=p.final||null; scenes=p.scenes; jobs=(p.jobs||[]).map((j,i)=>j?{i,...j}:undefined); runP=[];
   $('planPanel').classList.remove('hidden'); render(); totals(); $('planPanel').scrollIntoView({behavior:'smooth'});
   scenes.forEach((_,i)=>{ const j=jobs[i]; if(!j) return;
@@ -417,7 +521,15 @@ function renderDisk(){
   });
 }
 fetch('/api/finals').then(r=>r.json()).then(j=>{ diskList=(j.finals||[]).slice(0,2); renderDisk(); renderHist(); }).catch(()=>{});
-renderHist();
+// load history from the server; stories saved only in this browser before (old version) are moved up once
+fetch('/api/stories').then(r=>r.json()).then(j=>{
+  HIST=j.stories||[];
+  let local=[]; try{ local=JSON.parse(localStorage.getItem(HKEY)||'[]'); }catch{}
+  for(const p of local) if(p&&p.id&&!HIST.some(x=>x.id===p.id)){ HIST.push(p); putStory(p); }
+  try{ localStorage.removeItem(HKEY); }catch{}
+  HIST.sort((a,b)=>b.ts-a.ts); renderHist();
+}).catch(()=>renderHist());
+applyPreset();
 </script>
 <script src="/app.js"></script>
 </body>

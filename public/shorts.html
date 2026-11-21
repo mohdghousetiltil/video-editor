@@ -64,12 +64,20 @@
   .linkstat{font-size:13px;margin-top:8px;min-height:20px;color:var(--mute)}
   .linkstat.ok{color:var(--ok)}.linkstat.bad{color:var(--err)}
   .hidden{display:none !important}
+  .range{display:flex;flex-direction:column;gap:6px;grid-column:span 2;min-width:0}
+  .range-l{font-size:12px;color:var(--mute);letter-spacing:.06em;text-transform:uppercase;font-weight:600}
+  .range-row{display:flex;align-items:flex-end;gap:10px}
+  .range-row label{flex:1;min-width:0}
+  .range-dash{padding-bottom:12px;color:var(--acc)}
+  .range-n{font-size:12px;color:var(--mute)}
+  .range-n.bad{color:var(--err)}
+  @media (max-width:820px){.range{grid-column:auto}}
   @media (max-width:820px){.out{grid-template-columns:1fr 1fr}.fields{grid-column:1/-1}}
   @media (max-width:480px){.out{grid-template-columns:1fr}}
 </style>
 <link rel="stylesheet" href="/app.css">
 </head>
-<body data-title="Shorts maker" data-sub="Give it any long video. AI watches it, picks the best 15–60 seconds, reframes it to 9:16, adds captions, and writes the title, description, hashtags and thumbnail.">
+<body data-title="Shorts maker" data-sub="Give it any long video (or just the part you want). AI watches it all, picks and edits the best 15–60 seconds, reframes to 9:16, adds captions and an optional narrator, and writes the title, description, hashtags and thumbnail.">
 <div class="wrap">
   <div class="panel">
     <h2>1 · Source video</h2>
@@ -94,7 +102,17 @@
     <div class="grid">
       <label>Short length<select id="len"><option value="15-30">15–30 seconds</option><option value="30-60">30–60 seconds</option></select></label>
       <label>What should it focus on? (optional)<input id="hint" maxlength="300" placeholder="e.g. the funniest moment, the car chase, the reveal"></label>
+      <div class="range">
+        <span class="range-l">Search only this part (optional)</span>
+        <div class="range-row">
+          <label>From<input id="from" inputmode="numeric" autocomplete="off" placeholder="12:30" pattern="[0-9:.]*"></label>
+          <span class="range-dash">→</span>
+          <label>To<input id="to" inputmode="numeric" autocomplete="off" placeholder="18:00" pattern="[0-9:.]*"></label>
+        </div>
+        <small class="range-n" id="rangeNote">Leave empty to search the whole video. Use m:ss or h:mm:ss.</small>
+      </div>
       <label>Editing<select id="edit"><option value="dynamic">Jump cuts + punch-in zooms</option><option value="clean">Clean (cuts only, no zooms)</option></select></label>
+      <label>Look<select id="look"><option value="clean">Clean</option><option value="glitch">Neon glitch (tearing, RGB split, scanlines)</option></select></label>
       <label>AI voiceover<select id="narration">
         <option value="auto">Auto: narrate if the clip has little talking</option>
         <option value="intro">Hook line only (first 3 s)</option>
@@ -142,7 +160,7 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const OPT = ['len', 'hint', 'edit', 'narration', 'voice'];
+const OPT = ['len', 'hint', 'edit', 'look', 'narration', 'voice'];
 try { const o = JSON.parse(localStorage.getItem('shortsOpts') || '{}'); OPT.forEach((k) => { if (o[k] != null && k !== 'hint') $(k).dataset.want = o[k]; }); } catch {}
 const saveOpts = () => { try { localStorage.setItem('shortsOpts', JSON.stringify(Object.fromEntries(OPT.map((k) => [k, $(k).value])))); } catch {} };
 const syncVoice = () => $('voiceWrap').style.opacity = $('narration').value === 'off' ? .4 : 1;
@@ -154,6 +172,22 @@ fetch('/api/shorts/voices').then((r) => r.json()).then((j) => {
   if ($('voice').dataset.want) $('voice').value = $('voice').dataset.want;
   if (!$('voice').value) $('voice').selectedIndex = 0;
 }).catch(() => {});
+// "12:30" / "1:02:03" / "95" -> seconds; "" -> null; anything else -> NaN
+const toSecs = (v) => { v = v.trim(); if (!v) return null; if (!/^\d+(:\d{1,2}){0,2}(\.\d+)?$/.test(v)) return NaN; return v.split(':').map(Number).reduce((a, n) => a * 60 + n, 0); };
+function checkRange() {
+  const a = toSecs($('from').value), b = toSecs($('to').value), n = $('rangeNote');
+  let msg = 'Leave empty to search the whole video. Use m:ss or h:mm:ss.', bad = false;
+  if (Number.isNaN(a) || Number.isNaN(b)) { msg = 'Write times like 12:30 or 1:02:03.'; bad = true; }
+  else if (a != null && b != null && b - a < 3) { msg = '"To" must be at least 3 seconds after "From".'; bad = true; }
+  else if (a != null || b != null) {
+    const len = (b ?? Infinity) - (a ?? 0);
+    msg = 'AI will only look ' + (a != null ? 'from ' + fmt(a) : 'from the start') + (b != null ? ' to ' + fmt(b) : ' to the end') +
+      (isFinite(len) && len < 15 ? ' — shorter than the Short length, so this part is used as it is.' : '.');
+  }
+  n.textContent = msg; n.classList.toggle('bad', bad);
+  return bad ? null : { from: a ?? '', to: b ?? '' };
+}
+['from', 'to'].forEach((k) => $(k).addEventListener('input', checkRange));
 const fmt = (s) => { s = Math.round(s); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
 let mode = 'file', file = null, pollT = null;
 
@@ -199,7 +233,9 @@ const fail = (msg) => { $('err').textContent = msg; $('go').disabled = false; $(
 $('go').onclick = async () => {
   $('err').textContent = ''; $('outPanel').classList.add('hidden');
   const len = $('len').value, hint = $('hint').value.trim();
-  const opts = { len, hint, edit: $('edit').value, narration: $('narration').value, voice: $('voice').value };
+  const rg = checkRange();
+  if (!rg) return fail('Fix the time range first (or leave it empty).');
+  const opts = { len, hint, from: rg.from, to: rg.to, edit: $('edit').value, look: $('look').value, narration: $('narration').value, voice: $('voice').value };
   if (mode === 'file' && !file) return fail('Choose a video file first.');
   if (mode === 'link' && !/^https?:\/\//.test($('link').value.trim())) return fail('Paste a full link starting with https://');
   $('go').disabled = true;
@@ -236,7 +272,7 @@ function track(id) {
     catch (e) { pollT = setTimeout(tick, 4000); return; }
     if (j.status === 'running') {
       showProg(j.step + '…', j.pct || 0);
-      $('planInfo').textContent = j.plan ? `Picked ${fmt(j.plan.start)}–${fmt(j.plan.end)}${j.plan.segments && j.plan.segments.length > 1 ? ' (' + j.plan.segments.length + ' pieces, jump cut)' : ''} · ${j.plan.framing === 'crop' ? 'smart crop' : 'full frame + blurred background'}${j.plan.reason ? ' · ' + j.plan.reason : ''}` : (j.source ? `Source: ${j.source.title || 'video'} (${fmt(j.source.duration)})` : '');
+      $('planInfo').textContent = (j.range ? `Searching ${fmt(j.range[0])}–${fmt(j.range[1])} · ` : '') + (j.plan ? `Picked ${fmt(j.plan.start)}–${fmt(j.plan.end)}${j.plan.segments && j.plan.segments.length > 1 ? ' (' + j.plan.segments.length + ' pieces, jump cut)' : ''} · ${j.plan.framing === 'crop' ? 'smart crop' : 'full frame + blurred background'}${j.plan.reason ? ' · ' + j.plan.reason : ''}` : (j.source && j.source.duration ? `Source: ${j.source.title || 'video'} (${fmt(j.source.duration)})` : ''));
       pollT = setTimeout(tick, 2000);
       return;
     }
@@ -269,11 +305,12 @@ function showResult(j) {
   // Share: the Short itself plus title + description + hashtags (as currently edited)
   document.querySelector('#outPanel .sharebox')?.remove();
   mountShare(document.querySelector('#outPanel .actions'), {
-    url: j.videoUrl, name: 'short-' + j.id + '.mp4', title: j.title || '',
+    url: j.videoUrl, name: 'short-' + j.id + '.mp4', title: j.title || '', thumb: j.thumbUrl,
     getText: () => [$('oTitle').value.trim(), $('oDesc').value.trim()].filter(Boolean).join('\n\n'),
   });
   $('oInfo').innerHTML = [
     j.source ? `From ${esc(j.source.title || 'your video')} (${fmt(j.source.duration)}) · ${fmt(j.start)}–${fmt(j.end)} → ${Math.round(j.length || j.end - j.start)} s Short` : '',
+    j.range ? `Searched only ${fmt(j.range[0])}–${fmt(j.range[1])}, as you asked` : '',
     j.segments && j.segments.length > 1 ? `Edited from ${j.segments.length} pieces: ` + j.segments.map((s) => fmt(s.start) + '–' + fmt(s.end)).join(', ') : '',
     j.candidates ? `Compared the ${j.candidates} best moments found across the whole video` : '',
     j.voiceover && j.voiceover.length ? '🎙️ Voiceover: “' + j.voiceover.map(esc).join(' … ') + '”' : '',
