@@ -70,6 +70,12 @@
   <div class="panel">
     <h2>1 · Script</h2>
     <textarea id="script" placeholder="Paste your full script / story here…"></textarea>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel2);margin:12px 0 0">
+      <label style="flex-direction:row;align-items:center;gap:10px;color:var(--text);font-size:14px;cursor:pointer;flex:1;min-width:240px">
+        <input type="checkbox" id="budget" style="width:auto"> <span>💰 <b>Budget mode</b>: every scene is a real AI video clip on the cheapest small model (Grok Imagine 1.5 Lite, 480p, $0.02 per second). Scene lengths are trimmed to fit your budget, and the narration carries the story.</span>
+      </label>
+      <label style="width:130px">Budget ($)<input id="budgetAmt" type="number" min="0.05" max="2" step="0.01" value="0.15"></label>
+    </div>
     <div class="grid">
       <label>Total length (s)<input id="total" type="number" value="30" min="8" max="90"></label>
       <label>Aspect<select id="aspect"><option>9:16</option><option>16:9</option><option>1:1</option></select></label>
@@ -83,13 +89,13 @@
         <option value="">None</option>
       </select></label>
       <label>Cheap model (filler scenes)<select id="cheap">
-        <option value="bytedance/seedance-1-5-pro">Seedance 1.5 Pro, no audio (~$0.012/s)</option>
         <option value="heygen/heygen-video-1">HeyGen Video (~$0.02/s)</option>
         <option value="x-ai/grok-imagine-video-1.5-lite" selected>Grok Imagine 1.5 Lite (~$0.02/s)</option>
         <option value="bytedance/seedance-2.0-mini">Seedance 2.0 Mini (~$0.035/s)</option>
         <option value="bytedance/seedance-2.0-fast">Seedance 2.0 Fast (~$0.04/s)</option>
       </select></label>
       <label>Quality model (key scenes)<select id="good">
+        <option value="x-ai/grok-imagine-video-1.5-lite">Grok Imagine 1.5 Lite (~$0.02/s)</option>
         <option value="bytedance/seedance-2.0-fast">Seedance 2.0 Fast (~$0.04/s)</option>
         <option value="bytedance/seedance-2.0">Seedance 2.0 (~$0.07/s)</option>
         <option value="bytedance/seedance-2.5">Seedance 2.5 (~$0.11/s)</option>
@@ -115,6 +121,7 @@
     </div>
     <label style="flex-direction:row;align-items:center;gap:8px;margin-top:12px"><input type="checkbox" id="chain" checked style="width:auto"> Chain scenes: start flagged scenes from the previous scene's last frame (keeps characters consistent, but those scenes run one after another so it takes longer)</label>
     <div id="scenes" style="margin-top:12px"></div>
+    <div class="meta hidden" id="budgetNote" style="margin:12px 0;padding:10px 12px;border:1px solid var(--line);border-radius:10px"></div>
     <div class="sum" style="background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px 14px"><span style="font-weight:600">Estimated cost <span class="meta" id="secs"></span></span><b id="total$" style="font-size:22px">—</b></div>
     <div id="breakdown" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-bottom:12px"></div>
     <style>.hgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}@media(max-width:700px){.hgrid{grid-template-columns:1fr}}.hgrid .item{flex-wrap:wrap}</style>
@@ -135,7 +142,6 @@ if(location.protocol==='file:'){location.replace('http://localhost:3100/'+(locat
 
 const $=id=>document.getElementById(id);
 const PRICE={
-  'bytedance/seedance-1-5-pro':{'480p':.012,'720p':.027},
   'heygen/heygen-video-1':{'480p':.02,'720p':.036},
   'x-ai/grok-imagine-video-1.5-lite':{'480p':.02,'720p':.03},
   'bytedance/seedance-2.0-mini':{'480p':.035,'720p':.075},
@@ -144,7 +150,8 @@ const PRICE={
   'bytedance/seedance-2.5':{'480p':.11,'720p':.23},
 };
 const MIN={'x-ai/grok-imagine-video-1.5-lite':1,'heygen/heygen-video-1':5};
-const MAX={'bytedance/seedance-1-5-pro':12};
+const MAX={};
+const BUDGET_VIDEO='x-ai/grok-imagine-video-1.5-lite', BUDGET_RESERVE=0.005; // reserve: planning + narration voice
 const minSec=m=>MIN[m]||4, maxSec=m=>MAX[m]||15;
 const NAME=m=>$('cheap').querySelector(`option[value="${m}"]`)?.textContent.split(' (')[0]||$('good').querySelector(`option[value="${m}"]`)?.textContent.split(' (')[0]||m;
 let scenes=[];
@@ -189,6 +196,7 @@ function dur(s){return Math.max(minSec(s.model),Math.min(maxSec(s.model),Math.ro
 function price(s){return (PRICE[s.model]?.[$('res').value]||0)*dur(s)}
 function totals(){
   const nc=narCost(), t=scenes.reduce((a,s)=>a+price(s),0)+nc, d=scenes.reduce((a,s)=>a+dur(s),0);
+  budgetNote();
   $('total$').textContent='≈ $'+t.toFixed(2); $('secs').textContent=`(${d}s of video, ${scenes.length} scenes)`;
   // breakdown: key vs filler, and savings vs rendering everything on the quality model
   const keyS=scenes.filter(s=>s.key), fillS=scenes.filter(s=>!s.key);
@@ -203,6 +211,35 @@ function totals(){
     `<div><span class="meta">You save</span><b style="color:var(--ok)">${save>0?'$'+save.toFixed(2)+' ('+Math.round(save/allGood*100)+'%)':'$0.00'}</b></div>`;
 }
 
+// Budget mode: all scenes on the cheapest video model; the seconds the budget buys are shared out in proportion to
+// each scene's planned length (at least 1 s each, the model's minimum).
+const budgetAmt=()=>Math.max(0.05,Math.min(2,+$('budgetAmt').value||0.15));
+function applyBudget(){
+  if(!$('budget').checked||!scenes.length) return;
+  $('res').value='480p'; $('cheap').value=BUDGET_VIDEO; $('good').value=BUDGET_VIDEO;
+  const rate=PRICE[BUDGET_VIDEO]['480p'];
+  scenes.forEach(s=>{ s.planned=s.planned||s.seconds; s.model=BUDGET_VIDEO; });
+  const secs=Math.max(scenes.length,Math.floor((budgetAmt()-BUDGET_RESERVE)/rate+1e-9));
+  const want=scenes.reduce((a,s)=>a+s.planned,0);
+  const share=scenes.map(s=>Math.max(1,Math.min(s.planned,Math.floor(secs*s.planned/want))));
+  let left=secs-share.reduce((a,b)=>a+b,0);
+  // hand leftover seconds to key scenes first, then the rest, never past what was planned
+  const order=scenes.map((s,i)=>i).sort((a,b)=>(scenes[b].key-scenes[a].key)||(a-b));
+  for(let pass=0;left>0&&pass<20;pass++) for(const i of order){ if(left<=0) break; if(share[i]<scenes[i].planned){ share[i]++; left--; } }
+  scenes.forEach((s,i)=>s.seconds=share[i]);
+}
+function budgetNote(){
+  const on=$('budget').checked; $('budgetNote').classList.toggle('hidden',!on); if(!on) return;
+  const v=scenes.reduce((a,s)=>a+dur(s),0), p=scenes.reduce((a,s)=>a+(s.planned||s.seconds),0);
+  const t=scenes.reduce((a,s)=>a+price(s),0)+narCost();
+  $('budgetNote').innerHTML=`💰 Budget mode: ${scenes.length} real video clips, ${v} s of generated video (≈ $${t.toFixed(2)} of your $${budgetAmt().toFixed(2)}).`+
+    (v<p?` The story was planned for ${p} s, so clips are shorter than planned: where the narration runs longer than a clip, the clip is slowed down (up to 1.5×) and then holds its last frame. Raise the budget for more motion.`:'');
+}
+['budget','budgetAmt'].forEach(id=>$(id).addEventListener('change',()=>{
+  if(!scenes.length) return;
+  if(!$('budget').checked) scenes.forEach(s=>{ if(s.planned) s.seconds=s.planned; s.model=s.key?$('good').value:$('cheap').value; });
+  applyBudget(); render();
+}));
 $('plan').onclick=async()=>{
   $('err').textContent=''; const b=$('plan'); b.disabled=true; b.textContent='Planning…';
   try{
@@ -211,13 +248,14 @@ $('plan').onclick=async()=>{
     const j=await r.json(); if(!r.ok) throw new Error(j.error||'Planning failed');
     $('bible').value=j.bible||'';
     scenes=j.scenes.map(s=>({title:s.title,prompt:s.prompt,seconds:Math.round(s.seconds)||6,key:!!s.key,continues:!!s.continues,narration:s.narration||'',model:s.key?$('good').value:$('cheap').value}));
+    applyBudget();
     jobs=[]; runP=[]; projFinal=null; projId='p'+Date.now().toString(36); $('outPanel').classList.add('hidden');
     $('planPanel').classList.remove('hidden'); render(); updateGen(); saveNow();
   }catch(e){$('err').textContent=e.message}
   b.disabled=false; b.textContent='Plan scenes';
 };
 ['res','cheap','good'].forEach(id=>$(id).addEventListener('change',()=>{
-  if(id!=='res') scenes.forEach(s=>{ s.model=s.key?$('good').value:$('cheap').value });
+  if(id!=='res'&&!$('budget').checked) scenes.forEach(s=>{ s.model=s.key?$('good').value:$('cheap').value });
   if(scenes.length) render();
 }));
 
@@ -312,7 +350,7 @@ $('gen').onclick=()=>{
 $('regen').onclick=()=>{ if(!confirm('Regenerate every scene from scratch? Finished scenes will be charged again.')) return; jobs=[]; runP=[]; projFinal=null; execute(scenes.map((_,i)=>i)); };
 async function stitch(ids){
   $('final').textContent='Stitching…';
-  const r=await fetch('/api/stitch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids,aspect:$('aspect').value,narration:$('narOn').checked?{model:$('ttsModel').value,voice:$('ttsVoice').value,instructions:$('ttsTone').value||undefined,lines:scenes.map(s=>s.narration||'')}:undefined})});
+  const r=await fetch('/api/stitch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids,aspect:$('aspect').value,extend:$('budget').checked,narration:$('narOn').checked?{model:$('ttsModel').value,voice:$('ttsVoice').value,instructions:$('ttsTone').value||undefined,lines:scenes.map(s=>s.narration||'')}:undefined})});
   const j=await r.json(); if(!r.ok){ $('final').textContent=j.error; $('gen').disabled=false; return; }
   const t=setInterval(async()=>{
     const d=await (await fetch('/api/stitch/'+j.id)).json();
@@ -326,7 +364,7 @@ async function stitch(ids){
 }
 
 /* ---------------- history (saved in this browser) ---------------- */
-const HKEY='storyHistory', FIELDS=['script','total','aspect','res','style','cheap','good','bible','ttsModel','ttsVoice','ttsTone'];
+const HKEY='storyHistory', FIELDS=['script','total','aspect','res','style','cheap','good','bible','ttsModel','ttsVoice','ttsTone','budgetAmt'];
 let projId=null, projFinal=null;
 const hget=()=>{try{return JSON.parse(localStorage.getItem(HKEY)||'[]')}catch{return[]}};
 const hset=h=>{try{localStorage.setItem(HKEY,JSON.stringify(h.slice(0,2)))}catch{}};
@@ -334,7 +372,7 @@ let saveT=null;
 function save(){ clearTimeout(saveT); saveT=setTimeout(saveNow,300); }
 function saveNow(){
   if(!projId||!scenes.length) return;
-  const f={}; FIELDS.forEach(k=>f[k]=$(k).value); f.narOn=$('narOn').checked; f.chain=$('chain').checked;
+  const f={}; FIELDS.forEach(k=>f[k]=$(k).value); f.narOn=$('narOn').checked; f.chain=$('chain').checked; f.budget=$('budget').checked;
   const p={id:projId,ts:Date.now(),title:($('script').value.trim().replace(/\s+/g,' ').slice(0,48))||'Untitled story',fields:f,scenes,
     jobs:jobs.map(j=>j?{id:j.id,done:!!j.done,failed:!!j.failed,skipped:!!j.skipped}:null),final:projFinal};
   const h=hget().filter(x=>x.id!==projId); h.unshift(p); hset(h); renderHist();
@@ -356,7 +394,7 @@ function restore(id){
   const p=hget().find(x=>x.id===id); if(!p) return;
   ['script','total','aspect','res','style','cheap','good','bible','ttsModel'].forEach(k=>{ if(p.fields[k]!==undefined) $(k).value=p.fields[k]; });
   fillVoices(); $('ttsVoice').value=p.fields.ttsVoice; $('ttsTone').value=p.fields.ttsTone||'';
-  $('narOn').checked=p.fields.narOn!==false; $('narGrid').style.opacity=$('narOn').checked?1:.4; $('chain').checked=p.fields.chain!==false;
+  $('narOn').checked=p.fields.narOn!==false; $('narGrid').style.opacity=$('narOn').checked?1:.4; $('chain').checked=p.fields.chain!==false; $('budget').checked=!!p.fields.budget; if(p.fields.budgetAmt) $('budgetAmt').value=p.fields.budgetAmt;
   projId=p.id; projFinal=p.final||null; scenes=p.scenes; jobs=(p.jobs||[]).map((j,i)=>j?{i,...j}:undefined); runP=[];
   $('planPanel').classList.remove('hidden'); render(); totals(); $('planPanel').scrollIntoView({behavior:'smooth'});
   scenes.forEach((_,i)=>{ const j=jobs[i]; if(!j) return;

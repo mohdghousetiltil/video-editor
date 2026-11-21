@@ -94,7 +94,16 @@
     <div class="grid">
       <label>Short length<select id="len"><option value="15-30">15–30 seconds</option><option value="30-60">30–60 seconds</option></select></label>
       <label>What should it focus on? (optional)<input id="hint" maxlength="300" placeholder="e.g. the funniest moment, the car chase, the reveal"></label>
+      <label>Editing<select id="edit"><option value="dynamic">Jump cuts + punch-in zooms</option><option value="clean">Clean (cuts only, no zooms)</option></select></label>
+      <label>AI voiceover<select id="narration">
+        <option value="auto">Auto: narrate if the clip has little talking</option>
+        <option value="intro">Hook line only (first 3 s)</option>
+        <option value="full">Full narration</option>
+        <option value="off">Off</option>
+      </select></label>
+      <label id="voiceWrap">Narrator voice<select id="voice"><option value="am_michael">Michael (US male, Kokoro)</option></select></label>
     </div>
+    <div class="note" style="margin:0 0 12px">AI watches the whole video (long ones in 10-minute parts, then compares the best candidates), cuts the strongest moment tight, and voices a narrator over it while turning the original sound down. Kokoro voices cost about $0.002 a minute; ElevenLabs sounds more natural.</div>
     <button class="btn primary" id="go">✂ Make Short</button>
     <div class="err" id="err"></div>
   </div>
@@ -133,6 +142,18 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const OPT = ['len', 'hint', 'edit', 'narration', 'voice'];
+try { const o = JSON.parse(localStorage.getItem('shortsOpts') || '{}'); OPT.forEach((k) => { if (o[k] != null && k !== 'hint') $(k).dataset.want = o[k]; }); } catch {}
+const saveOpts = () => { try { localStorage.setItem('shortsOpts', JSON.stringify(Object.fromEntries(OPT.map((k) => [k, $(k).value])))); } catch {} };
+const syncVoice = () => $('voiceWrap').style.opacity = $('narration').value === 'off' ? .4 : 1;
+OPT.forEach((k) => { if ($(k).dataset.want && k !== 'voice') $(k).value = $(k).dataset.want; $(k).addEventListener('change', () => { saveOpts(); syncVoice(); }); });
+syncVoice();
+fetch('/api/shorts/voices').then((r) => r.json()).then((j) => {
+  if (!j.voices) return;
+  $('voice').innerHTML = j.voices.map((v) => `<option value="${esc(v.voice)}">${esc(v.label)}</option>`).join('');
+  if ($('voice').dataset.want) $('voice').value = $('voice').dataset.want;
+  if (!$('voice').value) $('voice').selectedIndex = 0;
+}).catch(() => {});
 const fmt = (s) => { s = Math.round(s); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
 let mode = 'file', file = null, pollT = null;
 
@@ -178,6 +199,7 @@ const fail = (msg) => { $('err').textContent = msg; $('go').disabled = false; $(
 $('go').onclick = async () => {
   $('err').textContent = ''; $('outPanel').classList.add('hidden');
   const len = $('len').value, hint = $('hint').value.trim();
+  const opts = { len, hint, edit: $('edit').value, narration: $('narration').value, voice: $('voice').value };
   if (mode === 'file' && !file) return fail('Choose a video file first.');
   if (mode === 'link' && !/^https?:\/\//.test($('link').value.trim())) return fail('Paste a full link starting with https://');
   $('go').disabled = true;
@@ -186,7 +208,7 @@ $('go').onclick = async () => {
     if (mode === 'file') {
       id = await new Promise((resolve, reject) => {
         const x = new XMLHttpRequest();
-        x.open('POST', '/api/shorts/upload?len=' + len + '&hint=' + encodeURIComponent(hint));
+        x.open('POST', '/api/shorts/upload?' + new URLSearchParams(opts));
         x.setRequestHeader('x-filename', encodeURIComponent(file.name));
         x.upload.onprogress = (e) => e.lengthComputable && showProg('Uploading…', (e.loaded / e.total) * 100);
         x.onload = () => { let j = {}; try { j = JSON.parse(x.responseText); } catch {} x.status === 200 ? resolve(j.id) : reject(new Error(j.error || (x.status === 413 ? 'File too large for upload. Try a shorter video or paste a link.' : 'Upload failed (' + x.status + ')'))); };
@@ -194,7 +216,7 @@ $('go').onclick = async () => {
         x.send(file);
       });
     } else {
-      const r = await fetch('/api/shorts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: $('link').value.trim(), len, hint }) });
+      const r = await fetch('/api/shorts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: $('link').value.trim(), ...opts }) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || 'Request failed (' + r.status + ')');
       id = j.id;
@@ -214,7 +236,7 @@ function track(id) {
     catch (e) { pollT = setTimeout(tick, 4000); return; }
     if (j.status === 'running') {
       showProg(j.step + '…', j.pct || 0);
-      $('planInfo').textContent = j.plan ? `Picked ${fmt(j.plan.start)}–${fmt(j.plan.end)} · ${j.plan.framing === 'crop' ? 'smart crop' : 'full frame + blurred background'}${j.plan.reason ? ' · ' + j.plan.reason : ''}` : (j.source ? `Source: ${j.source.title || 'video'} (${fmt(j.source.duration)})` : '');
+      $('planInfo').textContent = j.plan ? `Picked ${fmt(j.plan.start)}–${fmt(j.plan.end)}${j.plan.segments && j.plan.segments.length > 1 ? ' (' + j.plan.segments.length + ' pieces, jump cut)' : ''} · ${j.plan.framing === 'crop' ? 'smart crop' : 'full frame + blurred background'}${j.plan.reason ? ' · ' + j.plan.reason : ''}` : (j.source ? `Source: ${j.source.title || 'video'} (${fmt(j.source.duration)})` : '');
       pollT = setTimeout(tick, 2000);
       return;
     }
@@ -251,7 +273,10 @@ function showResult(j) {
     getText: () => [$('oTitle').value.trim(), $('oDesc').value.trim()].filter(Boolean).join('\n\n'),
   });
   $('oInfo').innerHTML = [
-    j.source ? `From ${esc(j.source.title || 'your video')} · ${fmt(j.start)}–${fmt(j.end)} (${Math.round(j.end - j.start)} s)` : '',
+    j.source ? `From ${esc(j.source.title || 'your video')} (${fmt(j.source.duration)}) · ${fmt(j.start)}–${fmt(j.end)} → ${Math.round(j.length || j.end - j.start)} s Short` : '',
+    j.segments && j.segments.length > 1 ? `Edited from ${j.segments.length} pieces: ` + j.segments.map((s) => fmt(s.start) + '–' + fmt(s.end)).join(', ') : '',
+    j.candidates ? `Compared the ${j.candidates} best moments found across the whole video` : '',
+    j.voiceover && j.voiceover.length ? '🎙️ Voiceover: “' + j.voiceover.map(esc).join(' … ') + '”' : '',
     j.framing === 'crop' ? 'Smart crop' : 'Full frame on blurred background',
     j.captions ? j.captions + ' caption lines' : 'No speech, so no captions',
     j.cost ? 'AI cost ≈ $' + j.cost.toFixed(3) : '',

@@ -235,6 +235,14 @@ video{border-radius:0}
 @view-transition{navigation:auto}
 .sb{view-transition-name:sidebar}
 .tabbar{view-transition-name:tabbar}
+body::after{view-transition-name:scan} /* keeps the scanlines on top of the nav during a switch (no flicker) */
+/* The nav must not cross-fade: blending the old and new snapshot (active item moving, text re-rasterised) reads as
+   a blurry, ghosted bar, and a backdrop-filter can't be captured in a snapshot so the tab bar flashes. Swap it
+   instantly instead, and give the tab bar a solid background while a transition is running. */
+::view-transition-group(sidebar),::view-transition-group(tabbar),::view-transition-group(scan){animation:none}
+::view-transition-old(sidebar),::view-transition-old(tabbar),::view-transition-old(scan){display:none}
+::view-transition-new(sidebar),::view-transition-new(tabbar),::view-transition-new(scan){animation:none;mix-blend-mode:normal}
+html:active-view-transition .tabbar{backdrop-filter:none;-webkit-backdrop-filter:none;background:#060811}
 ::view-transition-old(root){animation:vt-out .12s ease-in both}
 ::view-transition-new(root){animation:vt-in .18s ease-out both}
 @keyframes vt-out{to{opacity:0}}

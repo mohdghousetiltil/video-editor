@@ -184,7 +184,7 @@ const readBody = (req) =>
   });
 const orHeaders = () => ({ Authorization: `Bearer ${KEY}`, "Content-Type": "application/json" });
 // Shorts maker (long video -> analysed, cut, captioned 9:16 Short + thumbnail + title); see shorts.js
-const shortsRoutes = require("./shorts")({ STORE, FFMPEG, API, getKey: () => KEY, run, send, serveMp4 });
+const shortsRoutes = require("./shorts")({ STORE, FFMPEG, API, getKey: () => KEY, run, send, serveMp4, tts });
 
 // OpenRouter reports only status (no %), so progress is estimated from elapsed time
 // and jumps to 100 only when the job is really completed.
@@ -339,6 +339,9 @@ const server = http.createServer(async (req, res) => {
       const sid = crypto.randomBytes(6).toString("hex");
       const st = { status: "running", step: "Starting…", warnings: [] };
       const nar = b.narration && Array.isArray(b.narration.lines) && b.narration.model ? b.narration : null;
+      // budget mode: clips shorter than their narration are slowed down (up to 1.5x) and then hold their last
+      // frame, instead of cutting the narration off
+      const extend = !!b.extend;
       stitches.set(sid, st);
       (async () => {
         const dir = path.join(STORE, "work", sid);
@@ -348,15 +351,23 @@ const server = http.createServer(async (req, res) => {
         const enc = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-ar", "44100", "-ac", "2"];
         let list = "";
         for (let i = 0; i < ids.length; i++) {
+          const line = nar ? String(nar.lines[i] || "").trim() : "";
           st.step = `Downloading clip ${i + 1}/${ids.length}`;
           const r = await fetch(`${API}/videos/${ids[i]}/content?index=0`, { headers: { Authorization: `Bearer ${KEY}` } });
           if (!r.ok) throw new Error(`Clip ${i + 1} download failed (${r.status})`);
           fs.writeFileSync(path.join(dir, `raw${i}.mp4`), Buffer.from(await r.arrayBuffer()));
           st.step = `Preparing clip ${i + 1}/${ids.length}`;
           const audio = await hasAudio(path.join(dir, `raw${i}.mp4`));
-          const line = nar ? String(nar.lines[i] || "").trim() : "";
           let args;
-          if (line) {
+          if (line && extend) {
+            st.step = `Voicing scene ${i + 1}/${ids.length}`;
+            fs.writeFileSync(path.join(dir, `nar${i}.mp3`), await tts({ model: nar.model, voice: nar.voice, text: line, instructions: nar.instructions }));
+            const vd = await mediaDuration(path.join(dir, `raw${i}.mp4`)), ad = await mediaDuration(path.join(dir, `nar${i}.mp3`));
+            const D = Math.max(vd, ad + 0.4), slow = vd ? Math.max(1, Math.min(1.5, D / vd)) : 1;
+            const v = `[0:v]setpts=${slow.toFixed(3)}*PTS,${vf},tpad=stop_mode=clone:stop_duration=${Math.max(0, D - vd * slow + 0.1).toFixed(3)}[v]`;
+            const fc = audio ? `${v};[0:a]volume=0.25,apad[a0];[1:a]apad[a1];[a0][a1]amix=inputs=2:duration=longest:dropout_transition=0[a]` : `${v};[1:a]apad[a]`;
+            args = ["-y", "-i", `raw${i}.mp4`, "-i", `nar${i}.mp3`, "-filter_complex", fc, "-map", "[v]", "-map", "[a]", "-t", D.toFixed(3), ...enc, `n${i}.mp4`];
+          } else if (line) {
             st.step = `Voicing scene ${i + 1}/${ids.length}`;
             fs.writeFileSync(path.join(dir, `nar${i}.mp3`), await tts({ model: nar.model, voice: nar.voice, text: line, instructions: nar.instructions }));
             const vd = await mediaDuration(path.join(dir, `raw${i}.mp4`)), ad = await mediaDuration(path.join(dir, `nar${i}.mp3`));
