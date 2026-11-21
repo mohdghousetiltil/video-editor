@@ -185,10 +185,12 @@ test("providers: OpenRouter unless a cheaper keyed route exists; fal and BytePlu
     delete process.env.FAL_KEY; delete process.env.BYTEPLUS_KEY;
     assert.equal(providers.pickRoute("kwaivgi/kling-v3.0-pro").provider, "openrouter");
     process.env.FAL_KEY = "k"; process.env.BYTEPLUS_KEY = "b";
-    assert.equal(providers.pickRoute("kwaivgi/kling-v3.0-pro").provider, "fal");
+    assert.equal(providers.pickRoute("kwaivgi/kling-v3.0-pro").provider, "openrouter"); // same price: stay on OpenRouter
+    assert.equal(providers.pickRoute("kwaivgi/kling-v3.0-pro", { orAvailable: false }).provider, "fal"); // OpenRouter dropped Kling
+    assert.equal(providers.pickRoute("kwaivgi/kling-v3.0-pro", { orAvailable: false }).price, 0.14);
     assert.equal(providers.pickRoute("bytedance/seedance-2.0-fast").provider, "byteplus");
     assert.equal(providers.pickRoute("google/veo-3.1-lite").provider, "openrouter");
-    process.env.FAL_KLING_FACTOR = "1.4"; // pricier than OpenRouter: only used when OpenRouter lacks the model
+    process.env.FAL_KLING_FACTOR = "1.4"; // not cheaper than OpenRouter: only used when OpenRouter lacks the model
     assert.equal(providers.pickRoute("kwaivgi/kling-v3.0-pro").provider, "openrouter");
     assert.equal(providers.pickRoute("kwaivgi/kling-v3.0-pro", { orAvailable: false }).provider, "fal");
     delete process.env.FAL_KLING_FACTOR;
@@ -204,10 +206,12 @@ test("providers: OpenRouter unless a cheaper keyed route exists; fal and BytePlu
       if (url.endsWith("/contents/generations/tasks/t9")) return json({ status: "running" });
       return json({}, 404);
     };
-    const f = await providers.submit(providers.pickRoute("kwaivgi/kling-v3.0-pro"), { prompt: "p", duration: 5, aspect_ratio: "9:16", frame_images: [{ frame_type: "first_frame", image_url: { url: "data:x" } }] }, fake);
+    const f = await providers.submit(providers.pickRoute("kwaivgi/kling-v3.0-pro", { orAvailable: false }), { prompt: "p", duration: 5, aspect_ratio: "9:16", frame_images: [{ frame_type: "first_frame", image_url: { url: "data:x" } }, { frame_type: "last_frame", image_url: { url: "data:y" } }] }, fake, { negative: "extra fingers" });
+    assert.equal(calls[0][1].end_image_url, "data:y");
+    assert.equal(calls[0][1].negative_prompt, "extra fingers");
     assert.equal(f.id, "fal_r1");
     assert.match(calls[0][0], /image-to-video/);
-    assert.equal(calls[0][1].image_url, "data:x");
+    assert.equal(calls[0][1].start_image_url, "data:x");
     assert.deepEqual(await providers.poll(f.id, f.job, fake), { status: "completed", videoUrl: "https://cdn/v.mp4" });
     const b = await providers.submit(providers.pickRoute("bytedance/seedance-2.0-fast"), { prompt: "p", duration: 4, resolution: "720p", aspect_ratio: "9:16" }, fake);
     assert.equal(b.id, "bp_t9");
@@ -242,4 +246,41 @@ test("studio (page helper): total cost line with Auto, and money formatting", ()
   assert.equal(S.money(0.003, 3), "$0.003");
   assert.equal(S.money(0.0001, 3), "<$0.001");
   assert.ok(S.validJobId("gen-vid-abc123def") && !S.validJobId("x") && !S.validJobId("a b c d e f g h"));
+});
+
+// ---------- themes + enhance ----------
+const { createThemes, themeText, qualityText, PRESETS } = require("../lib/themes");
+const { enhanceFilter } = require("../lib/enhance");
+
+test("themes: presets, saving a preset makes a copy, theme text and quality text", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "thm-"));
+  const t = createThemes(dir);
+  assert.equal(PRESETS.length, 6);
+  assert.ok(t.get("p-3dstory").builtin);
+  const mine = t.save({ id: "p-3dstory", character: "A traveller with curly black hair", outfit: "mustard raincoat", name: "Passport Story" });
+  assert.notEqual(mine.id, "p-3dstory");
+  assert.equal(mine.builtin, false);
+  assert.equal(mine.palette, t.get("p-3dstory").palette); // copied from the preset
+  assert.equal(t.save({ id: mine.id, outfit: "red coat" }).outfit, "red coat");
+  t.setImage(mine.id, "style", "data:image/png;base64,iVBORw0KGgo=");
+  assert.match(t.pub(t.get(mine.id)).styleImage, /\/api\/themes\/t[a-f0-9]+\/image/);
+  assert.throws(() => t.setImage(mine.id, "style", "nope"));
+  const txt = themeText(t.get(mine.id));
+  assert.match(txt, /Style: 3D animated/);
+  assert.match(txt, /exactly as described.*curly black hair/);
+  assert.match(txt, /Outfit, unchanged in every shot: red coat/);
+  assert.match(themeText(t.get(mine.id), "Saved influencer words"), /Saved influencer words/);
+  assert.equal(themeText(null), "");
+  assert.match(qualityText({ negative: "logos" }), /^ Quality: sharp focus.*Avoid: warping.*logos\.$/);
+  assert.equal(qualityText({ booster: false }), "");
+  t.remove(mine.id);
+  assert.equal(t.get(mine.id), null);
+});
+
+test("enhance: filter chain only upscales, in the right orientation", () => {
+  assert.equal(enhanceFilter({ upscale: "720p", smooth: true }, 480, 854),
+    "hqdn3d=1.5:1.5:6:6,minterpolate=fps=30:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1,scale=-2:1280:flags=lanczos,unsharp=5:5:0.7:5:5:0.0,format=yuv420p");
+  assert.match(enhanceFilter({ upscale: "1080p" }, 1280, 720), /scale=-2:1080/);
+  assert.doesNotMatch(enhanceFilter({ upscale: "720p" }, 1080, 1920), /scale=/); // never shrinks
+  assert.equal(enhanceFilter({ upscale: "none", sharpen: false, denoise: false }, 480, 854), "format=yuv420p");
 });

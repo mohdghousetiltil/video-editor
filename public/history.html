@@ -35,6 +35,7 @@
 </style>
 <link rel="stylesheet" href="/app.css">
 <script src="/studio.js"></script>
+<script src="/theme.js"></script>
 </head>
 <body data-title="History" data-sub="Everything you made, across every page: find it by name, date or cost, download it, retry a failed one or delete it.">
 <div class="wrap">
@@ -70,6 +71,7 @@ async function load(){
 function render(){
   const total=items.reduce((a,x)=>a+(x.cost||0),0);
   $('sum').textContent=items.length?`${items.length} item${items.length>1?'s':''} · ${S.money(total)} recorded`:'';
+  setTimeout(()=>document.querySelectorAll('.enh-host').forEach(h=>S.mountEnhance&&S.mountEnhance(h,{src:h.dataset.src})));
   $('rows').innerHTML=items.length?items.map(x=>{
     const done=x.status==='completed', run=/^(pending|in_progress|running|queued)$/.test(x.status);
     return `<div class="row" data-id="${S.esc(x.id)}">
@@ -81,7 +83,7 @@ function render(){
         ${done&&x.url?`<a class="btn" href="${S.esc(x.url)}" target="_blank" rel="noopener">▶ Play</a><a class="btn" href="${S.esc(x.url)}${x.kind==='short'?'?dl=1':'?download=1'}">⬇ Download</a>`:''}
         ${x.retry&&!run?`<button class="btn" data-r type="button">🔄 Retry</button>`:''}
         ${!run?`<button class="btn danger" data-d type="button" aria-label="Delete ${S.esc(x.title||x.id)}">✕ Delete</button>`:''}
-      </div></div>`;}).join(''):'<div class="none">Nothing here yet. Everything you make on any page shows up here.</div>';
+      </div>${done&&x.url?`<div class="enh-host" style="grid-column:1/-1" data-src="${S.esc(x.url)}"></div>`:''}</div>`;}).join(''):'<div class="none">Nothing here yet. Everything you make on any page shows up here.</div>';
 }
 $('rows').addEventListener('click',async e=>{
   const row=e.target.closest('.row'); if(!row) return;

@@ -114,6 +114,51 @@ module.exports = function storyRoutes(ctx) {
       } catch (e) { return send(res, e.status || 502, { error: "Scene frame failed: " + e.message }), true; }
     }
 
+    // ---- storyboard: one still per scene, drawn in the theme (and from the character sheet / saved character),
+    //      approved or swapped before any video is paid for; the video then starts from it ----
+    if (req.method === "POST" && url.pathname === "/api/still") {
+      const b = await readBody(req);
+      const p = String(b.prompt || "").trim().slice(0, 1500);
+      if (!p) return send(res, 400, { error: "Scene prompt is empty." }), true;
+      const ar = ["9:16", "16:9", "1:1"].includes(b.aspect_ratio) ? b.aspect_ratio : "9:16";
+      const st = settings.get(), model = st.imageModel;
+      const theme = b.no_theme ? null : ctx.themes.get(typeof b.theme_id === "string" ? b.theme_id : st.themeLock ? st.themeId : null);
+      const infId = /^[\w-]+$/.test(b.influencer_id || "") ? b.influencer_id : theme && theme.influencerId;
+      const inf = infId && ctx.readInf().find((x) => x.id === infId);
+      const refs = [], said = [];
+      const cast = castFile(b.cast);
+      if (cast) { refs.push(dataUrl(cast)); said.push(`Image ${refs.length} is the character reference sheet: every character looks exactly like on it (face, hair, body, clothes, colours).`); }
+      const infImg = inf && ctx.imgFile(inf.id);
+      if (infImg && !cast) { refs.push(dataUrl(infImg)); said.push(`Image ${refs.length} is the main character: keep the same face, hair and look.`); }
+      const style = theme && ctx.themes.styleDataUrl(theme.id);
+      if (style) { refs.push(style); said.push(`Image ${refs.length} is the style reference: match its rendering, colours and lighting, not its content.`); }
+      const prompt = `${said.join(" ")} Create the opening frame of this scene as one single full-frame film still composed for ${ar}: ${p}` +
+        (inf && inf.desc ? ` Main character, exactly: ${inf.desc}.` : "") + ctx.themeText(theme, inf && inf.desc) +
+        (b.style ? ` Visual style: ${String(b.style).slice(0, 300)}` : "") + " Characters at natural size in the scene, no text, no panels, no borders.";
+      try {
+        const { d, cost } = await imageCall({ model, prompt, n: 1, aspect_ratio: ar, ...(refs.length ? { input_references: refs.map((u) => ({ type: "image_url", image_url: { url: u } })) } : {}) });
+        const id = "s" + crypto.randomBytes(8).toString("hex"), ext = /jpe?g/.test(d.media_type || "") ? "jpg" : /webp/.test(d.media_type || "") ? "webp" : "png";
+        fs.writeFileSync(path.join(ctx.STILLS, `${id}.${ext}`), Buffer.from(d.b64_json, "base64"));
+        spend.log("Storyboard", cost, model);
+        return send(res, 200, { id, url: `/api/still/${id}`, cost }), true;
+      } catch (e) { return send(res, e.status || 502, { error: "Storyboard picture failed: " + e.message }), true; }
+    }
+    // swap a scene's picture for your own (an AI-made image; photos of real people get blocked by the video models)
+    if (req.method === "POST" && url.pathname === "/api/stills/upload") {
+      const b = await readBody(req, 12e6);
+      const mm = String(b.image || "").match(/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/);
+      if (!mm) return send(res, 400, { error: "Use a JPG, PNG or WEBP picture." }), true;
+      const id = "s" + crypto.randomBytes(8).toString("hex");
+      fs.writeFileSync(path.join(ctx.STILLS, `${id}.${mm[1] === "jpeg" ? "jpg" : mm[1]}`), Buffer.from(mm[2], "base64"));
+      return send(res, 200, { id, url: `/api/still/${id}` }), true;
+    }
+    if (req.method === "GET" && (m = url.pathname.match(/^\/api\/still\/(s[a-f0-9]{16})$/))) {
+      const f = ctx.stillFile(m[1]);
+      if (!f) { res.writeHead(404); return res.end("Not found"), true; }
+      res.writeHead(200, { "Content-Type": "image/" + path.extname(f).slice(1).replace("jpg", "jpeg"), "Cache-Control": "private, max-age=604800" });
+      return fs.createReadStream(f).pipe(res), true;
+    }
+
     // ---- voice preview ----
     if (req.method === "POST" && url.pathname === "/api/tts") {
       const b = await readBody(req);

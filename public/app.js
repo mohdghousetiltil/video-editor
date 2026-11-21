@@ -309,6 +309,8 @@
     hh.type = 'button'; hh.className = 'help-chip'; hh.setAttribute('aria-label', 'Help'); hh.textContent = '? Help';
     hh.onclick = () => S.openInfo('help');
     chipHost()?.append(hh);
+    // theme bar under the title on the pages that make videos
+    if (S.mountThemeBar && ['/', '/story', '/ugc', '/motion', '/shorts'].includes(here)) { S.mountThemeBar(wrap && wrap.querySelector('.pagehead')); S.loadThemes(); }
     if (wrap) {
       const ft = document.createElement('footer');
       ft.className = 'site-foot';
