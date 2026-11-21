@@ -109,8 +109,9 @@
         <div class="chips" id="styles"></div>
         <h2>5 · Settings</h2>
         <div class="grid4">
-          <label>Duration<select id="duration" aria-describedby="modelNotes"></select></label>
-          <label>Resolution<select id="resolution"></select></label>
+          <label id="durWrap">Duration<select id="duration" aria-describedby="modelNotes"></select></label>
+          <label id="resWrap">Resolution<select id="resolution"></select></label>
+          <label id="budgetWrap" hidden>Budget per clip ($)<input id="autoBudget" inputmode="decimal" value="0.50" aria-describedby="modelNotes"></label>
           <label>Aspect<select id="aspect"></select></label>
           <label id="audioWrap">Audio<select id="audio"><option value="true">On</option><option value="false">Off</option></select></label>
         </div>
@@ -168,13 +169,23 @@ const EXAMPLES=[
 ];
 // models shown here: cheapest first inside each tier
 const SHOWN=['x-ai/grok-imagine-video-1.5-lite','google/veo-3.1-lite','bytedance/seedance-2.0-mini','alibaba/wan-3.0','google/gemini-omni-1.2-flash','google/veo-3.1-fast','kwaivgi/kling-v3.0-pro','bytedance/seedance-2.0'];
-let seeds={}, MODELS={}, model=null, style=S.formValue('clip','style')||'movie', timers=[];
+let seeds={}, MODELS={}, model=null, style=S.formValue('clip','style')||'movie', timers=[], showAll=false, autoEnhance={};
 const LIMIT=1000;
-const m=()=>MODELS[model];
+const isAuto=()=>model===S.AUTO;
+// in Auto mode the settings follow a sensible base model until the Director decides
+const m=()=>isAuto()?MODELS['google/veo-3.1-lite']||Object.values(MODELS)[0]:MODELS[model];
 
 function renderModels(){
-  $('models').innerHTML=SHOWN.filter(id=>MODELS[id]).map(id=>{const x=MODELS[id],r=x.res.includes('720p')?'720p':x.res[0];
-    return `<div class="model ${id===model?'sel':''}" data-id="${id}" role="radio" tabindex="0" aria-checked="${id===model}"><b>${S.esc(x.name)}<span class="tier ${x.tier}">${S.tierLabel(x.tier)}</span></b><span>${S.money(S.rate(x,r,true),3)}/s @${r}${x.route!=='openrouter'?' · via '+x.route:''}${x.note?' · '+S.esc(x.note):''}</span></div>`}).join('');
+  const card=(id)=>{const x=MODELS[id],r=x.res.includes('720p')?'720p':x.res[0];
+    return `<div class="model ${id===model?'sel':''}" data-id="${id}" role="radio" tabindex="0" aria-checked="${id===model}"><b>${S.esc(x.name)}<span class="tier ${x.tier}">${S.tierLabel(x.tier)}</span></b><span>${S.money(S.rate(x,r,true),3)}/s @${r} · quality ${x.q}/10${x.route!=='openrouter'?' · via '+x.route:''}${x.note?' · '+S.esc(x.note):''}</span></div>`;};
+  // every model the app can use: the usual ones first, the rest behind "More models", cheapest first in each tier
+  const order={draft:0,regular:1,hero:2};
+  const rest=Object.keys(MODELS).filter(id=>!SHOWN.includes(id)).sort((a,b)=>order[MODELS[a].tier]-order[MODELS[b].tier]||S.rate(MODELS[a],'720p')-S.rate(MODELS[b],'720p'));
+  if(rest.includes(model)) showAll=true;
+  $('models').innerHTML=`<div class="model auto ${isAuto()?'sel':''}" data-id="${S.AUTO}" role="radio" tabindex="0" aria-checked="${isAuto()}"><b>🧠 Auto<span class="tier hero">Director</span></b><span>Reads all ${Object.keys(MODELS).length} models and picks the best quality for your budget, with the process (picture first, Enhance)</span></div>`+
+    SHOWN.filter(id=>MODELS[id]).map(card).join('')+(showAll?rest.map(card).join(''):'')+
+    (rest.length?`<button type="button" class="btn" id="moreModels" style="grid-column:1/-1">${showAll?'Fewer models':'More models ('+rest.length+')'}</button>`:'');
+  if($('moreModels')) $('moreModels').onclick=()=>{showAll=!showAll;renderModels();};
   $('models').querySelectorAll('.model').forEach(el=>{
     const pick=()=>{model=el.dataset.id;S.saveField('clip','model',model);applyModel();};
     el.onclick=pick; el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();pick();}};
@@ -187,6 +198,8 @@ function renderStyles(){
 function fill(sel,opts,def){const cur=sel.dataset.pending||sel.value; delete sel.dataset.pending; sel.innerHTML=opts.map(o=>`<option>${o}</option>`).join(''); sel.value=opts.includes(cur)?cur:def;}
 function applyModel(){
   const x=m(); if(!x) return; renderModels();
+  ['durWrap','resWrap'].forEach(id=>$(id).hidden=isAuto()); $('budgetWrap').hidden=!isAuto();
+  if(isAuto()){ $('modelNotes').innerHTML='🧠 The Director chooses model, length, resolution, sound, picture first and Enhance for the best quality within your budget. You see its plan, its reasons and the total before anything is charged.'; updateCost(); return; }
   fill($('resolution'),x.res,x.res.includes('720p')?'720p':x.res[0]);
   [...$('resolution').options].forEach(o=>{if(o.value==='1080p') o.textContent='1080p (hero / YouTube only)';});
   fill($('aspect'),x.asp,'9:16');
@@ -199,6 +212,7 @@ function applyModel(){
 }
 function updateCost(){
   const x=m(); if(!x) return;
+  if(isAuto()){ const b=parseFloat($('autoBudget').value)||0; $('cost').textContent=`🧠 best quality within ${S.money(b)}${+$('variations').value>1?' per version':''} · plan and exact total shown before paying`; return; }
   const c=S.costLine(x,{res:$('resolution').value,dur:$('duration').value,audio:$('audio').value==='true',n:+$('variations').value});
   $('cost').textContent=c.text;
 }
@@ -263,7 +277,9 @@ async function poll(id,cell){
   $('actions').innerHTML=`<a class="btn" href="${j.videoUrl}?download=1">⬇ Download MP4</a>`+(cost?`<span class="meta" style="align-self:center">Cost ${cost}</span>`:'')+
     (seeds[id]!=null?`<button class="btn" type="button" id="useSeed" title="Reuse this seed for the next clip">🎲 Seed ${seeds[id]} · reuse</button>`:'');
   if($('useSeed')) $('useSeed').onclick=()=>{ $('seed').value=seeds[id]; $('seedLock').checked=true; ['seed','seedLock'].forEach(k=>$(k).dispatchEvent(new Event('change'))); toast('Seed '+seeds[id]+' locked for the next clip'); };
-  S.mountEnhance&&S.mountEnhance($('actions'),{src:j.videoUrl});
+  // the Director planned an upscale for this clip: start it straight away (free, on the server)
+  const auto=autoEnhance[id]; delete autoEnhance[id];
+  S.mountEnhance&&S.mountEnhance($('actions'),{src:j.videoUrl,auto});
   mountShare($('actions'),{url:j.videoUrl,name:'video-'+id.slice(-8)+'.mp4',prompt:ta.value});
   renderHist(); window.dispatchEvent(new Event('spend-changed'));
 }
@@ -273,8 +289,10 @@ $('go').onclick=async()=>{
   $('err').textContent=''; $('actions').innerHTML='';
   const text=ta.value.trim(); if(!text) return $('err').textContent='Write or drop a script first.';
   if(text.length>LIMIT) return $('err').textContent=`Keep the prompt under ${LIMIT} characters.`;
-  const x=m(); if(!x) return $('err').textContent='Models are still loading, try again in a moment.';
+  if(!Object.keys(MODELS).length) return $('err').textContent='Models are still loading, try again in a moment.';
   $('go').disabled=true;
+  if(isAuto()) return runAuto(text);
+  const x=m();
   if(!$('duration').value){
     // Auto: the prompt writer picks a length (short clips drift less, so it chooses from the 8 s-or-shorter ones)
     $('stage').innerHTML=S.stageHTML({stage:'queued',msg:'Choosing the best length…'});
@@ -299,6 +317,11 @@ $('go').onclick=async()=>{
     quality:$('quality').checked,negative:$('negative').value.trim()||undefined,seed:seed0};
   if(n===1){ $('stage').innerHTML=S.stageHTML({stage:'queued',msg:'Submitting…'}); }
   else $('stage').innerHTML=`<div class="var-grid">${Array.from({length:n},(_,i)=>`<div class="vcell" id="v${i}">${S.stageHTML({stage:'queued',msg:'Submitting…'})}</div>`).join('')}</div>`;
+  return submitClips(base,n,text);
+};
+// sends n clips (variations get seed, seed+1…) and follows them
+async function submitClips(base,n,text){
+  const seed0=base.seed;
   try{
     const ids=[];
     for(let i=0;i<n;i++){
@@ -306,13 +329,42 @@ $('go').onclick=async()=>{
       const j=await r.json(); if(!r.ok){ if(!ids.length) return fail(j.error||'Request failed'); $('err').textContent=j.error; break; }
       if(j.note) window.toast&&toast(j.note);
       ids.push(j.id); seeds[j.id]=j.seed;
+      if(autoEnhance.next){ autoEnhance[j.id]=autoEnhance.next; delete autoEnhance.next; }
     }
     window.dispatchEvent(new Event('spend-changed')); renderHist();
     if(n===1) return track(ids[0]);
     $('go').disabled=false;
     ids.forEach((id,i)=>{const cell=$('v'+i); const t=setInterval(async()=>{if(await poll(id,cell)==='stop')clearInterval(t);},3000); timers.push(t);});
   }catch(e){fail(e.message);}
-};
+}
+// 🧠 Auto: ask the Director, show its plan (why, alternatives, total vs budget), then run that process
+async function runAuto(text){
+  const n=+$('variations').value, budget=parseFloat($('autoBudget').value)||undefined;
+  const th=S.theme&&S.theme(), s=th?'':STYLES[style][1];
+  $('stage').innerHTML=S.stageHTML({stage:'queued',msg:'🧠 The Director is reading all models and planning…'});
+  let res;
+  try{ res=await S.director({page:'clip',prompt:text+(s?' Visual style: '+s:''),aspect:$('aspect').value,budget,style:s||undefined}); }
+  catch(e){ return fail(e.message); }
+  window.dispatchEvent(new Event('spend-changed'));
+  resetStage();
+  const plan=await S.confirmPlan(res,{n,title:n>1?`Director’s plan for ${n} versions`:'Director’s plan'});
+  if(!plan){ $('go').disabled=false; $('err').textContent=''; return; }
+  const typed=parseInt($('seed').value,10), seed0=Number.isInteger(typed)?typed:Math.floor(Math.random()*2e9);
+  if($('seedLock').checked) $('seed').value=seed0;
+  const base={model:plan.model,prompt:text+(s?' Visual style: '+s:''),title:'🧠 '+text.slice(0,130),duration:plan.duration,resolution:plan.resolution,aspect_ratio:$('aspect').value,generate_audio:!!plan.audio,
+    quality:$('quality').checked,negative:$('negative').value.trim()||undefined,seed:seed0};
+  if(plan.pictureFirst){
+    $('stage').innerHTML=S.stageHTML({stage:'queued',msg:'🖼 Drawing the first frame (picture first)…'});
+    try{
+      const r=await fetch('/api/still',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:text,aspect_ratio:$('aspect').value,style:s||undefined})});
+      const j=await r.json(); if(!r.ok) throw new Error(j.error||'Picture failed');
+      base.still_id=j.id;
+    }catch(e){ toast('Picture first failed, making the clip from text: '+e.message,'err'); }
+  }
+  if(plan.enhance&&n===1) autoEnhance.next=plan.enhance;
+  $('stage').innerHTML=S.stageHTML({stage:'queued',msg:`Submitting to ${(MODELS[plan.model]||{}).name||plan.model}…`});
+  return submitClips(base,n,text);
+}
 $('enh').onclick=async()=>{
   $('err').textContent=''; const b=$('enh'); if(!ta.value.trim()) return $('err').textContent='Write a rough idea first.';
   b.disabled=true; b.textContent='Enhancing…';
@@ -334,7 +386,10 @@ $('jobid').addEventListener('keydown',e=>{if(e.key==='Enter')$('fetchjob').click
 $('jobid').addEventListener('input',()=>{$('jobErr').textContent='';});
 
 // restore what was typed last time, then load models
-S.persistForm('clip',['script','duration','resolution','aspect','audio','variations','negative','seed','seedLock','quality']);
+S.persistForm('clip',['script','duration','resolution','aspect','audio','variations','negative','seed','seedLock','quality','autoBudget']);
+if(!S.formValue('clip','autoBudget')) S.directorBudget('clip').then(b=>{ $('autoBudget').value=(+b).toFixed(2); updateCost(); });
+$('autoBudget').addEventListener('input',updateCost);
+$('autoBudget').addEventListener('change',()=>{ const v=Math.max(0.05,Math.min(50,parseFloat($('autoBudget').value)||0.5)); $('autoBudget').value=v.toFixed(2); updateCost(); });
 // Theme Lock: the theme replaces the Style chips; choosing a theme also switches to its quality model
 addEventListener('theme-changed',e=>{
   const t=e.detail.theme;
@@ -345,7 +400,7 @@ addEventListener('theme-changed',e=>{
 cnt(); renderStyles(); renderHist();
 S.models().then(({map,def})=>{
   MODELS=map; const saved=S.formValue('clip','model');
-  model=MODELS[saved]?saved:MODELS[def]?def:SHOWN.find(id=>MODELS[id]);
+  model=saved===S.AUTO||MODELS[saved]?saved:MODELS[def]?def:SHOWN.find(id=>MODELS[id]);
   if(!model){$('err').textContent='Couldn\'t load the model list. Is the server running?';return;}
   applyModel();
 });

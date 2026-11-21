@@ -61,6 +61,88 @@
     });
   };
 
+  // ---------- 🧠 the Director: asks the app's brain for the model and process, shows its plan, returns the approved one ----------
+  S.AUTO = '__auto';
+  S.director = async (req) => {
+    const r = await fetch('/api/director', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || 'The Director could not make a plan');
+    return j;
+  };
+  S.directorBudget = async (page) => { const st = await settings(); return ((st.directorBudget || {})[page]) || ({ clip: 0.5, story: 2, ugc: 0.8, poses: 0.15, motion: 1 })[page]; };
+  // single clip / UGC / poses / motion: shows the choice, why, alternatives (one tap to switch) and the total vs budget
+  // n = how many clips the plan is used for (variations, poses). Resolves the approved plan, or null.
+  S.confirmPlan = async (res, { n = 1, title = 'The Director’s plan' } = {}) => {
+    const { map } = await S.models();
+    const first = !ls.get('paidOk', false);
+    let plan = { ...res.plan };
+    const totalOf = (p) => { const m = map[p.model]; return (m ? S.rate(m, p.resolution, p.audio) * p.duration : 0) * n + (p.pictureFirst ? 0.02 * n : 0); };
+    return new Promise((resolve) => {
+      const d = document.createElement('dialog');
+      d.className = 'spend-dlg confirm-dlg director-dlg';
+      d.setAttribute('aria-label', title);
+      const paint = () => {
+        const m = map[plan.model] || { name: plan.model }, total = totalOf(plan), over = res.budget && total > res.budget + 1e-9;
+        d.innerHTML = `<div class="sd-head"><h2>🧠 ${esc(title)}</h2></div>
+          <p class="dir-why">${esc(plan.reason || '')}</p>
+          <dl class="cf-rows"><dt>Model</dt><dd>${esc(m.name)} <span class="tier ${esc(m.tier || '')}">${S.tierLabel(m.tier)}</span> · quality ${m.q || '?'}/10</dd>
+          <dt>Length</dt><dd>${plan.duration} s${n > 1 ? ' × ' + n : ''}</dd><dt>Resolution</dt><dd>${esc(plan.resolution)}</dd>
+          <dt>Sound</dt><dd>${plan.audio ? 'On' : 'Off'}</dd><dt>Picture first</dt><dd>${plan.pictureFirst ? 'Yes: draws a still, then animates it (keeps the face)' : 'No'}</dd>
+          <dt>After</dt><dd>${plan.enhance ? 'Enhance to ' + esc(plan.enhance.upscale) + ' (free)' : 'Nothing'}</dd>
+          <dt>Estimated total</dt><dd class="cf-total">${money(total)}${res.budget ? ` <small>of your ${money(res.budget)} budget</small>` : ''}</dd></dl>
+          ${over ? '<p class="cf-warn">This choice is over your budget.</p>' : ''}
+          ${(res.warnings || []).length ? `<p class="meta">${res.warnings.map(esc).join('<br>')}</p>` : ''}
+          ${(plan.alternatives || []).length ? `<div class="dir-alts"><span class="meta">Or switch to:</span>${plan.alternatives.map((a, i) => `<button type="button" class="btn" data-alt="${i}">${esc(a.name || a.model)} · ${money(totalOf({ ...plan, model: a.model, resolution: (map[a.model] || {}).res && map[a.model].res.includes(plan.resolution) ? plan.resolution : ((map[a.model] || {}).res || [])[0] }))}<small>${esc(a.why || '')}</small></button>`).join('')}</div>` : ''}
+          <p class="meta">Decided by ${res.source === 'brain' ? esc(res.brain || 'the AI') + ` (${money(res.brainCost, 4)})` : 'the built-in rules (the AI brain did not answer)'} from ${res.candidates} models.</p>
+          ${first ? '<p class="cf-warn" role="alert"><b>Heads up:</b> this charges real money to your account. The monthly cap in Settings stops paid calls once it is reached.</p>' : ''}
+          <div class="cf-act"><button class="btn" data-no type="button">Cancel</button><button class="btn primary" data-yes type="button">Confirm · ${money(total)}</button></div>`;
+        d.querySelectorAll('[data-alt]').forEach((b) => (b.onclick = () => {
+          const a = plan.alternatives[+b.dataset.alt], am = map[a.model];
+          const prev = { model: plan.model, name: (map[plan.model] || {}).name, why: 'The Director’s first choice' };
+          plan = { ...plan, model: a.model, duration: am && am.durs.length ? am.durs.reduce((x, y) => (Math.abs(y - plan.duration) < Math.abs(x - plan.duration) ? y : x), am.durs[0]) : plan.duration,
+            resolution: am && am.res.includes(plan.resolution) ? plan.resolution : am ? (am.res.includes('720p') ? '720p' : am.res[0]) : plan.resolution,
+            audio: am ? plan.audio && !!am.audio : plan.audio, pictureFirst: plan.pictureFirst && am && (am.frames || []).includes('first_frame'),
+            reason: `You switched to ${am ? am.name : a.model}: ${a.why || ''}`, alternatives: [prev, ...plan.alternatives.filter((x) => x.model !== a.model)].slice(0, 2) };
+          paint();
+        }));
+        d.querySelector('[data-yes]').onclick = () => done(plan);
+        d.querySelector('[data-no]').onclick = () => done(null);
+      };
+      const done = (v) => { d.close(); d.remove(); if (v) ls.set('paidOk', true); resolve(v); };
+      d.addEventListener('cancel', (e) => { e.preventDefault(); done(null); });
+      document.body.append(d); paint(); d.showModal();
+    });
+  };
+
+  // A page's own model <select> with a "🧠 Auto" option: when Auto is picked, ask the Director, show its plan, then
+  // set the page's model / length / resolution / sound fields to the approved plan. Resolves:
+  //   { ok: true, plan: null }  → not on Auto, the page carries on as before (with its own confirmation)
+  //   { ok: true, plan }        → approved; fields are set, the page skips its own confirmation
+  //   { ok: false }             → cancelled or failed (message already shown)
+  S.addAutoOption = (sel) => {
+    if (!sel || sel.querySelector(`option[value="${S.AUTO}"]`)) return;
+    sel.insertAdjacentHTML('afterbegin', `<option value="${S.AUTO}">🧠 Auto: the Director picks the best within budget</option>`);
+    sel.addEventListener('change', (e) => { if (e.isTrusted) delete sel.dataset.auto; }); // picked by hand: stays picked
+  };
+  S.autoSelect = async (sel, { page, prompt, aspect, budget, n = 1, startPicture, durSel, resSel, audioSel, title } = {}) => {
+    // the last run was Auto (the dropdown shows the Director's pick): ask the Director again
+    if (sel && sel.dataset.auto === '1') { sel.value = S.AUTO; delete sel.dataset.auto; sel.dispatchEvent(new Event('change')); }
+    if (!sel || sel.value !== S.AUTO) return { ok: true, plan: null };
+    let res;
+    try { res = await S.director({ page, prompt, aspect, budget, startPicture, audio: audioSel ? audioSel.value === 'true' : undefined }); }
+    catch (e) { toast(e.message, 'err'); return { ok: false }; }
+    window.dispatchEvent(new Event('spend-changed'));
+    const plan = await S.confirmPlan(res, { n, title });
+    if (!plan) return { ok: false };
+    const { map } = await S.models();
+    const setOpt = (s, v, label) => { if (!s) return; if (![...s.options].some((o) => o.value === String(v))) s.insertAdjacentHTML('beforeend', `<option value="${esc(v)}">${esc(label || v)}</option>`); s.value = String(v); };
+    setOpt(sel, plan.model, (map[plan.model] || {}).name); sel.dataset.auto = '1';
+    setOpt(durSel, plan.duration, plan.duration + ' s'); setOpt(resSel, plan.resolution);
+    if (audioSel) audioSel.value = plan.audio ? 'true' : 'false';
+    [sel, durSel, resSel, audioSel].forEach((s) => s && s.dispatchEvent(new Event('change')));
+    return { ok: true, plan };
+  };
+
   // ---------- form memory: fields come back after leaving the page ----------
   S.persistForm = (key, ids, { onRestore } = {}) => {
     const saved = ls.get('form:' + key, {});

@@ -84,3 +84,16 @@ Options → "Search only this part": give a From / To time (12:30, 1:02:03) and 
 - **Quality booster** (on by default): adds "sharp focus, natural motion, stable anatomy" and an Avoid line (warping, extra fingers, garbled text…) plus your own negative prompt. Single clip shows the seed used, can lock it and can reuse it.
 - **Storyboard (Story → Picture first)**: one still per scene (`/api/still`, about $0.02 each, in the theme, from the character sheet or the saved influencer), shown side by side before any video is paid for. Redraw or swap any scene with your own AI-made picture. Each scene is then animated from its picture and, with **Connect scenes**, ends on the next scene's picture on models that support an end frame.
 - **Enhance** (after a clip, Story video or Short, and in History): free, on your server with ffmpeg. Upscale to 720p or 1080p, sharpen, denoise, and optionally smooth motion (frame interpolation, which also smooths the slowed and held clips of Story budget mode).
+
+## 🧠 The Director (Auto)
+
+Pick **🧠 Auto** as the model on Single clip, UGC, Poses or Copy motion, or **🧠 Auto (Director)** as the Quality on Story. The app's brain (`lib/director.js`, `POST /api/director`, Gemini 3.5 Flash by default, set in Settings) reads every usable video model and plans the job: which model, how long, which resolution, sound, picture first, Enhance. For a story it plans every scene. Its goal is **the best quality that fits your budget**: the best models go where viewers notice (faces, close-ups, key scenes), cheaper ones go on B-roll.
+
+- **Every model:** `lib/models.js` takes in every model on OpenRouter's live list by itself, new ones included. Each gets a tier from its price, a quality score and strength tags (faces, motion, anime, dialogue…). Edit, upscale and avatar models that need special inputs are left out. Kling 3 Pro and Kling 3 Turbo appear when `FAL_KEY` is set.
+- **Never trusted blindly:** the server checks the plan against the real catalog, snaps lengths to allowed values and works out every cost itself. If the plan is over budget, it gives up the least visible quality first (filler scenes, pictures for scenes without people, then shorter clips) and never touches the close-ups first. If the brain doesn't answer, fixed rules plan instead, so Auto always gives an answer.
+- **You approve it:** before anything is charged you see the plan: the chosen model and why, length, resolution, picture first, Enhance, the total next to your budget, and alternatives you can switch to with one tap. A plan costs about half a cent to one cent.
+- **Default budgets** per job are set in Settings (clip $0.50, story $2, UGC $0.80, pose $0.15, copy motion $1) and can be changed on each page.
+
+## Credit tracking
+
+The spend tracker shows OpenRouter's month total and credit, plus fal.ai's credit left (read live from fal) and its month spend (from the app's log, or fal's own figure if `FAL_ADMIN_KEY`, an admin-scoped key, is set). The monthly cap counts **all providers**.

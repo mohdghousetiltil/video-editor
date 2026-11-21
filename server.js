@@ -16,6 +16,7 @@ const { startCleanup } = require("./lib/cleanup");
 const modelsLib = require("./lib/models");
 const { createHistory } = require("./lib/history");
 const providers = require("./lib/providers");
+const director = require("./lib/director");
 const { createThemes, themeText, qualityText, NEGATIVE } = require("./lib/themes");
 
 // Tiny .env loader (first, so every setting below can come from .env)
@@ -137,7 +138,7 @@ const UNLOCKED = !!PROXY_KEY || !PUBLIC_URL_RAW() || process.env.ALLOW_OPEN === 
 function PUBLIC_URL_RAW() { return (process.env.PUBLIC_URL || "").trim(); }
 if (!UNLOCKED) console.error("PROXY_KEY is not set but PUBLIC_URL is: the API is locked. Set PROXY_KEY (same value as in Cloudflare).");
 // Paid endpoints are refused once the monthly cap (Settings) is reached.
-const PAID = /^\/api\/(generate|plan|cast|keyframe|tts|stitch|lookframe|startframe|describe|portraits|caption|enhance|still|shorts(\/upload)?|shorts\/\w+\/retry|influencers\/[\w-]+\/check)$/;
+const PAID = /^\/api\/(generate|plan|cast|keyframe|tts|stitch|lookframe|startframe|describe|portraits|caption|enhance|still|director|shorts(\/upload)?|shorts\/\w+\/retry|influencers\/[\w-]+\/check)$/;
 
 const MODELS = modelsLib.VIDEO; // capabilities per model; lib/models.js
 // ---- Motion page: share uploaded driving clips with the video provider (it needs a public HTTPS link) ----
@@ -709,7 +710,7 @@ const server = http.createServer(async (req, res) => {
       if (j.videoUrl) job.videoUrl = j.videoUrl;
       if (j.status === "failed") job.error = typeof j.error === "string" ? j.error : j.error?.message || "Generation failed";
       const cost = j.usage?.cost ?? (j.status === "completed" && job.provider ? job.estimate : undefined);
-      if (j.status === "completed") logSpend(job.feature || "Video clips", cost, job.model, id);
+      if (j.status === "completed") logSpend(job.feature || "Video clips", cost, job.model, id, job.provider);
       jobs.set(id, job);
       if (history.get(id) || j.status === "completed") history.put(id, { kind: history.get(id)?.kind || FEATURE_KIND[job.feature] || "clip", model: job.model, status: j.status, error: job.error, cost, url: `/api/video/${id}`, thumb: `/api/video/${id}/thumb.jpg`, ...(history.get(id) ? {} : { title: "Fetched job " + id.slice(-8) }) });
       const ty = MODELS[job.model]?.typical;
@@ -723,6 +724,37 @@ const server = http.createServer(async (req, res) => {
         error: job.error,
         videoUrl: job.status === "completed" ? `/api/video/${id}` : null,
       });
+    }
+
+    // ---- 🧠 the Director: picks the model and the process for the best quality within the budget ----
+    if (req.method === "POST" && url.pathname === "/api/director") {
+      const b = await readBody(req);
+      const st = settings.get();
+      const page = String(b.page || "clip");
+      const budget = Number(b.budget) > 0 ? Math.min(50, Number(b.budget)) : (st.directorBudget || {})[page] ?? null;
+      const theme = st.themeLock ? themes.get(st.themeId) : null;
+      const reqD = {
+        page, prompt: String(b.prompt || "").slice(0, 2000), aspect: ["9:16", "16:9", "1:1"].includes(b.aspect) ? b.aspect : "9:16",
+        duration: Number(b.duration) || null, resolution: ["480p", "720p", "1080p"].includes(b.resolution) ? b.resolution : "720p",
+        audio: b.audio === false ? false : b.audio === true ? true : undefined, startPicture: !!b.startPicture, budget,
+        theme: theme ? [theme.name, theme.style].filter(Boolean).join(": ") : (typeof b.style === "string" ? b.style.slice(0, 200) : null),
+        scenes: Array.isArray(b.scenes) ? b.scenes.slice(0, 40).map((s) => ({ title: String(s.title || "").slice(0, 80), prompt: String(s.prompt || "").slice(0, 600), seconds: Number(s.seconds) || 4, key: !!s.key })) : undefined,
+      };
+      const catalog = await liveModels();
+      const available = (m) => m.live !== false || providers.pickRoute(m.id, { orAvailable: false }).provider !== "openrouter";
+      const brainModel = st.directorModel || "google/gemini-3.5-flash";
+      const callBrain = async (messages) => {
+        const r = await orFetch(`${API}/chat/completions`, { method: "POST", headers: orHeaders(),
+          body: JSON.stringify({ model: brainModel, max_tokens: 6000, temperature: 0.2, reasoning: { effort: "low" }, response_format: { type: "json_object" }, messages }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error?.message || `Director brain failed (${r.status})`);
+        logSpend("Director", j.usage?.cost, brainModel);
+        return { text: j.choices?.[0]?.message?.content || "", cost: j.usage?.cost || 0 };
+      };
+      try {
+        const out = await director.decide(reqD, { catalog, available, callBrain });
+        return send(res, 200, { ...out, brain: brainModel });
+      } catch (e) { return send(res, e.status || 502, { error: e.message }); }
     }
 
     // ---- History: everything made, across features ----
