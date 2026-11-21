@@ -10,6 +10,8 @@ const { spawn } = require("child_process");
 const { glitchFilter } = require("./glitch");
 const { toSec, cleanSegments, parseTime } = require("./lib/cut");
 
+// estimated voice price per second of speech (the voice service doesn't report cost); same numbers as lib/spend.js
+const TTS_RATE = { "hexgrad/kokoro-82m": 0.00003, "elevenlabs/eleven-turbo-v2.5": 0.0005 };
 // Narrator voices (OpenRouter /audio/speech). Kokoro costs ~$0.002 per minute; ElevenLabs sounds more natural.
 const VOICES = [
   { voice: "am_michael", model: "hexgrad/kokoro-82m", label: "Michael (US male, Kokoro)" },
@@ -22,7 +24,8 @@ const VOICES = [
   { voice: "jessica", model: "elevenlabs/eleven-turbo-v2.5", label: "Jessica (ElevenLabs)" },
 ];
 
-module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, serveMp4, tts, logSpend = () => {}, orFetch = fetch, renderSlot = (fn) => fn(), getModel = () => null, serveThumb }) {
+module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, serveMp4, tts, logSpend = () => {}, orFetch = fetch, renderSlot = (fn) => fn(), getModel = () => null, serveThumb, history = null }) {
+  const hist = (id, rec) => { try { history && history.put("short-" + id, { kind: "short", url: `/api/shorts/${id}/short.mp4`, thumb: `/api/shorts/${id}/thumb.jpg`, ...rec }); } catch {} };
   const DIR = path.join(STORE, "work", "shorts");
   // video-understanding model: Settings page choice, else SHORTS_MODEL, else Gemini Flash Lite
   const modelNow = () => getModel() || process.env.SHORTS_MODEL || "google/gemini-3.5-flash-lite";
@@ -99,6 +102,33 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
     return attempt(exe, []).catch((e) => (e.spawnFailed ? attempt("python", ["-m", "yt_dlp"]).catch((e2) => {
       throw e2.spawnFailed ? new Error("yt-dlp is not installed on the server (set YTDLP_PATH).") : e2;
     }) : Promise.reject(e)));
+  }
+
+  // length / title / thumbnail of a site link without downloading it (for the preflight check), or null
+  function linkInfo(link) {
+    const args = ["-J", "--no-playlist", "--no-warnings", "--skip-download", "--js-runtimes", "node", link];
+    const attempt = (exe, pre) => new Promise((resolve) => {
+      let out = "";
+      const p = spawn(exe, [...pre, ...args]);
+      const t = setTimeout(() => { try { p.kill(); } catch {} resolve(null); }, 25000);
+      p.stdout.on("data", (d) => { out += d; if (out.length > 5e6) p.kill(); });
+      p.on("error", () => { clearTimeout(t); resolve(null); });
+      p.on("close", () => { clearTimeout(t); try { const j = JSON.parse(out); resolve({ duration: +j.duration || null, title: j.title || "", thumbnail: j.thumbnail || null }); } catch { resolve(null); } });
+    });
+    return attempt(process.env.YTDLP_PATH || "yt-dlp", []);
+  }
+  // background music: an uploaded track (work/shorts/music/<id>.*) or "pad", a soft generated chord bed (no rights issues)
+  const MUSIC = path.join(DIR, "music");
+  fs.mkdirSync(MUSIC, { recursive: true });
+  async function musicPath(m, dir, len) {
+    if (m === "pad") {
+      const f = path.join(dir, "pad.m4a");
+      const chord = "0.18*sin(2*PI*220*t)+0.14*sin(2*PI*277.18*t)+0.12*sin(2*PI*329.63*t)+0.08*sin(2*PI*110*t)";
+      await run(["-y", "-f", "lavfi", "-i", `aevalsrc='(${chord})*(0.6+0.4*sin(2*PI*0.25*t))':s=48000:d=${Math.ceil(len + 1)}`, "-af", "lowpass=f=1200,aecho=0.8:0.7:60:0.3", "-c:a", "aac", "-b:a", "128k", "pad.m4a"], dir);
+      return f;
+    }
+    const f = fs.readdirSync(MUSIC).find((n) => n.startsWith(m + "."));
+    return f ? path.join(MUSIC, f) : null;
   }
 
   function safeLink(u) {
@@ -252,11 +282,18 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
     return `${h}:${String(m).padStart(2, "0")}:${sec.toFixed(2).padStart(5, "0")}`;
   };
   const assText = (t) => String(t || "").replace(/[{}\\]/g, "").replace(/\s+/g, " ").trim().toUpperCase();
-  function assDoc(events) {
+  // caption looks: bold (white Anton, black outline), box (white on a black box), minimal (smaller, thin outline)
+  const CAP_STYLE = {
+    bold: { cap: "Anton,124,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,1,0,1,7,3", vo: "Anton,112,&H0000E5FF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,1,0,1,7,3" },
+    box: { cap: "Anton,96,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,1,0,3,14,0", vo: "Anton,92,&H0000E5FF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,1,0,3,14,0" },
+    minimal: { cap: "Anton,84,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,1,0,1,3,1", vo: "Anton,80,&H00DDDDDD,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,1,0,1,3,1" },
+  };
+  function assDoc(events, look = "bold") {
+    const st = CAP_STYLE[look] || CAP_STYLE.bold;
     return `[Script Info]\nScriptType: v4.00+\nPlayResX: 1080\nPlayResY: 1920\nWrapStyle: 0\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\n` +
       "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n" +
-      "Style: Cap,Anton,124,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,1,0,1,7,3,2,80,80,600,1\n" +
-      "Style: Vo,Anton,112,&H0000E5FF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,1,0,1,7,3,2,80,80,600,1\n" +
+      `Style: Cap,${st.cap},2,80,80,600,1\n` +
+      `Style: Vo,${st.vo},2,80,80,600,1\n` +
       "Style: Hook,Anton,100,&H0000E5FF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,1,0,1,7,3,8,70,70,250,1\n" +
       "Style: Thumb,Anton,176,&H0000E5FF,&H000000FF,&H00000000,&H96000000,0,0,0,0,100,100,2,0,1,12,7,8,60,60,330,1\n\n" +
       "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n" +
@@ -313,7 +350,14 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       }
       if (hi - lo > ANALYSE_MAX) { hi = lo + ANALYSE_MAX; job.warning = `Only ${hms(lo)}-${hms(hi)} was searched (3 hour limit).`; }
       const span = hi - lo, ranged = lo > 0 || hi < src.duration;
-      if (span < min) { min = Math.max(3, Math.floor(span)); max = Math.max(min, Math.floor(span)); } // a short range is used as it is
+      // a source shorter than the Short: make a shorter Short (default), or loop / pad the cut up to the minimum later
+      const target = min;
+      if (span < min) {
+        const fit = opts.fit || "short";
+        min = Math.max(3, Math.min(fit === "short" ? 8 : min, Math.floor(span))); max = Math.max(min, Math.min(fit === "short" ? 15 : max, Math.floor(span)));
+        job.fit = { mode: fit, source: +span.toFixed(1), target };
+        if (fit === "short") job.warning = `The source is only ${span.toFixed(0)} s, so this is a ${min}-${max} s Short instead of ${target}+ s.`;
+      }
       job.range = ranged ? [Math.round(lo), Math.round(hi)] : null;
       const total = hi;
       const base = { ...src, duration: src.duration, min, max, hint: opts.hint, title: srcTitle, range: ranged ? [lo, hi] : null };
@@ -321,8 +365,10 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       // 1. watch the WHOLE video. Short ones in one go; long ones in ~10 min parts (timestamps stay accurate),
       //    then the best candidates from every part are compared side by side.
       setStep(job, 1, 16);
-      let plan;
-      if (span <= SINGLE_MAX) {
+      let plan = null;
+      if (opts.reusePlan) { try { plan = JSON.parse(fs.readFileSync(path.join(dir, "plan.json"), "utf8")); job.reused = true; } catch {} }
+      if (plan) setStep(job, 2, 40);
+      else if (span <= SINGLE_MAX) {
         const proxy = await proxyClip(dir, srcFile, src, lo, span, "proxy.mp4");
         setStep(job, 2, 30);
         plan = await askVideo(job, proxy, editPrompt(base));
@@ -359,6 +405,8 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
         plan = await askVideo(job, path.join(dir, "reel.mp4"), editPrompt({ ...base, candidates: cands }));
       }
 
+      fs.writeFileSync(path.join(dir, "plan.json"), JSON.stringify(plan));
+      fs.writeFileSync(path.join(dir, "opts.json"), JSON.stringify({ ...opts, file: path.basename(srcFile) }));
       // 2. sanity-check the edit
       const segs = cleanSegments(plan, lo, hi, min, max);
       const start = segs[0].start, end = segs[segs.length - 1].end;
@@ -373,6 +421,13 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       //    (the "beat" rhythm short-form editors use) so the picture never sits still for long.
       setStep(job, 3, 50);
       const zoom = opts.edit !== "clean";
+      // punch-in: at most 1.25x and anchored on the subject, not the frame centre. With crop safety on and a smart
+      // crop that's already tight, the zoom stays at 1.06x so the subject keeps about a 10% margin.
+      const safe = opts.safe !== false;
+      const zf = Math.min(1.25, safe ? (framing === "crop" ? 1.06 : 1.12) : 1.2);
+      const zw = even(1080 * zf), zh = even(1920 * zf);
+      const zx = Math.round((zw - 1080) * (framing === "crop" ? 0.5 : focusX)), zy = Math.round((zh - 1920) * (safe ? 0.4 : 0.5));
+      job.edit = { cuts: segs.length, zoom: zoom ? +zf.toFixed(2) : 1, framing };
       // Each beat is rendered on its own (seek, frame it, zoom, encode) and the beats are then joined without
       // re-encoding. Doing it in one filter graph (split -> trim -> concat) made every later beat buffer full-size
       // frames while waiting its turn: gigabytes of memory on a 30 s clip, and the server killed ffmpeg.
@@ -389,7 +444,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
         audioSegs.push({ a: s.start - start, b: s.start - start + F / FPS });
       }
       await pool(beats, 2, (b, i) => run(["-y", "-ss", b.t.toFixed(3), "-i", srcFile, "-filter_complex",
-        frameFilter(src, framing, focusX, "[0:v]fps=30,", i) + (b.z ? ",scale=1210:2150,crop=1080:1920,setsar=1" : "") + ",format=yuv420p[v]",
+        frameFilter(src, framing, focusX, "[0:v]fps=30,", i) + (b.z ? `,scale=${zw}:${zh},crop=1080:1920:${zx}:${zy},setsar=1` : "") + ",format=yuv420p[v]",
         "-map", "[v]", "-frames:v", String(b.frames), "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "17", "-video_track_timescale", "15360", `beat${i}.mp4`], dir)
         .then(() => setStep(job, 3, 50 + ((i + 1) / beats.length) * 10)));
       fs.writeFileSync(path.join(dir, "beats.txt"), beats.map((_, i) => `file 'beat${i}.mp4'`).join("\n"));
@@ -404,7 +459,20 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       await run(["-y", "-f", "concat", "-safe", "0", "-i", "beats.txt",
         ...(src.audio ? ["-ss", start.toFixed(3), "-t", (end - start + 0.1).toFixed(3), "-i", srcFile, "-filter_complex", afc, "-map", "0:v", "-map", "[ac]", "-c:a", "aac", "-b:a", "192k", "-ar", "48000"] : ["-map", "0:v", "-an"]),
         "-c:v", "copy", "cut.mp4"], dir);
-      const cutLen = (await audioLen(path.join(dir, "cut.mp4"))) || len;
+      let cutLen = (await audioLen(path.join(dir, "cut.mp4"))) || len;
+      if (job.fit && job.fit.mode !== "short" && cutLen < job.fit.target - 0.3) {
+        const T = job.fit.target;
+        if (job.fit.mode === "loop") {
+          await run(["-y", "-stream_loop", String(Math.ceil(T / cutLen)), "-i", "cut.mp4", "-t", T.toFixed(3), "-c:v", "libx264", "-preset", "veryfast", "-crf", "17", ...(src.audio ? ["-c:a", "aac", "-b:a", "192k"] : ["-an"]), "cut2.mp4"], dir);
+        } else { // pad: hold the last frame, with silence
+          const hold = (T - cutLen).toFixed(3);
+          await run(["-y", "-i", "cut.mp4", "-filter_complex", `[0:v]tpad=stop_mode=clone:stop_duration=${hold}[v]` + (src.audio ? `;[0:a]apad=pad_dur=${hold}[a]` : ""),
+            "-map", "[v]", ...(src.audio ? ["-map", "[a]", "-c:a", "aac", "-b:a", "192k"] : ["-an"]), "-t", T.toFixed(3), "-c:v", "libx264", "-preset", "veryfast", "-crf", "17", "cut2.mp4"], dir);
+        }
+        fs.renameSync(path.join(dir, "cut2.mp4"), path.join(dir, "cut.mp4"));
+        cutLen = (await audioLen(path.join(dir, "cut.mp4"))) || T;
+        job.warning = `The source is only ${job.fit.source} s, so the cut was ${job.fit.mode === "loop" ? "looped" : "padded with a held last frame"} to ${T} s.`;
+      }
 
       // 4. captions + voiceover script, from the finished cut (so timings match what viewers see)
       setStep(job, 4, 62);
@@ -485,9 +553,11 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       const hook = String(plan.hook || "").trim();
       const events = [];
       if (hook) events.push({ start: 0, end: Math.min(3, cutLen), style: "Hook", text: hook, fx: "{\\fad(120,250)}" });
-      for (const c of captions) events.push({ start: c.start, end: c.end, style: "Cap", text: c.text, fx: "{\\fscx80\\fscy80\\t(0,90,\\fscx100\\fscy100)}" });
-      for (const c of voCaps) events.push({ start: c.start, end: c.end, style: "Vo", text: c.text, fx: "{\\fscx80\\fscy80\\t(0,90,\\fscx100\\fscy100)}" });
-      fs.writeFileSync(path.join(dir, "subs.ass"), assDoc(events));
+      if (opts.captions !== "off") {
+        for (const c of captions) events.push({ start: c.start, end: c.end, style: "Cap", text: c.text, fx: "{\\fscx80\\fscy80\\t(0,90,\\fscx100\\fscy100)}" });
+        for (const c of voCaps) events.push({ start: c.start, end: c.end, style: "Vo", text: c.text, fx: "{\\fscx80\\fscy80\\t(0,90,\\fscx100\\fscy100)}" });
+      }
+      fs.writeFileSync(path.join(dir, "subs.ass"), assDoc(events, opts.capStyle));
 
       // 6. final render: captions burned in; original sound ducked under the narrator; loudness to -14 LUFS
       setStep(job, 5, 76);
@@ -495,17 +565,26 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       if (!src.audio) ins.push("-f", "lavfi", "-t", cutLen.toFixed(3), "-i", "anullsrc=r=48000:cl=stereo");
       voiced.forEach((l) => ins.push("-i", l.file));
       const o = src.audio ? "0:a" : "1:a", first = src.audio ? 1 : 2;
+      const musicFile = opts.music && opts.music !== "none" ? await musicPath(opts.music, dir, cutLen) : null;
+      if (musicFile) ins.push("-stream_loop", "-1", "-i", musicFile);
+      const mIn = first + voiced.length;
+      // original sound: mute / low (25%) / keep (100%, dipped to 35% under the narrator). Under a hook voiceover
+      // it is muted for the first 3 s so the two voices don't fight.
+      const origVol = { mute: 0, low: 0.25, keep: 1 }[opts.orig] ?? 1, duckVol = Math.min(origVol, opts.orig === "keep" ? 0.35 : 0.22);
+      const hookVo = voiced.length > 0 && voiced[0].start < 1;
+      const mixEnd = musicFile ? `[mx];[${mIn}:a]aresample=48000,atrim=end=${cutLen.toFixed(3)},volume=0.12,afade=t=out:st=${Math.max(0, cutLen - 1.5).toFixed(2)}:d=1.5[mu];[mx][mu]amix=inputs=2:duration=first:normalize=0,` : ",";
       // optional neon-glitch look goes under the captions, so the text stays sharp
       let af = (opts.look === "glitch" ? glitchFilter("[0:v]", "[gv];[gv]", 1080, 1920, cutLen, cutLen) : "[0:v]") + `subtitles=subs.ass:fontsdir=${fontsArg(dir)}[v];`;
       if (voiced.length) {
         const duck = voiced.map((l) => `between(t,${(l.start - 0.1).toFixed(2)},${(l.end + 0.2).toFixed(2)})`).join("+");
-        af += `[${o}]volume='if(${duck},0.22,1)':eval=frame[orig];`;
+        const v = `if(${duck},${duckVol},${origVol})`;
+        af += `[${o}]volume='${hookVo ? `if(lt(t,3),0,${v})` : v}':eval=frame[orig];`;
         voiced.forEach((l, i) => {
           const ms = Math.round(l.start * 1000);
           af += `[${first + i}:a]aresample=48000,atempo=${l.tempo.toFixed(3)},atrim=end=${(l.end - l.start).toFixed(3)},afade=t=out:st=${Math.max(0, l.end - l.start - 0.08).toFixed(3)}:d=0.08,adelay=${ms}|${ms},volume=1.5[n${i}];`;
         });
-        af += `[orig]${voiced.map((_, i) => `[n${i}]`).join("")}amix=inputs=${voiced.length + 1}:duration=first:normalize=0,loudnorm=I=-14:TP=-1.5:LRA=11[a]`;
-      } else af += `[${o}]loudnorm=I=-14:TP=-1.5:LRA=11[a]`;
+        af += `[orig]${voiced.map((_, i) => `[n${i}]`).join("")}amix=inputs=${voiced.length + 1}:duration=first:normalize=0${mixEnd}loudnorm=I=-14:TP=-1.5:LRA=11[a]`;
+      } else af += `[${o}]volume=${origVol}${mixEnd}loudnorm=I=-14:TP=-1.5:LRA=11[a]`;
       await run(["-y", ...ins, "-filter_complex", af, "-map", "[v]", "-map", "[a]", "-t", cutLen.toFixed(3),
         "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-profile:v", "high", "-movflags", "+faststart", "short.mp4"], dir);
 
@@ -524,15 +603,20 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
         voiceover: voiced.map((l) => l.text), candidates: job.candidates || 0,
         title: String(plan.title || srcTitle || "").slice(0, 100), description: String(plan.description || ""), hashtags: tags.slice(0, 8),
         look: opts.look, thumbnailText: tt, cost: +(job.cost || 0).toFixed(4), warning: job.warning || null,
+        hookBurned: !!hook, edit: job.edit || null, fit: job.fit || null,
+        opts: { orig: opts.orig, captions: opts.captions, capStyle: opts.capStyle, music: opts.music, safe: opts.safe, fit: opts.fit, narration: opts.narration, voice: opts.voice, len: opts.len },
       };
       saveMeta(id, meta);
       Object.assign(job, { status: "done", pct: 100, step: "Done" });
+      hist(id, { status: "completed", title: meta.title || srcTitle || "Short", model: modelNow(), duration: meta.length, cost: meta.cost });
     } catch (e) {
       Object.assign(job, { status: "failed", error: e.message.slice(0, 500) });
-      saveMeta(id, { id, status: "failed", createdAt: job.createdAt, error: job.error, source: job.source || null });
+      saveMeta(id, { id, status: "failed", createdAt: job.createdAt, error: job.error, source: job.source || null, retryable: fs.existsSync(path.join(dir, "plan.json")) });
+      hist(id, { status: "failed", error: job.error, retry: { endpoint: `/api/shorts/${id}/retry`, body: {} } });
     } finally {
       logSpend("Shorts", (job.cost || 0) - (job.ttsCost || 0), modelNow(), "short-" + id); // voice is logged by tts() itself
-      for (const f of fs.readdirSync(dir)) if (/^(src\.|proxy\.mp4|part\d+\.mp4|win\d+\.mp4|wins\.txt|beat\d+\.mp4|beats\.txt|reel\.mp4|cut\.mp4|cap\.mp4|vo\d+\.mp3|cookies\.txt|.*\.part$)/.test(f)) fs.rm(path.join(dir, f), { force: true }, () => {});
+      const keepSrc = job.status === "failed" && fs.existsSync(path.join(dir, "plan.json"));
+      for (const f of fs.readdirSync(dir)) if (!(keepSrc && /^src\./.test(f)) && /^(src\.|proxy\.mp4|part\d+\.mp4|win\d+\.mp4|wins\.txt|beat\d+\.mp4|beats\.txt|reel\.mp4|cut\.mp4|cap\.mp4|vo\d+\.mp3|cookies\.txt|.*\.part$)/.test(f)) fs.rm(path.join(dir, f), { force: true }, () => {});
       setTimeout(() => jobs.delete(id), 60 * 60 * 1000);
     }
   }
@@ -553,6 +637,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
     const job = jobs.get(id);
     job.step = "Waiting for a free render slot"; // another Short or Story is rendering
     saveMeta(id, { id, status: "running", createdAt: job.createdAt, source: { title: opts.title || "", link: opts.link || null } });
+    hist(id, { status: "running", title: opts.title || opts.link || "Short", t: job.createdAt, ...(opts.link ? { retry: { endpoint: "/api/shorts", body: { ...opts, url: opts.link, link: undefined, file: undefined } } } : {}) });
     renderSlot(() => runShort(id, opts));
   };
   const newJob = () => {
@@ -570,6 +655,12 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
     edit: get("edit") === "clean" ? "clean" : "dynamic",
     from: parseTime(get("from")), to: parseTime(get("to")),
     look: get("look") === "glitch" ? "glitch" : "clean",
+    fit: ["short", "loop", "pad"].includes(get("fit")) ? get("fit") : "short",
+    orig: ["mute", "low", "keep"].includes(get("orig")) ? get("orig") : "keep",
+    captions: get("captions") === "off" ? "off" : "on",
+    capStyle: ["bold", "box", "minimal"].includes(get("capStyle")) ? get("capStyle") : "bold",
+    music: get("music") === "pad" || /^m[a-f0-9]{16}$/.test(get("music") || "") ? get("music") : "none",
+    safe: get("safe") !== "0" && get("safe") !== "false",
   });
 
   // ---------- routes; returns true when the request was handled ----------
@@ -603,7 +694,8 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       if (d.direct) { d.res.body?.cancel().catch(() => {}); return send(res, 200, { ok: true, kind: "direct", name: d.name, size: d.size, type: d.type }), true; }
       const host = new URL(link).hostname.replace(/^www\./, "");
       if (d.status === 404 || d.status === 410) return send(res, 200, { ok: false, error: `That link returns "not found" (${d.status}).` }), true;
-      return send(res, 200, { ok: true, kind: "site", site: host }), true;
+      const info = await linkInfo(link).catch(() => null);
+      return send(res, 200, { ok: true, kind: "site", site: host, duration: info?.duration || null, title: info?.title || null, thumbnail: info?.thumbnail || null }), true;
     }
     if (req.method === "POST" && url.pathname === "/api/shorts") {
       if (!getKey()) return send(res, 500, { error: "OPENROUTER_API_KEY missing." }), true;
@@ -617,7 +709,27 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       start(id, { ...readOpts((k) => (body[k] == null ? null : String(body[k]))), link });
       return send(res, 200, { id }), true;
     }
-    if (req.method === "GET" && url.pathname === "/api/shorts/voices") return send(res, 200, { voices: VOICES.map(({ voice, label }) => ({ voice, label })) }), true;
+    if (req.method === "POST" && url.pathname === "/api/shorts/music") { // a music track to mix under the Short
+      const ext = (String(req.headers["x-filename"] || "").match(/\.(mp3|m4a|aac|wav|ogg)$/i) || [null, "mp3"])[1].toLowerCase();
+      const mid = "m" + crypto.randomBytes(8).toString("hex"), f = path.join(MUSIC, `${mid}.${ext}`);
+      const chunks = []; let size = 0;
+      for await (const c of req) { size += c.length; if (size > 30 * 1048576) return send(res, 413, { error: "Music file too large (max 30 MB)." }), true; chunks.push(c); }
+      if (!size) return send(res, 400, { error: "Empty upload." }), true;
+      fs.writeFileSync(f, Buffer.concat(chunks));
+      return send(res, 200, { id: mid }), true;
+    }
+    if (req.method === "POST" && (m = url.pathname.match(/^\/api\/shorts\/(\w+)\/retry$/))) {
+      const id = m[1], dir = dirOf(id);
+      if (jobs.get(id)?.status === "running") return send(res, 409, { error: "Still working on it." }), true;
+      let o = null;
+      try { o = JSON.parse(fs.readFileSync(path.join(dir, "opts.json"), "utf8")); } catch {}
+      const src = o && o.file && path.join(dir, o.file);
+      if (!o || !fs.existsSync(src) || !fs.existsSync(path.join(dir, "plan.json"))) return send(res, 400, { error: "This Short can't be retried without starting over (the source is gone). Make it again." }), true;
+      jobs.set(id, { status: "running", step: STEPS[0], pct: 0, createdAt: Date.now() });
+      start(id, { ...o, link: null, file: src, reusePlan: true });
+      return send(res, 200, { id }), true;
+    }
+    if (req.method === "GET" && url.pathname === "/api/shorts/voices") return send(res, 200, { voices: VOICES.map(({ voice, label, model }) => ({ voice, label, model, perSec: TTS_RATE[model] ?? 0.0005 })), vision: modelNow() }), true;
     if (req.method === "GET" && url.pathname === "/api/shorts") {
       const ids = fs.readdirSync(DIR).filter((d) => /^\w+$/.test(d)).sort().reverse().slice(0, 30);
       return send(res, 200, { shorts: ids.map(publicView).filter(Boolean) }), true;
@@ -626,6 +738,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       if (req.method === "DELETE") {
         if (jobs.get(m[1])?.status === "running") return send(res, 409, { error: "Still working on it." }), true;
         jobs.delete(m[1]);
+        try { history && history.del("short-" + m[1]); } catch {}
         fs.rmSync(dirOf(m[1]), { recursive: true, force: true });
         return send(res, 200, { ok: true }), true;
       }
