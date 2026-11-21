@@ -8,6 +8,7 @@
     motion: svg('<path d="M4 7V5a1 1 0 0 1 1-1h2M17 4h2a1 1 0 0 1 1 1v2M20 17v2a1 1 0 0 1-1 1h-2M7 20H5a1 1 0 0 1-1-1v-2"/><circle cx="12" cy="12" r="3"/>'),
     shorts: svg('<rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="m10.5 9.5 4 2.5-4 2.5z"/>'),
     gear: svg('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'),
+    history: svg('<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/>'),
     people: svg('<circle cx="9" cy="8" r="3"/><path d="M3 19c.6-3 3-4.6 6-4.6s5.4 1.6 6 4.6"/><path d="M16 5.2a3 3 0 0 1 0 5.6M18 14.6c1.8.6 2.7 2 3 4.4"/>'),
   };
   const items = [
@@ -17,6 +18,7 @@
     ['/motion', 'Poses & motion', ICON.motion, 'Poses for TikTok, copy motion'],
     ['/shorts', 'Shorts maker', ICON.shorts, 'Long video → ready-to-post Short'],
     ['/influencers', 'Influencers', ICON.people, 'Your AI influencer library'],
+    ['/history', 'History', ICON.history, 'Everything you made, search, retry'],
     ['/settings', 'Settings', ICON.gear, 'Models, Muse by Meta, spend cap'],
   ];
   // clean URLs (/shorts) and old ones (/shorts.html, /index.html) both count as the same page
@@ -27,8 +29,9 @@
   side.innerHTML =
     '<a class="sb-brand" href="/"><span class="sb-logo">'+ICON.clip+'</span><span>VIDEO<em>STUDIO</em></span></a>' +
     '<div class="sb-nav">' +
-    items.map((i) => `<a href="${i[0]}" class="${i[0] === here ? 'on' : ''}"><span class="ic">${i[2]}</span><span class="tx"><b>${i[1]}</b><small>${i[3]}</small></span></a>`).join('') +
-    '</div><div class="sb-foot"><span class="dot" id="sbDot"></span><span id="sbTxt">LINKING…</span></div>';
+    items.map((i) => `<a href="${i[0]}" class="${i[0] === here ? 'on' : ''}" title="${i[1]}: ${i[3]}"${i[0] === here ? ' aria-current="page"' : ''}><span class="ic">${i[2]}</span><span class="tx"><b>${i[1]}</b><small>${i[3]}</small></span></a>`).join('') +
+    '</div><a class="sb-queue" id="sbQueue" href="/history?status=running" hidden><span class="dot ok"></span><span id="sbQueueTxt"></span></a>' +
+    '<div class="sb-foot"><span class="dot" id="sbDot"></span><span id="sbTxt">LINKING…</span><button type="button" class="sb-help" id="sbHelp" aria-label="Help">?</button></div>';
   document.body.prepend(side);
 
   // Mobile tab bar: 4 main tabs + a centre "more" orb that fans the remaining pages out on an arc.
@@ -140,8 +143,10 @@
     const bar = sbSpend.querySelector('.spend-bar');
     bar.hidden = !lim;
     if (lim) { const p = Math.min(100, (used / lim) * 100); bar.firstChild.style.width = p + '%'; bar.classList.toggle('hot', p > 85); }
-    sbSpend.querySelector('.spend-s').textContent = cap ? money(Math.max(0, cap - total), 2) + ' left of ' + money(cap, 0) + ' cap'
-      : or && or.keyRemaining != null ? money(or.keyRemaining, 2) + ' left on key' : or && or.balance != null ? money(or.balance, 2) + ' credit left' : 'tap for details';
+    // one meaning per number, same labels as the dialog: cap left (the app's own monthly cap), else OpenRouter credit left
+    sbSpend.querySelector('.spend-s').textContent = cap ? money(Math.max(0, cap - total), 2) + ' cap left of ' + money(cap, 0)
+      : or && or.balance != null ? money(or.balance, 2) + ' credit left' : 'tap for details';
+    sbSpend.title = 'OpenRouter month total ' + money(total, 2) + (or && or.balance != null ? ' · credit left ' + money(or.balance, 2) : '') + (cap ? ' · app cap ' + money(cap, 0) : '');
   };
   const loadSpend = (month) => fetch('/api/spend' + (month ? '?month=' + month : ''))
     .then((r) => (r.ok ? r.json() : Promise.reject()))
@@ -159,13 +164,16 @@
       `<div class="sd-head"><h2>AI spend · ${esc(monthName)}</h2><button class="btn sd-x" data-x aria-label="Close">✕</button></div>` +
       (j.months.length > 1 ? `<label class="sd-month">Month<select>${j.months.map((m) => `<option ${m === j.month ? 'selected' : ''}>${m}</option>`).join('')}</select></label>` : '') +
       (j.current && j.openrouter ? `<div class="sd-tiles">
-        <div><span>This month</span><b>${money(or.month, 2)}</b></div>
+        <div><span>OpenRouter month total</span><b>${money(or.month, 2)}</b></div>
         <div><span>This week</span><b>${money(or.week, 2)}</b></div>
         <div><span>Today</span><b>${money(or.day, 2)}</b></div>
         <div><span>Credit left</span><b>${money(or.balance, 2)}</b></div></div>` +
-        (lim ? `<div class="sd-lim"><div class="sd-lim-t"><span>API key limit</span><span>${money(used, 2)} of ${money(lim, 2)} used · ${money(or.keyRemaining, 2)} left</span></div><div class="spend-bar${used / lim > .85 ? ' hot' : ''}"><i style="width:${Math.min(100, (used / lim) * 100)}%"></i></div></div>` : '') +
-        `<p class="sd-note">Totals come straight from OpenRouter (calendar month, UTC) and include everything this API key spent.</p>` : '') +
-      `<h3>Where it went <small>${money(L.total)} logged by this app</small></h3>` +
+        (j.cap > 0 ? `<div class="sd-lim"><div class="sd-lim-t"><span>App monthly cap</span><span>${money(or.month, 2)} of ${money(j.cap, 2)} used · ${money(Math.max(0, j.cap - (or.month || 0)), 2)} cap left · <a href="/settings">change</a></span></div><div class="spend-bar${(or.month || 0) / j.cap > .85 ? ' hot' : ''}"><i style="width:${Math.min(100, ((or.month || 0) / j.cap) * 100)}%"></i></div></div>`
+          : '<p class="sd-note">No monthly cap set. <a href="/settings">Set one in Settings</a> so paid calls stop at a limit you choose.</p>') +
+        (lim ? `<div class="sd-lim"><div class="sd-lim-t"><span>API key limit (set at openrouter.ai)</span><span>${money(used, 2)} of ${money(lim, 2)} used · ${money(or.keyRemaining, 2)} left on key</span></div><div class="spend-bar${used / lim > .85 ? ' hot' : ''}"><i style="width:${Math.min(100, (used / lim) * 100)}%"></i></div></div>` : '') +
+        `<p class="sd-note">The month total and credit come straight from OpenRouter (calendar month, UTC) and include everything this key spent, also outside this app. They are the numbers that count.</p>` : '') +
+      `<h3>App log (estimate) <small>${money(L.total)} recorded by this app</small></h3>` +
+      (j.current && or.month != null && Math.abs(or.month - L.total) >= 0.01 ? `<p class="sd-note">${money(Math.abs(or.month - L.total), 2)} ${or.month > L.total ? 'not in the app log: calls made elsewhere with this key, or before the log started' : 'more in the app log than OpenRouter reports: voice costs are estimates and OpenRouter can lag a few minutes'}.</p>` : '') +
       (L.byFeature.length ? `<div class="sd-rows">${L.byFeature.map((f) => `<div class="sd-row"><span>${esc(f.feature)} <small>${f.count}×</small></span><span class="sd-track"><i style="width:${(f.cost / maxF) * 100}%"></i></span><b>${money(f.cost)}</b></div>`).join('')}</div>`
         : '<p class="sd-note">Nothing logged yet this month. Costs are recorded from now on as you make videos.</p>') +
       (L.byDay.length ? `<h3>By day</h3><div class="sd-days">${L.byDay.map((d) => `<i title="${d.day}: ${money(d.cost)}" style="height:${Math.max(4, (d.cost / maxD) * 100)}%"></i>`).join('')}</div>
@@ -292,6 +300,51 @@
     const hr = new Date().getHours();
     if (hr < 4) { window.__eggNight = true; document.body.classList.add('eg-night'); }
   })();
+
+  // ---------- Help, first-run tour, footer, render queue ----------
+  const S = window.studio;
+  if (S) {
+    document.getElementById('sbHelp').onclick = () => S.openInfo('help');
+    const hh = document.createElement('button');
+    hh.type = 'button'; hh.className = 'help-chip'; hh.setAttribute('aria-label', 'Help'); hh.textContent = '? Help';
+    hh.onclick = () => S.openInfo('help');
+    chipHost()?.append(hh);
+    if (wrap) {
+      const ft = document.createElement('footer');
+      ft.className = 'site-foot';
+      ft.innerHTML = ['help', 'about', 'privacy', 'refunds'].map((k) => `<button type="button" data-k="${k}">${S.INFO[k][0]}</button>`).join('<span aria-hidden="true">·</span>') +
+        '<span class="sf-note">Single-user studio · charges go to your own OpenRouter key</span>';
+      ft.addEventListener('click', (e) => { const b = e.target.closest('button[data-k]'); if (b) S.openInfo(b.dataset.k); });
+      wrap.append(ft);
+    }
+    // first visit: three steps (key, cap, a cheap first clip)
+    if (!S.store.get('onboarded', false) && !/history/.test(here)) setTimeout(() => {
+      const d = document.createElement('dialog');
+      d.className = 'spend-dlg info-dlg';
+      d.setAttribute('aria-label', 'Welcome');
+      d.innerHTML = `<div class="sd-head"><h2>Welcome to Video Studio</h2></div><ol class="tour">
+        <li><b>Your OpenRouter key pays for everything.</b> OpenRouter is one account for many AI models. Each video, picture or voice is charged to its credit. The app shows the total and asks before anything is charged.</li>
+        <li><b>A $10 monthly cap is on.</b> Once this month's spend reaches it, paid buttons stop working until you raise it in <a href="/settings">Settings</a>.</li>
+        <li><b>Start cheap.</b> On Single clip, pick a <i>Draft</i> model at 720p and a 4 s length: a few cents per try.</li></ol>
+        <div class="cf-act"><button class="btn" data-help type="button">Read help</button><button class="btn primary" data-ok type="button">Got it</button></div>`;
+      document.body.append(d);
+      const close = () => { S.store.set('onboarded', true); d.close(); d.remove(); };
+      d.querySelector('[data-ok]').onclick = close;
+      d.querySelector('[data-help]').onclick = () => { close(); S.openInfo('help'); };
+      d.addEventListener('cancel', close);
+      d.showModal();
+    }, 600);
+  }
+  const qa = document.getElementById('sbQueue'), qt = document.getElementById('sbQueueTxt');
+  const loadQueue = () => fetch('/api/queue').then((r) => r.json()).then((q) => {
+    const run = (q.items || []).length, wait = q.waiting || 0;
+    qa.hidden = !run && !wait && !q.active;
+    qt.textContent = `${run || q.active} running · ${wait} waiting`;
+    qa.title = (q.items || []).map((i) => `${i.kind}: ${i.title || i.id}`).join('\n') || 'Render queue';
+  }).catch(() => {});
+  loadQueue();
+  setInterval(() => { if (!document.hidden) loadQueue(); }, 10000);
+  addEventListener('spend-changed', loadQueue);
 
   const dot = document.getElementById('sbDot'), txt = document.getElementById('sbTxt');
   const ping = () =>

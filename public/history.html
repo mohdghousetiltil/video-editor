@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#05060d">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;800&family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600&display=swap">
+<title>History</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh}
+  .wrap{max-width:1180px;margin:0 auto}
+  .panel{background:var(--panel);border:1px solid var(--line);padding:18px;margin-bottom:18px}
+  h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute);margin:0 0 12px;font-weight:600}
+  label{display:flex;flex-direction:column;gap:5px;font-size:13px;color:var(--mute)}
+  select,input{background:var(--panel2);color:var(--text);border:1px solid var(--line);padding:9px;font:inherit;width:100%}
+  .filters{display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr;gap:12px}
+  @media(max-width:900px){.filters{grid-template-columns:1fr 1fr}.filters label:first-child{grid-column:1/-1}}
+  .btn{background:var(--panel2);color:var(--text);border:1px solid var(--line);padding:8px 14px;font:inherit;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block}
+  .btn:hover{border-color:var(--acc)}
+  .btn.danger:hover{border-color:var(--err);color:var(--err)}
+  .rows{display:flex;flex-direction:column;gap:10px}
+  .row{display:grid;grid-template-columns:96px 1fr auto;gap:14px;align-items:center;padding:10px;border:1px solid var(--line);background:var(--panel2)}
+  .row .th{width:96px;height:96px;background:#000 center/cover no-repeat;display:grid;place-items:center;color:var(--mute);font-size:26px}
+  .row .ti{font-weight:600;overflow-wrap:anywhere}
+  .row .mt{color:var(--mute);font-size:13px;margin-top:4px}
+  .row .ac{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+  .st{display:inline-block;padding:1px 8px;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;border:1px solid var(--line2)}
+  .st.completed{color:var(--ok);border-color:rgba(57,255,156,.45)}.st.failed{color:var(--err);border-color:rgba(255,77,109,.5)}.st.running,.st.pending,.st.in_progress{color:var(--acc)}
+  @media(max-width:700px){.row{grid-template-columns:72px 1fr}.row .th{width:72px;height:72px}.row .ac{grid-column:1/-1;justify-content:flex-start}}
+  .sum{color:var(--mute);font-size:13px;margin:0 0 10px}
+  .none{color:var(--mute);padding:20px;text-align:center}
+</style>
+<link rel="stylesheet" href="/app.css">
+<script src="/studio.js"></script>
+</head>
+<body data-title="History" data-sub="Everything you made, across every page: find it by name, date or cost, download it, retry a failed one or delete it.">
+<div class="wrap">
+  <div class="panel">
+    <h2>Find</h2>
+    <div class="filters">
+      <label>Search<input id="q" type="search" placeholder="Title, model or job ID"></label>
+      <label>Kind<select id="kind"><option value="">All</option><option value="clip">Single clips</option><option value="scene">Story scenes</option><option value="story">Stories</option><option value="short">Shorts</option><option value="ugc">UGC</option><option value="motion">Poses &amp; motion</option><option value="influencer">Influencers</option></select></label>
+      <label>Status<select id="status"><option value="">All</option><option value="running">Running</option><option value="completed">Done</option><option value="failed">Failed</option></select></label>
+      <label>From<input id="from" type="date"></label>
+      <label>To<input id="to" type="date"></label>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Results</h2>
+    <p class="sum" id="sum" aria-live="polite"></p>
+    <div class="rows" id="rows"></div>
+  </div>
+</div>
+<script>
+const $=id=>document.getElementById(id), S=window.studio;
+const KIND={clip:'Single clip',scene:'Story scene',story:'Story',short:'Short',ugc:'UGC',motion:'Pose / motion',influencer:'Influencer'};
+const p=new URLSearchParams(location.search);
+['q','kind','status','from','to'].forEach(k=>{ if(p.get(k)) $(k).value=p.get(k); });
+let items=[], MODELS={}, t=null;
+S.models().then(({map})=>{MODELS=map;});
+async function load(){
+  const qs=new URLSearchParams(); ['q','kind','status','from','to'].forEach(k=>{ if($(k).value) qs.set(k,$(k).value); });
+  history.replaceState(null,'',location.pathname+(qs.toString()?'?'+qs:''));
+  try{ items=(await (await fetch('/api/history?'+qs)).json()).items||[]; }catch{ items=[]; }
+  render();
+}
+function render(){
+  const total=items.reduce((a,x)=>a+(x.cost||0),0);
+  $('sum').textContent=items.length?`${items.length} item${items.length>1?'s':''} · ${S.money(total)} recorded`:'';
+  $('rows').innerHTML=items.length?items.map(x=>{
+    const done=x.status==='completed', run=/^(pending|in_progress|running|queued)$/.test(x.status);
+    return `<div class="row" data-id="${S.esc(x.id)}">
+      <div class="th" style="${done&&x.thumb?`background-image:url('${S.esc(x.thumb)}')`:''}">${done&&x.thumb?'':run?'⏳':x.status==='failed'?'✕':'🎞'}</div>
+      <div><div class="ti">${S.esc(x.title||x.id)}</div>
+        <div class="mt"><span class="st ${S.esc(x.status)}">${S.esc(run?'running':x.status==='completed'?'done':x.status)}</span> · ${KIND[x.kind]||S.esc(x.kind)}${x.model?' · '+S.esc((MODELS[x.model]||{}).name||x.model):''}${x.duration?' · '+x.duration+' s':''}${x.res?' · '+S.esc(x.res):''}${x.cost!=null?' · '+S.money(x.cost,3):''}${x.provider&&x.provider!=='openrouter'?' · via '+S.esc(x.provider):''}</div>
+        <div class="mt">${new Date(x.t).toLocaleString([],{dateStyle:'medium',timeStyle:'short'})} · <code>${S.esc(x.id)}</code>${x.error?`<br><span style="color:var(--err)">${S.esc(x.error).slice(0,200)}</span>`:''}</div></div>
+      <div class="ac">
+        ${done&&x.url?`<a class="btn" href="${S.esc(x.url)}" target="_blank" rel="noopener">▶ Play</a><a class="btn" href="${S.esc(x.url)}${x.kind==='short'?'?dl=1':'?download=1'}">⬇ Download</a>`:''}
+        ${x.retry&&!run?`<button class="btn" data-r type="button">🔄 Retry</button>`:''}
+        ${!run?`<button class="btn danger" data-d type="button" aria-label="Delete ${S.esc(x.title||x.id)}">✕ Delete</button>`:''}
+      </div></div>`;}).join(''):'<div class="none">Nothing here yet. Everything you make on any page shows up here.</div>';
+}
+$('rows').addEventListener('click',async e=>{
+  const row=e.target.closest('.row'); if(!row) return;
+  const x=items.find(i=>i.id===row.dataset.id);
+  if(e.target.closest('[data-d]')){
+    if(!confirm(`Delete "${x.title||x.id}" from history${x.kind==='short'?' and the server':''}? The video file kept on the server is removed too. This can't be undone.`)) return;
+    const r=x.kind==='short'?await fetch('/api/shorts/'+x.id.replace(/^short-/,''),{method:'DELETE'}):await fetch('/api/history/'+encodeURIComponent(x.id),{method:'DELETE'});
+    if(!r.ok) return toast((await r.json().catch(()=>({}))).error||'Delete failed','err');
+    if(x.kind==='short') await fetch('/api/history/'+encodeURIComponent(x.id),{method:'DELETE'}).catch(()=>{});
+    toast('Deleted','ok'); return load();
+  }
+  if(e.target.closest('[data-r]')){
+    const b=x.retry.body||{}, m=MODELS[b.model];
+    const est=m?S.costLine(m,{res:b.resolution,dur:b.duration,audio:b.generate_audio!==false}).total:(x.cost||0);
+    const ok=await S.confirmSpend({title:'Retry "'+(x.title||x.id).slice(0,60)+'"?',total:est,rows:[['Kind',KIND[x.kind]||x.kind],['Model',m?m.name:x.model||''],['Length',b.duration?b.duration+' s':''],['Resolution',b.resolution||'']],
+      note:x.kind==='short'?'Retries the render with the analysis already done; only the voice is charged again.':'Sends the same request again as a new job.'});
+    if(!ok) return;
+    const r=await fetch(x.retry.endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok) return toast(j.error||'Retry failed','err');
+    toast('Started again'+(j.id?': '+j.id:''),'ok'); window.dispatchEvent(new Event('spend-changed')); setTimeout(load,800);
+  }
+});
+['kind','status','from','to'].forEach(k=>$(k).addEventListener('change',load));
+$('q').addEventListener('input',()=>{clearTimeout(t);t=setTimeout(load,250);});
+load(); setInterval(()=>{ if(!document.hidden&&items.some(x=>/^(pending|in_progress|running)$/.test(x.status))) load(); },8000);
+</script>
+<script src="/app.js"></script>
+</body>
+</html>

@@ -34,7 +34,12 @@ module.exports = function systemRoutes(ctx) {
       return send(res, 200, { month: m, current, openrouter: or, local: spend.summarise(spend.read(m)), months, cap }), true;
     }
     if (req.method === "GET" && url.pathname === "/api/prices") return send(res, 200, { prices: await prices() }), true;
-    if (req.method === "GET" && url.pathname === "/api/queue") return send(res, 200, renderSlot.stats()), true;
+    // what's running and waiting: render slots (Story stitches, Shorts) plus video generations still in progress
+    if (req.method === "GET" && url.pathname === "/api/queue") {
+      const running = ctx.history ? ctx.history.list({ status: "running", limit: 30 }).filter((r) => Date.now() - r.t < 3 * 3600000) : [];
+      const items = running.map((r) => ({ id: r.id, kind: r.kind, title: r.title, model: r.model, status: r.status, t: r.t }));
+      return send(res, 200, { ...renderSlot.stats(), items }), true;
+    }
     return false;
   };
 };

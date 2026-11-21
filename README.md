@@ -16,6 +16,8 @@ Run: copy `.env.example` to `.env`, add your OpenRouter key, then `node server.j
 | `PUBLIC_URL` | the Railway public URL, e.g. `https://xxx.up.railway.app` |
 | `SHORTS_MODEL` | optional, video model for the Shorts maker (default `google/gemini-3.5-flash-lite`) |
 | `YT_COOKIES` | optional, contents of a `cookies.txt` exported from a logged-in YouTube browser session; only needed if YouTube links fail with "blocked" |
+| `FAL_KEY` | optional, fal.ai key: Kling goes through fal.ai (about half the price) |
+| `BYTEPLUS_KEY` | optional, BytePlus ModelArk key: Seedance goes through BytePlus (about half again). Model ids: `BYTEPLUS_SEEDANCE_FAST_MODEL`, `BYTEPLUS_SEEDANCE_MODEL`, `BYTEPLUS_SEEDANCE_MINI_MODEL`; fal app ids: `FAL_KLING_APP`, `FAL_KLING_I2V_APP` |
 
 **Cloudflare** (connect the same GitHub repo). As a **Worker** (current setup): `wrangler.jsonc` + `worker.js` serve `public/`, ask for the password and proxy `/api` to Railway; deploy command `npx wrangler deploy`, and the `name` in `wrangler.jsonc` must match the Worker name. As a **Pages** project instead: build command empty, output directory `public`, and `functions/` is picked up automatically. Variables (either way):
 
@@ -63,3 +65,15 @@ Options → "Search only this part": give a From / To time (12:30, 1:02:03) and 
 - Old working files are cleaned up every 6 hours (Settings → Storage).
 - Prices on the Single clip and Story pages come live from OpenRouter (`/api/prices`, cached 6 h).
 - Code: `server.js` (core + generation routes), `routes/story.js`, `routes/system.js`, `shorts.js`, `lib/` (settings, spend, retries, queue, cleanup, prices, persistence, edit helpers). Tests: `npm test` (`node --test`; the render test needs ffmpeg).
+
+## Costs, confirmations and history
+
+- **One model table** (`lib/models.js`, served at `/api/models`) merges OpenRouter's live model list: pages only offer lengths and resolutions a model accepts, the server refuses any other length, and every page shows the **total** ("$0.40 for 4 s"), not only a per-second price. Models are tagged Draft / Regular / Hero; 720p is the default (1080p is marked for hero YouTube shots).
+- **Nothing is charged without a confirmation** showing model, length, resolution and total. The first one also says it charges real money. Settings can skip it for calls under $0.10–$0.50.
+- **Monthly cap is $10 by default** (0 = no cap, only when you set it on purpose). The sidebar and the spend dialog use the same labels: *OpenRouter month total*, *Credit left*, *Cap left*; the app's own log is shown as an estimate next to the gap.
+- **Progress** shows the stage (Queued, Generating, Done) and the time elapsed, never a guessed countdown.
+- **History** (`/history`, `data/history.json`): every clip, Story, Short and influencer animation, searchable by name, kind, status and date, with play, download, retry and delete. The sidebar shows what is running.
+- **Routing**: with `FAL_KEY` / `BYTEPLUS_KEY` set, the cheapest configured provider is used per model (Settings shows which). Their costs are estimates in the log.
+- **Shorts**: a source shorter than the Short gets a warning first (make a shorter Short, loop, or hold the last frame). Original sound can be kept, lowered or muted (muted for the first 3 s under a hook voiceover). Zoom is capped and anchored on the subject (crop safety), with caption on/off and styles, an optional music bed, a preflight summary with estimated cost, and "Retry render" that reuses the analysis.
+- **Story**: Budget mode says up front how many seconds of real video the budget buys; each scene warns when its narration won't fit. The character sheet only shows with the lock on, with its cost; scenes share one seed; the planner aims for 3–5 s shots.
+- Forms remember what you typed when you leave a page. Help, first-run tour and footer (Help / About / Privacy / Spend & refunds) are on every page.

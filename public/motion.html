@@ -76,6 +76,7 @@
   .pct{font-size:46px;font-weight:800;line-height:1}
 </style>
 <link rel="stylesheet" href="/app.css">
+<script src="/studio.js"></script>
 </head>
 <body data-title="Poses &amp; motion" data-sub="Make your influencer strike poses for TikTok edits, or copy the motion from any video.">
 <div class="wrap">
@@ -108,7 +109,7 @@
 
         <h2 style="margin-top:14px">3 · Poses (pick as many as you like)</h2>
         <div class="poses" id="poses"></div>
-        <div class="row" style="margin-bottom:12px"><input type="text" id="customPose" placeholder="Custom pose, e.g. does a little dance step" style="flex:1;width:auto"><button class="btn" id="addPose" type="button">+ Add</button></div>
+        <div class="row" style="margin-bottom:12px"><input type="text" id="customPose" aria-label="Custom pose" placeholder="Custom pose, e.g. does a little dance step" style="flex:1;width:auto"><button class="btn" id="addPose" type="button">+ Add</button></div>
 
         <h2>4 · Settings</h2>
         <div class="grid">
@@ -116,8 +117,8 @@
             <option value="x-ai/grok-imagine-video-1.5-lite">Grok Imagine 1.5 Lite (~$0.02/s)</option>
             <option value="x-ai/grok-imagine-video-1.5">Grok Imagine 1.5 (~$0.08/s)</option>
           </select></label>
-          <label>Seconds per pose<input type="number" id="pDur" value="4" min="2" max="8"></label>
-          <label>Resolution<select id="pRes"><option>480p</option><option>720p</option></select></label>
+          <label>Seconds per pose<select id="pDur"><option value="2">2 s</option><option value="3">3 s</option><option value="4" selected>4 s</option><option value="5">5 s</option><option value="6">6 s</option><option value="8">8 s</option></select></label>
+          <label>Resolution<select id="pRes"><option>480p</option><option selected>720p</option></select></label>
         </div>
         <label>Extra direction (optional)<input type="text" id="pExtra" placeholder="e.g. cheerful, soft smile, looking at the lens"></label>
         <div class="cost"><span class="meta" id="pCostLbl">Estimated cost</span><b id="pCost">-</b></div>
@@ -172,8 +173,8 @@
         </div>
         <div class="grid" id="seedOpts">
           <label>Model<select id="mModel"><option value="alibaba/wan-3.0">Wan 3.0 - realistic faces OK (~$0.11/s)</option><option value="bytedance/seedance-2.0-fast">Seedance 2.0 Fast - stylized only</option><option value="bytedance/seedance-2.0">Seedance 2.0 - stylized only</option></select></label>
-          <label>Seconds<input type="number" id="mDur" value="8" min="4" max="15"></label>
-          <label>Resolution<select id="mRes"><option>480p</option><option>720p</option></select></label>
+          <label>Seconds<select id="mDur"><option value="8">8 s</option></select></label>
+          <label>Resolution<select id="mRes"><option>480p</option><option selected>720p</option></select></label>
         </div>
         <label>Prompt (auto-written, edit freely)<textarea id="mPrompt"></textarea></label>
       </div>
@@ -293,11 +294,25 @@ function renderPoses(){
 }
 $('addPose').onclick=()=>{const t=$('customPose').value.trim(); if(!t) return; custom.push(t); sel.add(POSES.length+custom.length-1); $('customPose').value=''; renderPoses();};
 const PP={'x-ai/grok-imagine-video-1.5-lite':{'480p':.02,'720p':.03},'x-ai/grok-imagine-video-1.5':{'480p':.08,'720p':.14}};
+let MM={}; // shared model table: real lengths and prices
+const S=window.studio;
+S.models().then(({map})=>{ MM=map;
+  for(const [id,x] of Object.entries(map)) if(PP[id]) x.res.forEach(r=>{ if(x.price[r]) PP[id][r]=x.price[r][1]; });
+  const keep=+$('mDur').value||8; fillDur($('mDur'),$('mModel').value,keep,15); cost(); mcost(); });
+// only lengths the model accepts (Seedance 4–15 s, Wan 2–30 s…), capped at `max`
+function fillDur(sel,model,want,max){
+  const x=MM[model]; if(!x) return;
+  const ds=x.durs.filter(d=>d<=max); if(!ds.length) return;
+  sel.innerHTML=ds.map(d=>`<option value="${d}">${d} s</option>`).join('');
+  sel.value=String(ds.reduce((b,n)=>Math.abs(n-want)<Math.abs(b-want)?n:b,ds[0]));
+}
 function cost(){
   const n=sel.size, d=+$('pDur').value||0, p=(PP[$('pModel').value]||{})[$('pRes').value]||0;
-  const extra=needsLook()&&!lookFrame?0.07:0; $('pCost').textContent=n&&d?`≈ $${(n*d*p+extra).toFixed(2)}`:'-'; $('pCostLbl').textContent=`Estimated cost (${n} poses × ${d}s)`;
+  const extra=needsLook()&&!lookFrame?0.07:0; $('pCost').textContent=n&&d?`≈ $${(n*d*p+extra).toFixed(2)} for ${n} × ${d} s`:'-'; $('pCostLbl').textContent=`Estimated total (${n} poses × ${d} s)`;
+  return n*d*p+extra;
 }
-['pModel','pDur','pRes'].forEach(i=>$(i).addEventListener('input',cost));
+['pModel','pDur','pRes'].forEach(i=>$(i).addEventListener('change',cost));
+$('pModel').addEventListener('change',()=>{ fillDur($('pDur'),$('pModel').value,+$('pDur').value||4,8); cost(); });
 
 let cards=[];
 function cardHtml(c){
@@ -311,6 +326,7 @@ $('pGo').onclick=async()=>{
   const all=[...POSES,...custom.map(t=>['✨ '+t.slice(0,22),t])];
   const chosen=[...sel].sort((a,b)=>a-b).map(i=>all[i]); if(!chosen.length) return $('pErr').textContent='Pick at least one pose.';
   const per=(PP[$('pModel').value]||{})[$('pRes').value]||0;
+  if(!(await S.confirmSpend({title:`Make ${chosen.length} pose clip${chosen.length>1?'s':''}?`,total:cost(),rows:[['Model',MM[$('pModel').value]?.name||$('pModel').value],['Clips',`${chosen.length} × ${$('pDur').value} s`],['Resolution',$('pRes').value],['New look picture',needsLook()&&!lookFrame?'$0.07 (estimate)':'none']]}))) return;
   $('pGo').disabled=true; $('pStitch').classList.add('hidden'); $('pReel').innerHTML='';
   if(needsLook()&&(!lookFrame||lookSig!==lookKey())){ try{ $('pErr').textContent=''; $('pGo').textContent='Creating the new look…'; await makeLook(); }catch(e){ $('pErr').textContent=e.message; $('pGo').disabled=false; $('pGo').textContent='Generate pose pack'; return; } $('pGo').textContent='Generate pose pack'; }
   cards=chosen.map((c,k)=>({k,label:c[0],action:c[1],id:null,done:false,failed:false}));
@@ -325,7 +341,7 @@ async function runPose(c,p){
   c.failed=false; c.done=false;
   try{
     const r=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-      model:$('pModel').value,prompt,duration:+$('pDur').value,resolution:$('pRes').value,aspect_ratio:'9:16',...(needsLook()&&lookFrame?{frame_image:lookFrame}:{influencer_id:p.id,use_frame:true})})});
+      model:$('pModel').value,prompt,title:'Pose: '+c.label,duration:+$('pDur').value,resolution:$('pRes').value,aspect_ratio:'9:16',...(needsLook()&&lookFrame?{frame_image:lookFrame}:{influencer_id:p.id,use_frame:true})})});
     const j=await r.json(); if(!r.ok) throw new Error(j.error||'failed');
     c.id=j.id; if(j.note&&!/saved influencer picture/.test(j.note)) $('s'+c.k).textContent=j.note;
   }catch(e){ c.failed=true; c.done=true; $('s'+c.k).textContent='❌ '+e.message; retryBtn(c,p); return; }
@@ -334,7 +350,8 @@ async function runPose(c,p){
     try{
       const d=await (await fetch('/api/jobs/'+c.id)).json();
       if(d.status==='failed'){ c.failed=c.done=true; $('s'+c.k).textContent='❌ '+(d.error||'failed'); retryBtn(c,p); return; }
-      $('f'+c.k).style.width=d.progress+'%'; $('s'+c.k).textContent=d.status==='completed'?'✅ ready'+(d.cost!=null?' · $'+d.cost:''):d.progress+'%';
+      $('f'+c.k).style.width=d.status==='completed'?'100%':'35%'; $('f'+c.k).parentElement.classList.toggle('indet',d.status!=='completed');
+      $('s'+c.k).textContent=d.status==='completed'?'✅ ready'+(d.cost!=null?' · $'+(+d.cost).toFixed(2):''):(d.stage==='queued'?'Queued':'Generating')+' · '+d.elapsed+' s';
       if(d.status==='completed'){
         c.done=true; $('v'+c.k).innerHTML=`<video src="${d.videoUrl}" muted loop playsinline controls></video>`;
         $('a'+c.k).innerHTML=`<a class="btn" href="${d.videoUrl}?download=1">⬇ Download</a>`; return;
@@ -391,10 +408,12 @@ function autoPrompt(){
 function mcost(){
   const dur=driver?driver.duration:(+$('mDur').value||8);
   if(method==='flux') $('mCost').textContent='≈ $'+(0.03*dur).toFixed(2)+' ('+Math.round(dur)+'s)';
-  else { const s=+$('mDur').value||0, p=$('mModel').value.startsWith('alibaba')?0.11:$('mModel').value.endsWith('fast')?0.03:0.05; $('mCost').textContent='≈ $'+(s*p*($('mRes').value==='720p'?2.1:1)).toFixed(2); }
+  else { const x=MM[$('mModel').value]; if(x){ const c=S.costLine(x,{res:$('mRes').value,dur:$('mDur').value,audio:false}); $('mCost').textContent=c.text; return c.total; }
+    const s=+$('mDur').value||0, p=$('mModel').value.startsWith('alibaba')?0.11:$('mModel').value.endsWith('fast')?0.03:0.05; $('mCost').textContent='≈ $'+(s*p*($('mRes').value==='720p'?2.1:1)).toFixed(2); }
+  return method==='flux'?0.03*dur:0;
 }
-['mDur','mRes','mModel'].forEach(i=>$(i).addEventListener('input',mcost)); mcost();
-$('mModel').addEventListener('change',()=>{ autoPrompt(); mcost(); });
+['mDur','mRes','mModel'].forEach(i=>$(i).addEventListener('change',mcost)); mcost();
+$('mModel').addEventListener('change',()=>{ fillDur($('mDur'),$('mModel').value,+$('mDur').value||8,15); autoPrompt(); mcost(); });
 
 async function upload(file){
   if(!file) return; $('mErr').textContent=''; $('drvTxt').textContent='Uploading and preparing…'; driver=null;
@@ -403,7 +422,7 @@ async function upload(file){
     const j=await r.json(); if(!r.ok) throw new Error(j.error||'Upload failed');
     driver=j; $('drvTxt').innerHTML='✅ '+file.name.replace(/</g,'&lt;')+'<br><small>click to replace</small>';
     $('drvPv').src=j.previewUrl; $('drvPv').classList.remove('hidden'); $('drvInfo').textContent='Prepared clip: '+j.duration.toFixed(1)+'s, audio removed.';
-    if(method==='seedance'){ $('mDur').value=Math.max(4,Math.min(15,Math.round(j.duration))); } mcost();
+    if(method==='seedance'){ fillDur($('mDur'),$('mModel').value,Math.round(j.duration),15); } mcost();
   }catch(e){ $('drvTxt').textContent='🎥 Click or drop a video'; $('mErr').textContent=e.message; }
 }
 $('drv').querySelector('input').onchange=e=>upload(e.target.files[0]);
@@ -460,7 +479,7 @@ $('tStop').onclick=async()=>{ await fetch('/api/tunnel/stop',{method:'POST'}); t
 
 /* generate */
 let mTimer=null;
-function mshow(p,msg){ $('mStage').innerHTML=`<div class="prog"><div class="pct">${p}%</div><div class="bar" style="margin:12px 0 8px"><div class="fill" style="width:${p}%"></div></div><div class="meta">${msg}</div></div>`; }
+function mshow(p,msg){ $('mStage').innerHTML=S.stageHTML(typeof p==='object'?p:{stage:'queued',msg}); }
 $('mGo').onclick=async()=>{
   $('mErr').textContent=''; $('mNote').textContent=''; $('mActions').innerHTML='';
   const url=$('drvUrl').value.trim();
@@ -469,6 +488,8 @@ $('mGo').onclick=async()=>{
   const p=inf($('mInf').value);
   if(method==='flux'&&!(p&&(p.desc||'').trim())) return $('mErr').textContent='This method needs a description of the influencer to swap in. Click "Describe from picture" above (or write one on the Influencers page).';
   if(method==='flux'&&/with: a person\./.test($('mPrompt').value)) return $('mErr').textContent='The prompt has no description of who to swap in. Add one before generating.';
+  const mt=mcost(), outfitExtra=outfitPic&&method!=='flux'&&(!outfitLook||outfitSig!==oKey())?0.07:0;
+  if(!(await S.confirmSpend({title:'Copy this motion?',total:mt+outfitExtra,rows:[['Method',method==='flux'?'FLUX Video Edit':'Reference video'],['Model',method==='flux'?'FLUX Video Edit':(MM[$('mModel').value]?.name||$('mModel').value)],['Length',method==='flux'?Math.round(driver?driver.duration:8)+' s':$('mDur').value+' s'],['Resolution',method==='flux'?'source':$('mRes').value],['Outfit picture',outfitExtra?'$0.07 (estimate)':'none']]}))) return;
   $('mGo').disabled=true;
   if(outfitPic&&method!=='flux'&&(!outfitLook||outfitSig!==oKey())){ mshow(0,'Dressing the influencer in your outfit…'); try{ await oMake(); }catch(e){ $('mErr').textContent=e.message; $('mStage').innerHTML='<div class="meta" style="padding:30px">Failed.</div>'; $('mGo').disabled=false; return; } }
   mshow(0,'Submitting…');
@@ -489,14 +510,16 @@ async function mpoll(id){
     await sleep(3000);
     const d=await (await fetch('/api/jobs/'+id)).json();
     if(d.status==='failed') throw new Error(d.error||'Generation failed');
-    if(d.status!=='completed'){ mshow(d.progress,`${d.status==='pending'?'Queued at provider':'Generating'} · ${d.elapsed}s elapsed (estimate)`); continue; }
+    if(d.status!=='completed'){ mshow(d); continue; }
     $('mStage').innerHTML=`<video src="${d.videoUrl}" controls autoplay loop playsinline></video>`;
-    $('mActions').innerHTML=`<a class="btn" href="${d.videoUrl}?download=1">⬇ Download MP4</a>`+(d.cost!=null?`<span class="meta">Cost $${d.cost} · job ${id}</span>`:'');
+    $('mActions').innerHTML=`<a class="btn" href="${d.videoUrl}?download=1">⬇ Download MP4</a>`+(d.cost!=null?`<span class="meta">Cost $${(+d.cost).toFixed(2)} · job ${id}</span>`:'');
+    window.dispatchEvent(new Event('spend-changed'));
     mountShare($('mActions'),{url:d.videoUrl,name:'motion-'+id.slice(-8)+'.mp4',prompt:$('mPrompt').value}); return;
   }
 }
 
 renderPoses(); loadInfs(); lookUi();
+S.persistForm('motion',['pModel','pDur','pRes','pExtra','mModel','mDur','mRes','drvUrl']);
 </script>
 <script src="/app.js"></script>
 </body>

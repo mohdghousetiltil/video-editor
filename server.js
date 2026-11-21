@@ -13,6 +13,9 @@ const { createSpend, TTS_PER_SEC } = require("./lib/spend");
 const { createPrices } = require("./lib/prices");
 const { persistentMap } = require("./lib/store");
 const { startCleanup } = require("./lib/cleanup");
+const modelsLib = require("./lib/models");
+const { createHistory } = require("./lib/history");
+const providers = require("./lib/providers");
 
 // Tiny .env loader (first, so every setting below can come from .env)
 try {
@@ -37,6 +40,9 @@ const pageFeature = (req) => {
   try { p = new URL(req.headers.referer || "").pathname.replace(/\.html$/, ""); } catch {}
   return ({ "/story": "Story", "/ugc": "UGC", "/motion": "Poses & motion", "/influencers": "Influencers" })[p] || "Single clips";
 };
+const FEATURE_KIND = { "Story": "scene", "UGC": "ugc", "Poses & motion": "motion", "Influencers": "influencer", "Single clips": "clip" };
+// the request as it can be sent again from History: large pictures are dropped (a saved influencer id still works)
+const retryBody = (b) => Object.fromEntries(Object.entries(b).filter(([k, v]) => !(typeof v === "string" && v.length > 4000) && !(Array.isArray(v) && JSON.stringify(v).length > 4000)));
 // ---- ffmpeg helpers for Story mode (stitch clips from different models into one MP4) ----
 const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
 // Rendering limits: at most FFMPEG_SLOTS ffmpeg processes at once, and at most RENDER_JOBS whole jobs (a Short, a
@@ -109,11 +115,13 @@ const MODEL = process.env.VIDEO_MODEL || "bytedance/seedance-2.0-fast";
 const PORT = process.env.PORT || 3000;
 const ENHANCE_MODEL = process.env.ENHANCE_MODEL || "nvidia/nemotron-3-super-120b-a12b";
 const API = "https://openrouter.ai/api/v1";
-const ESTIMATE_SECS = 100; // time constant for the simulated progress curve
 const settings = require("./lib/settings")(DATA);
 const spend = createSpend({ DATA, API, getKey: () => KEY, getCap: () => settings.get().monthlyCap });
 const logSpend = spend.log;
 const prices = createPrices({ API, getKey: () => KEY });
+const history = createHistory(DATA);
+// every video model with live capabilities and prices merged in (see lib/models.js)
+const liveModels = async () => modelsLib.merge(await prices.live().catch(() => null), await prices().catch(() => ({})));
 const textModel = () => settings.get().textModel || ENHANCE_MODEL;
 // Backend locked to the Cloudflare proxy: a public server (PUBLIC_URL) without PROXY_KEY would let anyone who finds
 // its address spend your OpenRouter credit, so then every /api call is refused until PROXY_KEY is set.
@@ -122,24 +130,9 @@ const UNLOCKED = !!PROXY_KEY || !PUBLIC_URL_RAW() || process.env.ALLOW_OPEN === 
 function PUBLIC_URL_RAW() { return (process.env.PUBLIC_URL || "").trim(); }
 if (!UNLOCKED) console.error("PROXY_KEY is not set but PUBLIC_URL is: the API is locked. Set PROXY_KEY (same value as in Cloudflare).");
 // Paid endpoints are refused once the monthly cap (Settings) is reached.
-const PAID = /^\/api\/(generate|plan|cast|keyframe|tts|stitch|lookframe|startframe|describe|portraits|caption|enhance|shorts(\/upload)?|influencers\/[\w-]+\/check)$/;
+const PAID = /^\/api\/(generate|plan|cast|keyframe|tts|stitch|lookframe|startframe|describe|portraits|caption|enhance|shorts(\/upload)?|shorts\/\w+\/retry|influencers\/[\w-]+\/check)$/;
 
-const MODELS = {
-  "google/veo-3.1-fast": { audio: true },
-  "google/veo-3.1-lite": { audio: true },
-  "kwaivgi/kling-v3.0-pro": { audio: true },
-  "google/gemini-omni-1.2-flash": { audio: true },
-  "bytedance/seedance-2.0-fast": { audio: true },
-  "bytedance/seedance-2.0": { audio: true },
-  "bytedance/seedance-2.5": { audio: true },
-  "bytedance/seedance-2.0-mini": { audio: true },
-  "alibaba/wan-3.0": { audio: true },
-  "bytedance/seedance-1-5-pro": { audio: true },
-  "heygen/heygen-video-1": { audio: false },
-  "x-ai/grok-imagine-video-1.5-lite": { audio: false },
-  "x-ai/grok-imagine-video-1.5": { audio: false },
-  "black-forest-labs/flux-video-edit": { audio: false, bare: true }, // edits a source video; takes only prompt + video // no audio toggle; $0.02/s at 480p
-};
+const MODELS = modelsLib.VIDEO; // capabilities per model; lib/models.js
 // ---- Motion page: share uploaded driving clips with the video provider (it needs a public HTTPS link) ----
 // A tiny separate server exposes ONLY ./work/share/<random>.mp4. A Cloudflare quick tunnel to that port is started
 // only when the user clicks the button on the Motion page, and can be stopped from there.
@@ -156,7 +149,8 @@ function ensureVideo(id) {
   let p = videoFetches.get(id);
   if (!p) {
     p = (async () => {
-      const r = await orFetch(`${API}/videos/${id}/content?index=0`, { headers: { Authorization: `Bearer ${KEY}` } });
+      const ext = providers.isExternal(id) && jobs.get(id)?.videoUrl;
+      const r = ext ? await fetch(ext) : await orFetch(`${API}/videos/${id}/content?index=0`, { headers: { Authorization: `Bearer ${KEY}` } });
       if (!r.ok) { const t = await r.text().catch(() => ""); throw Object.assign(new Error(t.slice(0, 300) || "video not available"), { status: r.status }); }
       const tmp = f + "." + process.pid + ".part";
       fs.writeFileSync(tmp, Buffer.from(await r.arrayBuffer()));
@@ -268,22 +262,18 @@ const readBody = (req, max = 25e6) =>
   });
 const orHeaders = () => ({ Authorization: `Bearer ${KEY}`, "Content-Type": "application/json" });
 // Shorts maker (long video -> analysed, cut, captioned 9:16 Short + thumbnail + title); see shorts.js
-const shorts = require("./shorts")({ STORE, FFMPEG, API, getKey: () => KEY, run, send, serveMp4, tts, logSpend, orFetch, renderSlot, getModel: () => settings.get().visionModel, serveThumb });
+const shorts = require("./shorts")({ STORE, FFMPEG, API, getKey: () => KEY, run, send, serveMp4, tts, logSpend, orFetch, renderSlot, getModel: () => settings.get().visionModel, serveThumb, history });
 const shortsRoutes = shorts.handle;
-const ctx = { STORE, DATA, API, getKey: () => KEY, orFetch, orHeaders, send, readBody, run, tts, spend, settings, serveMp4, serveThumb, mediaDuration, hasAudio, glitchFilter, renderSlot, prices, imgFile };
+const ctx = { STORE, DATA, API, getKey: () => KEY, orFetch, orHeaders, send, readBody, run, tts, spend, settings, serveMp4, serveThumb, mediaDuration, hasAudio, glitchFilter, renderSlot, prices, imgFile, history, liveModels, jobs, ensureVideo };
 const story = require("./routes/story")(ctx);
 const systemRoutes = require("./routes/system")(ctx);
 startCleanup(STORE, () => settings.get(), (id) => story.busy(id) || shorts.busy(id));
 
-// OpenRouter reports only status (no %), so progress is estimated from elapsed time
-// and jumps to 100 only when the job is really completed.
-function progress(job) {
-  if (job.status === "completed") return 100;
-  if (job.status === "failed") return job.lastPct || 0;
-  const t = (Date.now() - job.startedAt) / 1000;
-  const base = 95 * (1 - Math.exp(-t / ESTIMATE_SECS)); // same curve while queued or generating
-  job.lastPct = Math.max(job.lastPct || 0, Math.min(95, base));
-  return Math.round(job.lastPct);
+// OpenRouter reports only a status, never a percentage, so pages show the stage and the time elapsed (no countdown).
+function stage(job) {
+  if (job.status === "completed") return "done";
+  if (job.status === "failed") return "failed";
+  return job.status === "pending" || job.status === "queued" ? "queued" : "generating";
 }
 
 const server = http.createServer(async (req, res) => {
@@ -308,7 +298,15 @@ const server = http.createServer(async (req, res) => {
       if (!KEY) return send(res, 500, { error: "OPENROUTER_API_KEY missing. Put it in .env and restart." });
       const b = await readBody(req);
       if (!b.prompt || !b.prompt.trim()) return send(res, 400, { error: "Script/prompt is empty." });
+      b.prompt = String(b.prompt).slice(0, 2500);
       const model = MODELS[b.model] ? b.model : MODEL;
+      const live = (await liveModels())[model];
+      if (b.duration && !MODELS[model]?.bare) {
+        const d = modelsLib.allowedDuration(live, b.duration);
+        if (!d) return send(res, 400, { error: `${live.name} can't make a ${b.duration} s clip. Allowed: ${live.durs.length < 8 ? live.durs.join(", ") : live.durs[0] + "–" + live.durs[live.durs.length - 1]} s.` });
+        b.duration = d;
+      }
+      if (b.resolution && live.res.length && !live.res.includes(b.resolution)) b.resolution = live.res[0];
       // Models sometimes turn a prompt with several beats (or a cartoon style) into a comic page or split screen,
       // e.g. three small panels next to one big one inside a 9:16 frame. Ask for one full-frame shot every time.
       const ar = String(b.aspect_ratio || "");
@@ -319,7 +317,7 @@ const server = http.createServer(async (req, res) => {
       if (b.resolution) body.resolution = b.resolution;
       if (b.aspect_ratio) body.aspect_ratio = b.aspect_ratio;
       if (MODELS[model]?.audio && typeof b.generate_audio === "boolean") body.generate_audio = b.generate_audio;
-      if (Number.isInteger(b.seed)) body.seed = b.seed;
+      if (Number.isInteger(b.seed) && live.seed !== false) body.seed = b.seed;
       if (Array.isArray(b.input_references) && b.input_references.length) body.input_references = b.input_references.slice(0, 4);
       // Story mode chaining: start this clip from the last frame of a previous clip
       let note;
@@ -368,7 +366,20 @@ const server = http.createServer(async (req, res) => {
           note = "Started from the saved influencer picture.";
         }
       }
+      // cheapest configured provider for this model (fal.ai / BytePlus when their keys are set, else OpenRouter)
+      // end frame (Kling, Seedance, Veo, Wan…): the clip ends on this picture, so the next scene can start from it
+      if (typeof b.last_frame_image === "string" && /^data:image\/(jpeg|png|webp);base64,/.test(b.last_frame_image) && (live.frames || []).includes("last_frame"))
+        body.frame_images = [...(body.frame_images || []), { type: "image_url", image_url: { url: b.last_frame_image }, frame_type: "last_frame" }];
+      const route = providers.pickRoute(model, { orAvailable: live.live !== false });
+      let extJob = null;
       const submit = async () => {
+        if (route.provider !== "openrouter") {
+          try {
+            const out = await providers.submit(route, body);
+            extJob = out.job;
+            return { r: { ok: true, status: 202 }, j: { id: out.id, status: "pending" } };
+          } catch (e) { return { r: { ok: false, status: e.status || 502 }, j: { error: { message: `${route.provider}: ${e.message}` } } }; }
+        }
         const r = await orFetch(`${API}/videos`, { method: "POST", headers: orHeaders(), body: JSON.stringify(body) }, { safe: false });
         return { r, j: await r.json().catch(() => ({})) };
       };
@@ -384,8 +395,13 @@ const server = http.createServer(async (req, res) => {
         ({ r, j } = await submit());
       }
       if (!r.ok) return send(res, r.status, { error: j.error?.message || JSON.stringify(j) });
-      jobs.set(j.id, { startedAt: Date.now(), status: j.status || "pending", polling_url: j.polling_url, model, feature: pageFeature(req) });
-      return send(res, 202, { id: j.id, note });
+      const feature = pageFeature(req);
+      // estimated price for routes that don't report cost (OpenRouter's own figure replaces it when it does)
+      const rate = (live.price[body.resolution || live.res[0]] || [0, 0])[body.generate_audio === false ? 1 : 0] * (route.factor || 1);
+      jobs.set(j.id, { startedAt: Date.now(), status: j.status || "pending", polling_url: j.polling_url, model, feature, ...(extJob || {}), estimate: +(rate * (body.duration || modelsLib.defaultDur(live))).toFixed(4) });
+      history.put(j.id, { kind: FEATURE_KIND[feature] || "clip", title: String(b.title || b.prompt).slice(0, 140), model, duration: body.duration, res: body.resolution, status: "pending", provider: route.provider,
+        url: `/api/video/${j.id}`, thumb: `/api/video/${j.id}/thumb.jpg`, retry: { endpoint: "/api/generate", body: retryBody(b) } });
+      return send(res, 202, { id: j.id, note, provider: route.provider });
     }
 
     // ---- Motion page: upload a driving video, prepare it, and manage the public link ----
@@ -633,30 +649,73 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && url.pathname === "/api/jobs") {
-      const list = [...jobs.entries()].map(([id, j]) => ({ id, status: j.status, startedAt: j.startedAt, videoUrl: `/api/video/${id}` })).sort((a, b) => b.startedAt - a.startedAt);
+      const list = [...jobs.entries()].map(([id, j]) => ({ id, status: j.status, stage: stage(j), model: j.model, feature: j.feature, startedAt: j.startedAt, videoUrl: `/api/video/${id}` })).sort((a, b) => b.startedAt - a.startedAt);
       return send(res, 200, { jobs: list });
     }
 
     let m;
     if (req.method === "GET" && (m = url.pathname.match(/^\/api\/jobs\/([\w-]+)$/))) {
       const id = m[1];
-      const job = jobs.get(id) || { startedAt: Date.now(), status: "pending" };
-      jobs.set(id, job);
-      const r = await orFetch(`${API}/videos/${id}`, { headers: orHeaders() });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) return send(res, r.status, { error: j.error?.message || "poll failed" });
+      const known = jobs.get(id);
+      let j;
+      try {
+        if (providers.isExternal(id)) {
+          if (!known) return send(res, 404, { error: "No job with that ID on this server." });
+          j = await providers.poll(id, known);
+        } else {
+          const r = await orFetch(`${API}/videos/${id}`, { headers: orHeaders() });
+          j = await r.json().catch(() => ({}));
+          // unknown or malformed id: say so and remember nothing (it used to be saved as a stuck "pending" job)
+          if (r.status === 404 || r.status === 400 || r.status === 422) return send(res, 404, { error: "No job with that ID. Check it and try again." });
+          if (!r.ok) return send(res, r.status, { error: j.error?.message || "Couldn't check the job (" + r.status + ")" });
+        }
+      } catch (e) { return send(res, e.status === 404 ? 404 : 502, { error: e.status === 404 ? "No job with that ID." : "Couldn't check the job: " + e.message }); }
+      const job = known || { startedAt: j.created_at ? Date.parse(j.created_at) || Date.now() : Date.now(), status: "pending" };
       job.status = j.status;
+      if (j.videoUrl) job.videoUrl = j.videoUrl;
       if (j.status === "failed") job.error = typeof j.error === "string" ? j.error : j.error?.message || "Generation failed";
-      if (j.status === "completed") logSpend(job.feature || "Video clips", j.usage?.cost, job.model, id);
-      jobs.save();
+      const cost = j.usage?.cost ?? (j.status === "completed" && job.provider ? job.estimate : undefined);
+      if (j.status === "completed") logSpend(job.feature || "Video clips", cost, job.model, id);
+      jobs.set(id, job);
+      if (history.get(id) || j.status === "completed") history.put(id, { kind: history.get(id)?.kind || FEATURE_KIND[job.feature] || "clip", model: job.model, status: j.status, error: job.error, cost, url: `/api/video/${id}`, thumb: `/api/video/${id}/thumb.jpg`, ...(history.get(id) ? {} : { title: "Fetched job " + id.slice(-8) }) });
+      const ty = MODELS[job.model]?.typical;
       return send(res, 200, {
         status: job.status,
-        progress: progress(job),
+        stage: stage(job),
         elapsed: Math.round((Date.now() - job.startedAt) / 1000),
-        cost: j.usage?.cost,
+        typical: ty || null,
+        cost,
+        estimated: !j.usage?.cost && cost != null,
         error: job.error,
         videoUrl: job.status === "completed" ? `/api/video/${id}` : null,
       });
+    }
+
+    // ---- History: everything made, across features ----
+    if (req.method === "GET" && url.pathname === "/api/history") {
+      const q = url.searchParams, ts = (k) => (q.get(k) ? Date.parse(q.get(k)) || undefined : undefined);
+      return send(res, 200, { items: history.list({ q: q.get("q"), kind: q.get("kind") || undefined, status: q.get("status") || undefined, from: ts("from"), to: ts("to") && ts("to") + 86399999, limit: Number(q.get("limit")) || 200 }) });
+    }
+    if ((m = url.pathname.match(/^\/api\/history\/([\w-]+)$/))) {
+      const rec = history.get(m[1]);
+      if (!rec) return send(res, 404, { error: "Not in history." });
+      if (req.method === "DELETE") {
+        history.del(m[1]);
+        jobs.delete(m[1]);
+        for (const f of [path.join(VIDEO_CACHE, m[1] + ".mp4"), path.join(VIDEO_CACHE, m[1] + ".jpg")]) { try { fs.unlinkSync(f); } catch {} }
+        return send(res, 200, { ok: true });
+      }
+      if (req.method === "PATCH") { // rename, or a 1-5 rating for later model suggestions
+        const b = await readBody(req);
+        return send(res, 200, history.put(m[1], { title: typeof b.title === "string" ? b.title : undefined, rating: Number.isInteger(b.rating) && b.rating >= 1 && b.rating <= 5 ? b.rating : undefined, kept: typeof b.kept === "boolean" ? b.kept : undefined }));
+      }
+    }
+    if (req.method === "GET" && url.pathname === "/api/models") {
+      const all = await liveModels();
+      const out = Object.values(all).filter((x) => !x.hidden).map((x) => ({ ...x, defaultDur: modelsLib.defaultDur(x), notes: modelsLib.notes(x), route: providers.pickRoute(x.id, { orAvailable: x.live !== false }).provider }))
+        // a model OpenRouter no longer lists (and no other provider has a key for) can't be generated: leave it out
+        .filter((x) => x.live !== false || x.route !== "openrouter");
+      return send(res, 200, { models: out, default: modelsLib.DEFAULT_MODEL, providers: providers.configured() });
     }
 
     if ((req.method === "GET" || req.method === "HEAD") && (m = url.pathname.match(/^\/api\/video\/([\w-]+)$/))) {

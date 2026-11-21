@@ -83,6 +83,7 @@
   .none{color:var(--mute);font-size:13px}
 </style>
 <link rel="stylesheet" href="/app.css">
+<script src="/studio.js"></script>
 </head>
 <body data-title="Single clip" data-sub="Turn one prompt into one video, with a live progress bar and cost estimate.">
 <div class="wrap">
@@ -90,32 +91,37 @@
     <div>
       <div class="panel">
         <h2>1 · Script / prompt</h2>
-        <textarea id="script" placeholder="Drop a .txt file here, or type / paste your scene idea…&#10;&#10;Tip: write a rough idea, then press ✨ Enhance."></textarea>
+        <div id="tplBox"></div>
+        <div class="ex-chips" id="examples" aria-label="Example prompts"></div>
+        <label for="script" class="sr-only" style="position:absolute;left:-9999px">Prompt</label>
+        <textarea id="script" maxlength="1000" placeholder="Drop a .txt file here, or type / paste your scene idea…&#10;&#10;Tip: write a rough idea, then press ✨ Enhance."></textarea>
         <div class="tools">
           <button class="btn" id="enh" type="button">✨ Enhance prompt</button>
-          <span class="count" id="count">0 chars</span>
+          <span class="count" id="count" aria-live="polite">0 / 1000</span>
         </div>
-
-        <h2>2 · Model</h2>
-        <div class="models" id="models"></div>
-
-        <h2>3 · Style</h2>
+        <h2>2 · Format</h2>
+        <div class="chips" id="presets" aria-label="Presets"></div>
+        <h2>3 · Model</h2>
+        <div class="models" id="models" role="radiogroup" aria-label="Video model"></div>
+        <h2>4 · Style</h2>
         <div class="chips" id="styles"></div>
-
-        <h2>4 · Settings</h2>
+        <h2>5 · Settings</h2>
         <div class="grid4">
-          <label><span>Duration (s) <small id="durHint" style="text-transform:none;letter-spacing:0;opacity:.7"></small></span><input id="duration" type="number" inputmode="numeric" placeholder="Auto"></label>
+          <label>Duration<select id="duration" aria-describedby="modelNotes"></select></label>
           <label>Resolution<select id="resolution"></select></label>
           <label>Aspect<select id="aspect"></select></label>
-          <label>Audio<select id="audio"><option value="true">On</option><option value="false">Off</option></select></label>
+          <label id="audioWrap">Audio<select id="audio"><option value="true">On</option><option value="false">Off</option></select></label>
         </div>
-
-        <div class="cost"><span class="meta">Estimated cost</span><b id="cost">—</b></div>
+        <div class="model-notes" id="modelNotes" aria-live="polite"></div>
+        <div class="grid4" style="grid-template-columns:1fr 3fr">
+          <label>Variations<select id="variations"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
+          <span class="meta" style="align-self:end">Make 2–3 versions at once (different seeds) and keep the best, instead of retrying one by one.</span>
+        </div>
+        <div class="cost"><span class="meta">Estimated total</span><b id="cost">—</b></div>
         <button class="btn primary" id="go" type="button">Generate video</button>
-        <div class="err" id="err"></div>
+        <div class="err" id="err" role="alert"></div>
       </div>
     </div>
-
     <div>
       <div class="panel">
         <h2>Result</h2>
@@ -124,175 +130,205 @@
       </div>
       <div class="panel">
         <h2>Fetch by job ID</h2>
-        <div class="fetch"><input id="jobid" placeholder="gen-vid-…"><button class="btn" id="fetchjob" type="button">Fetch</button></div>
+        <div class="fetch"><input id="jobid" placeholder="gen-vid-…" aria-label="Job ID" aria-describedby="jobErr"><button class="btn" id="fetchjob" type="button">Fetch</button></div>
+        <div class="field-err" id="jobErr" role="alert"></div>
       </div>
       <div class="panel">
-        <h2>Recent jobs</h2>
+        <h2>Recent jobs <a href="/history?kind=clip" style="float:right;text-transform:none;letter-spacing:0;color:var(--acc)">All history →</a></h2>
         <div class="hist" id="hist"></div>
       </div>
     </div>
   </div>
 </div>
-
 <script>
-if(location.protocol==='file:'){location.replace('http://localhost:3100/'+(location.pathname.split('/').pop()==='index.html'?'':location.pathname.split('/').pop()));}
-
-const $=id=>document.getElementById(id);
-
-// OpenRouter video models. price[res] = [$/s with audio, $/s without audio]; durs = the only lengths the model accepts.
-const range=(a,b)=>Array.from({length:b-a+1},(_,i)=>a+i);
-const MODELS={
-  'google/veo-3.1-fast':{name:'Google Veo 3.1 Fast',note:'Best quality + sound · ~$0.10/s @720p',audio:true,durs:[4,6,8],
-    res:['720p','1080p'],asp:['9:16','16:9'],price:{'720p':[.10,.08],'1080p':[.12,.10]}},
-  'kwaivgi/kling-v3.0-pro':{name:'Kling 3.0 Pro',note:'Strong motion, up to 15 s · ~$0.17/s',audio:true,durs:range(3,15),
-    res:['720p'],asp:['9:16','16:9','1:1'],price:{'720p':[.168,.112]}},
-  'google/gemini-omni-1.2-flash':{name:'Gemini Omni 1.2 Flash',note:'Newest, sound always on · ~$0.07/s @720p',audio:'always',durs:range(3,15),
-    res:['720p','1080p'],asp:['9:16','16:9'],price:{'720p':[.0695,.0695],'1080p':[.1043,.1043]}},
-  'google/veo-3.1-lite':{name:'Google Veo 3.1 Lite',note:'Budget pick · ~$0.05/s @720p',audio:true,durs:[4,6,8],
-    res:['720p','1080p'],asp:['9:16','16:9'],price:{'720p':[.05,.03],'1080p':[.08,.05]}},
-};
-// live prices from OpenRouter replace the numbers above (and the "~$x/s" in each note) when they arrive
-fetch('/api/prices').then(r=>r.json()).then(j=>{
-  for(const [id,m] of Object.entries(MODELS)){
-    const p=j.prices&&j.prices[id]; if(!p) continue;
-    for(const r of m.res) if(p[r]!=null) m.price[r]=[(p.audio&&p.audio[r])??p[r],p[r]];
-    const r0=m.res[0], a=m.price[r0]&&m.price[r0][m.audio?0:1];
-    if(a!=null) m.note=m.note.replace(/~\$[\d.]+\/s( @\d+p)?/,'~$'+(+a.toFixed(3))+'/s @'+r0);
-  }
-  renderModels(); updateCost(); // keeps whatever the user already picked
-}).catch(()=>{});
+if(location.protocol==='file:'){location.replace('http://localhost:3100/');}
+const $=id=>document.getElementById(id), S=window.studio;
 const STYLES={
   movie:['🎥 Cinematic','Cinematic live-action movie style, shallow depth of field, dramatic lighting, smooth camera movement, film grain, high production value.'],
-  kids:['🧸 Kids cartoon','Bright colorful 3D animated kids cartoon in the style of CoComelon: cute round characters with big expressive eyes, soft glossy shading, cheerful saturated colors, simple friendly backgrounds, gentle playful motion.'],
+  kids:['🧸 Kids cartoon','Bright colorful 3D animated kids cartoon: cute round characters with big expressive eyes, soft glossy shading, cheerful saturated colors, simple friendly backgrounds, gentle playful motion.'],
   anime:['🌸 Anime','Japanese anime style, hand-drawn look, vivid colors, expressive eyes, dynamic camera angles, detailed painted backgrounds, cel shading.'],
   horror:['👻 Horror','Ultra-realistic cinematic horror, dark atmosphere, low-key dramatic lighting, suspenseful slow camera moves, realistic human expressions, no gore.'],
-  pixar:['🎞️ 3D film','High-quality 3D animated feature-film style like Pixar, expressive characters, warm lighting, rich textures, smooth animation.'],
+  pixar:['🎞️ 3D film','High-quality 3D animated feature-film style, expressive characters, warm lighting, rich textures, smooth animation.'],
   doc:['📹 Realistic','Realistic documentary footage, natural lighting, handheld camera feel, true-to-life colors and detail.'],
   comic:['✏️ 2D cartoon','Flat 2D hand-drawn animation like a TV cartoon episode, bold outlines, bright simple colors, lively exaggerated motion, one full-frame scene.'],
   none:['No style','']
 };
-let model='google/veo-3.1-fast', style='movie', timer=null;
-try{const saved=localStorage.getItem('model'); if(MODELS[saved]) model=saved;}catch{}
-// snap a typed duration to the nearest length the model supports ('' stays '' = Auto)
-const snap=(v,durs)=>v===''||!(+v>0)?'':durs.reduce((b,n)=>Math.abs(n-v)<Math.abs(b-v)?n:b,durs[0]);
+const EXAMPLES=[
+  ['☕ Coffee pour','Slow-motion close-up of hot coffee being poured into a glass mug on a sunny café table, steam curling up, the camera slowly pushes in.'],
+  ['🏄 Surfer dog','A golden retriever rides a small wave on a surfboard at sunset, ears flapping, spray glittering, tracking shot from the water.'],
+  ['🌃 Neon street','A woman in a yellow raincoat walks through a rainy neon-lit Tokyo street at night, reflections on the wet ground, slow dolly shot behind her.'],
+];
+// models shown here: cheapest first inside each tier
+const SHOWN=['x-ai/grok-imagine-video-1.5-lite','google/veo-3.1-lite','bytedance/seedance-2.0-mini','alibaba/wan-3.0','google/gemini-omni-1.2-flash','google/veo-3.1-fast','kwaivgi/kling-v3.0-pro','bytedance/seedance-2.0'];
+let MODELS={}, model=null, style=S.formValue('clip','style')||'movie', timers=[];
+const LIMIT=1000;
+const m=()=>MODELS[model];
 
 function renderModels(){
-  $('models').innerHTML=Object.entries(MODELS).map(([id,m])=>
-    `<div class="model ${id===model?'sel':''}" data-id="${id}"><b>${m.name}</b><span>${m.note}</span></div>`).join('');
-  $('models').querySelectorAll('.model').forEach(el=>el.onclick=()=>{model=el.dataset.id;try{localStorage.setItem('model',model)}catch{};applyModel();});
+  $('models').innerHTML=SHOWN.filter(id=>MODELS[id]).map(id=>{const x=MODELS[id],r=x.res.includes('720p')?'720p':x.res[0];
+    return `<div class="model ${id===model?'sel':''}" data-id="${id}" role="radio" tabindex="0" aria-checked="${id===model}"><b>${S.esc(x.name)}<span class="tier ${x.tier}">${S.tierLabel(x.tier)}</span></b><span>${S.money(S.rate(x,r,true),3)}/s @${r}${x.route!=='openrouter'?' · via '+x.route:''}${x.note?' · '+S.esc(x.note):''}</span></div>`}).join('');
+  $('models').querySelectorAll('.model').forEach(el=>{
+    const pick=()=>{model=el.dataset.id;S.saveField('clip','model',model);applyModel();};
+    el.onclick=pick; el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();pick();}};
+  });
 }
 function renderStyles(){
-  $('styles').innerHTML=Object.entries(STYLES).map(([k,v])=>`<div class="chip ${k===style?'sel':''}" data-k="${k}">${v[0]}</div>`).join('');
-  $('styles').querySelectorAll('.chip').forEach(el=>el.onclick=()=>{style=el.dataset.k;renderStyles();});
+  $('styles').innerHTML=Object.entries(STYLES).map(([k,v])=>`<button type="button" class="chip ${k===style?'sel':''}" data-k="${k}" aria-pressed="${k===style}">${v[0]}</button>`).join('');
+  $('styles').querySelectorAll('.chip').forEach(el=>el.onclick=()=>{style=el.dataset.k;S.saveField('clip','style',style);renderStyles();});
 }
-function fill(sel,opts,def){
-  const cur=sel.value; sel.innerHTML=opts.map(o=>`<option>${o}</option>`).join('');
-  sel.value=opts.includes(cur)?cur:def;
-}
+function fill(sel,opts,def){const cur=sel.dataset.pending||sel.value; delete sel.dataset.pending; sel.innerHTML=opts.map(o=>`<option>${o}</option>`).join(''); sel.value=opts.includes(cur)?cur:def;}
 function applyModel(){
-  const m=MODELS[model]; renderModels();
-  fill($('resolution'),m.res,m.res[0]); fill($('aspect'),m.asp,'9:16');
-  $('duration').min=m.durs[0]; $('duration').max=m.durs[m.durs.length-1];
-  $('duration').value=snap($('duration').value,m.durs);
-  $('durHint').textContent=m.durs.length<6?m.durs.join(' / ')+' s':`${m.durs[0]}–${m.durs[m.durs.length-1]} s`;
-  if(m.audio==='always') $('audio').value='true';
-  $('audio').disabled=m.audio!==true; updateCost();
+  const x=m(); if(!x) return; renderModels();
+  fill($('resolution'),x.res,x.res.includes('720p')?'720p':x.res[0]);
+  [...$('resolution').options].forEach(o=>{if(o.value==='1080p') o.textContent='1080p (hero / YouTube only)';});
+  fill($('aspect'),x.asp,'9:16');
+  const cur=$('duration').dataset.pending||$('duration').value; delete $('duration').dataset.pending;
+  $('duration').innerHTML=S.durOptions(x,x.durs.includes(+cur)?cur:'');
+  if(x.audio==='always'||x.audio===false){$('audio').value=x.audio==='always'?'true':'false';}
+  $('audioWrap').hidden=x.audio!==true;
+  $('modelNotes').innerHTML=S.notesHTML(x);
+  updateCost();
 }
 function updateCost(){
-  const p=MODELS[model].price[$('resolution').value]||[0,0], d=+$('duration').value||0;
-  const rate=p[$('audio').value==='true'?0:1];
-  $('cost').textContent=d?`≈ $${(rate*d).toFixed(2)}`:`≈ $${rate.toFixed(2)}/s`;
+  const x=m(); if(!x) return;
+  const c=S.costLine(x,{res:$('resolution').value,dur:$('duration').value,audio:$('audio').value==='true',n:+$('variations').value});
+  $('cost').textContent=c.text;
 }
-['duration','resolution','audio'].forEach(i=>$(i).addEventListener('input',updateCost));
-$('duration').addEventListener('change',()=>{$('duration').value=snap($('duration').value,MODELS[model].durs);updateCost();});
+['duration','resolution','audio','variations'].forEach(i=>$(i).addEventListener('change',updateCost));
 
 const ta=$('script');
-const cnt=()=>{$('count').textContent=ta.value.length+' chars'};
+const cnt=()=>{const n=ta.value.length;$('count').textContent=`${n} / ${LIMIT}`;$('count').className='count'+(n>=LIMIT?' over':n>LIMIT*.85?' near':'');};
 ta.addEventListener('input',cnt);
 ['dragenter','dragover'].forEach(e=>ta.addEventListener(e,ev=>{ev.preventDefault();ta.classList.add('over')}));
 ['dragleave','drop'].forEach(e=>ta.addEventListener(e,ev=>{ev.preventDefault();ta.classList.remove('over')}));
 ta.addEventListener('drop',async ev=>{
   const f=ev.dataTransfer.files[0];
-  if(f) ta.value=await f.text(); else { const t=ev.dataTransfer.getData('text'); if(t) ta.value=t; }
-  cnt();
+  ta.value=(f?await f.text():ev.dataTransfer.getData('text')||'').slice(0,LIMIT); cnt(); ta.dispatchEvent(new Event('input'));
+});
+$('examples').innerHTML='<span class="meta" style="align-self:center">Try:</span>'+EXAMPLES.map((e,i)=>`<button type="button" data-i="${i}">${e[0]}</button>`).join('');
+$('examples').onclick=e=>{const b=e.target.closest('button');if(!b)return;ta.value=EXAMPLES[b.dataset.i][1];cnt();ta.dispatchEvent(new Event('input'));};
+S.templatePicker($('tplBox'),'clip',t=>{ta.value=t.prompt.slice(0,LIMIT);cnt();ta.dispatchEvent(new Event('input'));});
+S.presetChips($('presets'),p=>{
+  if(MODELS[p.model]){model=p.model;S.saveField('clip','model',model);}
+  applyModel(); $('aspect').value=p.aspect; $('resolution').value=MODELS[model].res.includes(p.res)?p.res:$('resolution').value;
+  // a 15–30 s Reel is several short clips: one clip here is the 4-8 s building block
+  const d=MODELS[model].durs.filter(n=>n<=8).pop(); if(d) $('duration').value=d;
+  ['aspect','resolution','duration'].forEach(i=>$(i).dispatchEvent(new Event('change')));
+  window.toast&&toast(`${p.label}: ${MODELS[model].name}, ${$('resolution').value}, ${$('duration').value} s clips. Stitch several in Story mode for ${p.len} s.`);
 });
 
-function getHist(){try{return JSON.parse(localStorage.getItem('jobs')||'[]')}catch{return[]}}
-function saveHist(h){try{localStorage.setItem('jobs',JSON.stringify(h.slice(0,20)))}catch{}}
-function addHist(id,text){const h=getHist().filter(x=>x.id!==id);h.unshift({id,text:text.slice(0,70),prompt:text.slice(0,2000),ts:Date.now()});saveHist(h);renderHist();}
-function renderHist(){
-  const h=getHist();
-  $('hist').innerHTML=h.length?h.map(x=>`<div class="item" data-id="${x.id}"><span class="t">${(x.text||x.id).replace(/</g,'&lt;')}</span><span class="s">${new Date(x.ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span></div>`).join(''):'<div class="none">No jobs yet.</div>';
-  $('hist').querySelectorAll('.item').forEach(el=>el.onclick=()=>track(el.dataset.id));
+// ---------- recent jobs (from the server's history, so they follow you across devices) ----------
+async function renderHist(){
+  let items=[];
+  try{items=(await (await fetch('/api/history?kind=clip&limit=5')).json()).items||[];}catch{}
+  $('hist').innerHTML=items.length?items.map(x=>`<div class="item" data-id="${x.id}" role="button" tabindex="0"><span class="t">${S.esc(x.title||x.id)}</span><span class="s">${x.status==='completed'?'✓':x.status==='failed'?'✗':'…'} ${x.cost!=null?S.money(x.cost)+' · ':''}${new Date(x.t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span></div>`).join(''):'<div class="none">No clips yet. Your finished and running clips show here.</div>';
+  $('hist').querySelectorAll('.item').forEach(el=>{el.onclick=()=>track(el.dataset.id);el.onkeydown=e=>{if(e.key==='Enter')track(el.dataset.id);};});
 }
 
-function showProgress(p,msg){
-  $('stage').innerHTML=`<div class="prog"><div class="pct">${p}%</div><div class="bar"><div class="fill" style="width:${p}%"></div></div><div class="meta">${msg}</div></div>`;
+// ---------- progress ----------
+function stopAll(){timers.forEach(clearInterval);timers=[];$('go').disabled=false;}
+function resetStage(msg){
+  $('stage').innerHTML=`<div class="empty"><div class="big">🎞️</div>${S.esc(msg||'Your video and progress will show here.')}</div>`;
 }
-function stop(){clearInterval(timer);timer=null;$('go').disabled=false;}
-function fail(m){$('err').textContent=m;stop();}
+function fail(msg){stopAll();resetStage('Nothing to show.');$('err').textContent=msg;}
 function track(id){
-  clearInterval(timer); $('err').textContent=''; $('actions').innerHTML='';
-  $('jobid').value=id; showProgress(0,'Checking job…');
-  timer=setInterval(()=>poll(id),3000); poll(id);
+  stopAll(); $('err').textContent=''; $('jobErr').textContent=''; $('actions').innerHTML='';
+  $('jobid').value=id; $('stage').innerHTML=S.stageHTML({stage:'queued',msg:'Checking job…'});
+  const t=setInterval(()=>poll(id),3000); timers.push(t); poll(id);
 }
-async function poll(id){
+async function poll(id,cell){
   let j;
-  try{const r=await fetch('/api/jobs/'+id); j=await r.json(); if(!r.ok) return fail(j.error||'Poll failed');}
-  catch(e){return fail('Lost connection to server.');}
-  if(j.status==='failed') return fail('Generation failed: '+(j.error||'unknown'));
-  if(j.status!=='completed'){
-    const left=Math.max(5,Math.round(j.elapsed*(100-j.progress)/Math.max(j.progress,1)));
-    return showProgress(j.progress,`${j.status==='pending'?'Queued at provider':'Generating'} · ${j.elapsed}s elapsed · ~${left}s left (estimate)`);
-  }
-  stop();
+  try{const r=await fetch('/api/jobs/'+encodeURIComponent(id)); j=await r.json();
+    if(!r.ok){ if(cell){cell.innerHTML=`<span class="err">${S.esc(j.error||'Poll failed')}</span>`;return 'stop';}
+      if(r.status===404){stopAll();resetStage();$('jobErr').textContent=j.error||'No job with that ID.';return;}
+      return fail(j.error||'Poll failed'); }}
+  catch(e){ if(cell) return; return fail('Lost connection to server.'); }
+  if(j.status==='failed'){ if(cell){cell.innerHTML=`<span class="err">Failed: ${S.esc(j.error||'unknown')}</span>`;return 'stop';} return fail('Generation failed: '+(j.error||'unknown')); }
+  if(j.status!=='completed'){ (cell||$('stage')).innerHTML=S.stageHTML(j); return; }
+  const cost=j.cost!=null?`${j.estimated?'≈ ':''}$${(+j.cost).toFixed(2)}${j.estimated?' (estimate)':''}`:'';
+  if(cell){ cell.innerHTML=`<video controls playsinline loop muted src="${j.videoUrl}"></video><div class="meta">${cost}</div><button class="btn" type="button">Keep this one</button>`;
+    cell.querySelector('button').onclick=()=>{document.querySelectorAll('.vcell').forEach(c=>c.classList.toggle('kept',c===cell));fetch('/api/history/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({kept:true})});
+      $('actions').innerHTML=`<a class="btn" href="${j.videoUrl}?download=1">⬇ Download kept MP4</a>`;mountShare($('actions'),{url:j.videoUrl,name:'video-'+id.slice(-8)+'.mp4',prompt:ta.value});};
+    renderHist(); window.dispatchEvent(new Event('spend-changed')); return 'stop'; }
+  stopAll();
   $('stage').innerHTML=`<video controls autoplay loop playsinline src="${j.videoUrl}"></video>`;
-  $('actions').innerHTML=`<a class="btn" href="${j.videoUrl}?download=1">⬇ Download MP4</a>`+(j.cost!=null?`<span class="meta" style="align-self:center">Cost $${j.cost}</span>`:'');
-  const h=getHist().find(x=>x.id===id);
-  mountShare($('actions'),{url:j.videoUrl,name:'video-'+id.slice(-8)+'.mp4',prompt:(h&&(h.prompt||h.text))||''});
+  $('actions').innerHTML=`<a class="btn" href="${j.videoUrl}?download=1">⬇ Download MP4</a>`+(cost?`<span class="meta" style="align-self:center">Cost ${cost}</span>`:'');
+  mountShare($('actions'),{url:j.videoUrl,name:'video-'+id.slice(-8)+'.mp4',prompt:ta.value});
+  renderHist(); window.dispatchEvent(new Event('spend-changed'));
 }
 
+// ---------- generate ----------
 $('go').onclick=async()=>{
   $('err').textContent=''; $('actions').innerHTML='';
   const text=ta.value.trim(); if(!text) return $('err').textContent='Write or drop a script first.';
+  if(text.length>LIMIT) return $('err').textContent=`Keep the prompt under ${LIMIT} characters.`;
+  const x=m(); if(!x) return $('err').textContent='Models are still loading, try again in a moment.';
   $('go').disabled=true;
-  const m=MODELS[model];
   if(!$('duration').value){
-    // Auto: let the enhancer pick the length (keeps the user's text as written), fall back to a mid value
-    showProgress(0,'Choosing the best length…');
+    // Auto: the prompt writer picks a length (short clips drift less, so it chooses from the 8 s-or-shorter ones)
+    $('stage').innerHTML=S.stageHTML({stage:'queued',msg:'Choosing the best length…'});
+    const short=x.durs.filter(n=>n<=8), durs=short.length?short:x.durs;
     try{
-      const r=await fetch('/api/enhance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-        prompt:text,durations:m.durs,aspect_ratio:$('aspect').value,style:STYLES[style][1]})});
-      const j=await r.json(); if(r.ok&&j.duration) $('duration').value=j.duration;
+      const r=await fetch('/api/enhance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:text,durations:durs,aspect_ratio:$('aspect').value,style:STYLES[style][1]})});
+      const j=await r.json(); if(r.ok&&j.duration&&x.durs.includes(j.duration)) $('duration').value=j.duration;
     }catch{}
-    if(!$('duration').value) $('duration').value=m.durs.includes(6)?6:m.durs[Math.floor(m.durs.length/2)];
-    updateCost();
+    if(!$('duration').value) $('duration').value=x.defaultDur;
+    updateCost(); resetStage();
   }
-  showProgress(0,'Submitting to OpenRouter…');
-  const s=STYLES[style][1];
+  const n=+$('variations').value, audio=$('audio').value==='true';
+  const c=S.costLine(x,{res:$('resolution').value,dur:$('duration').value,audio,n});
+  const ok=await S.confirmSpend({title:n>1?`Make ${n} variations?`:'Make this video?',total:c.total,rows:[
+    ['Model',x.name+' ('+S.tierLabel(x.tier)+')'],['Length',$('duration').value+' s'+(n>1?' × '+n:'')],['Resolution',$('resolution').value],['Aspect',$('aspect').value],
+    ['Sound',x.audio===true?(audio?'On':'Off'):x.audio==='always'?'Always on':'None'],['Price',S.money(c.rate,3)+'/s']]});
+  if(!ok){$('go').disabled=false;return;}
+  const s=STYLES[style][1], base={model,prompt:text+(s?' Visual style: '+s:''),title:text.slice(0,140),duration:+$('duration').value,resolution:$('resolution').value,aspect_ratio:$('aspect').value,generate_audio:audio};
+  if(n===1){ $('stage').innerHTML=S.stageHTML({stage:'queued',msg:'Submitting…'}); }
+  else $('stage').innerHTML=`<div class="var-grid">${Array.from({length:n},(_,i)=>`<div class="vcell" id="v${i}">${S.stageHTML({stage:'queued',msg:'Submitting…'})}</div>`).join('')}</div>`;
   try{
-    const r=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-      model,prompt:text+(s?' Visual style: '+s:''),duration:+$('duration').value,resolution:$('resolution').value,
-      aspect_ratio:$('aspect').value,generate_audio:$('audio').value==='true'})});
-    const j=await r.json(); if(!r.ok) return fail(j.error||'Request failed');
-    addHist(j.id,text); track(j.id);
+    const ids=[];
+    for(let i=0;i<n;i++){
+      const r=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...base,...(n>1?{seed:Math.floor(Math.random()*2e9),title:`${text.slice(0,120)} (v${i+1})`}:{})})});
+      const j=await r.json(); if(!r.ok){ if(!ids.length) return fail(j.error||'Request failed'); $('err').textContent=j.error; break; }
+      if(j.note) window.toast&&toast(j.note);
+      ids.push(j.id);
+    }
+    window.dispatchEvent(new Event('spend-changed')); renderHist();
+    if(n===1) return track(ids[0]);
+    $('go').disabled=false;
+    ids.forEach((id,i)=>{const cell=$('v'+i); const t=setInterval(async()=>{if(await poll(id,cell)==='stop')clearInterval(t);},3000); timers.push(t);});
   }catch(e){fail(e.message);}
 };
 $('enh').onclick=async()=>{
-  $('err').textContent=''; const b=$('enh'); b.disabled=true; b.textContent='Enhancing…';
+  $('err').textContent=''; const b=$('enh'); if(!ta.value.trim()) return $('err').textContent='Write a rough idea first.';
+  b.disabled=true; b.textContent='Enhancing…';
   try{
-    const r=await fetch('/api/enhance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-      prompt:ta.value,duration:+$('duration').value||0,durations:MODELS[model].durs,aspect_ratio:$('aspect').value,style:STYLES[style][1]})});
+    const r=await fetch('/api/enhance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:ta.value,duration:+$('duration').value||0,durations:m().durs,aspect_ratio:$('aspect').value,style:STYLES[style][1],max_words:150})});
     const j=await r.json(); if(!r.ok) throw new Error(j.error||'Enhance failed');
-    ta.value=j.prompt; cnt();
-    if(j.duration){ $('duration').value=j.duration; updateCost(); window.toast&&toast(`Length set to ${j.duration} s for this prompt`); }
+    ta.value=j.prompt.slice(0,LIMIT); cnt(); ta.dispatchEvent(new Event('input'));
+    if(j.duration&&m().durs.includes(j.duration)){ $('duration').value=j.duration; $('duration').dispatchEvent(new Event('change')); window.toast&&toast(`Length set to ${j.duration} s for this prompt`); }
   }catch(e){$('err').textContent=e.message;}
   b.disabled=false; b.textContent='✨ Enhance prompt';
 };
-$('fetchjob').onclick=()=>{const id=$('jobid').value.trim(); if(id) track(id);};
+$('fetchjob').onclick=()=>{
+  const id=$('jobid').value.trim();
+  if(!id) return $('jobErr').textContent='Paste a job ID first (it looks like gen-vid-…).';
+  if(!S.validJobId(id)) return $('jobErr').textContent='That doesn\'t look like a job ID. It should look like gen-vid-… (letters, numbers and dashes).';
+  track(id);
+};
+$('jobid').addEventListener('keydown',e=>{if(e.key==='Enter')$('fetchjob').click();});
+$('jobid').addEventListener('input',()=>{$('jobErr').textContent='';});
 
-renderStyles(); applyModel(); renderHist();
+// restore what was typed last time, then load models
+S.persistForm('clip',['script','duration','resolution','aspect','audio','variations']);
+cnt(); renderStyles(); renderHist();
+S.models().then(({map,def})=>{
+  MODELS=map; const saved=S.formValue('clip','model');
+  model=MODELS[saved]?saved:MODELS[def]?def:SHOWN.find(id=>MODELS[id]);
+  if(!model){$('err').textContent='Couldn\'t load the model list. Is the server running?';return;}
+  applyModel();
+});
 </script>
+
 <script src="/app.js"></script>
 </body>
 </html>

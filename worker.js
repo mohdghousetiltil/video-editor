@@ -9,7 +9,7 @@ import { onRequest as proxy } from "./functions/api/[[path]].js";
 async function servePage(request, env) {
   const v = (env.CF_VERSION_METADATA && env.CF_VERSION_METADATA.id || "").slice(0, 8);
   const url = new URL(request.url);
-  if (/^\/app\.(css|js)$/.test(url.pathname) && url.searchParams.get("v")) { // versioned: safe to keep for a year
+  if (/^\/(app\.css|app\.js|studio\.js|theme\.js)$/.test(url.pathname) && url.searchParams.get("v")) { // versioned: safe to keep for a year
     const a = await env.ASSETS.fetch(request);
     const r = new Response(a.body, a);
     if (a.ok) r.headers.set("Cache-Control", "public, max-age=31536000, immutable");
@@ -25,6 +25,8 @@ async function servePage(request, env) {
   const out = new HTMLRewriter()
     .on('link[href="/app.css"]', { element: (e) => e.setAttribute("href", "/app.css?v=" + v) })
     .on('script[src="/app.js"]', { element: (e) => e.setAttribute("src", "/app.js?v=" + v) })
+    .on('script[src="/studio.js"]', { element: (e) => e.setAttribute("src", "/studio.js?v=" + v) })
+    .on('script[src="/theme.js"]', { element: (e) => e.setAttribute("src", "/theme.js?v=" + v) })
     .transform(res);
   const r = new Response(out.body, out);
   r.headers.delete("etag"); r.headers.delete("last-modified");

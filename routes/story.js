@@ -46,7 +46,7 @@ module.exports = function storyRoutes(ctx) {
       if (!b.script || !b.script.trim()) return send(res, 400, { error: "Paste a script first." }), true;
       const total = Number(b.total) || 30, model = settings.get().textModel;
       const sys = "You are a video director planning a short video for an AI text-to-video model. Split the user's script into scenes. " +
-        `Total length about ${total} seconds; each scene 4 to 8 seconds (integers) and the seconds must add up to about ${total}. ` +
+        `Total length about ${total} seconds; each scene 3 to 5 seconds (integers; short shots look better on Reels and Shorts and hide the drift of faces and hands that long AI clips show; use several shots for one narration beat) and the seconds must add up to about ${total}. ` +
         "Set continues:true on a scene only when it directly continues the previous scene in the same place with the same characters and uninterrupted action (so it can start from the previous scene's last frame); set continues:false for the first scene and for any cut to a new location or time. Mark scenes as key:true ONLY for the roughly 30% that matter most visually (the hook, the big reveal, the twist, the emotional peak); the rest are key:false filler/transition scenes. " +
         "Write a 'bible': for EACH recurring character one sentence with name, age, build, face, hair, and exact clothing with colors, plus one sentence for the main setting, so every scene stays consistent. " +
         "Each scene prompt must be self-contained, one vivid present-tense sentence or two, describing only visible action, camera and mood, naming characters by their bible appearance. No on-screen text. For every scene also write \"narration\": the voiceover a calm narrator speaks during that scene, natural spoken language, at most 2.3 words per second of the scene length, so the narration of all scenes reads as one continuous story (use an empty string only for a deliberately silent scene). " +
@@ -139,6 +139,8 @@ module.exports = function storyRoutes(ctx) {
       const dir = path.join(WORK, sid);
       fs.mkdirSync(dir, { recursive: true });
       stitches.set(sid, st);
+      const hist = (rec) => { try { ctx.history && ctx.history.put("story-" + sid, { kind: "story", url: `/api/final/${sid}`, thumb: `/api/final/${sid}/thumb.jpg`, ...rec }); } catch {} };
+      hist({ status: "running", title: String(b.title || "Story").slice(0, 140), duration: undefined, retry: { endpoint: "/api/stitch", body: { ...b } } });
       const step = (s) => { st.step = s; saveStatus(sid, st); };
       step(st.step);
       renderSlot(async () => {
@@ -150,12 +152,10 @@ module.exports = function storyRoutes(ctx) {
           const line = nar ? String(nar.lines[i] || "").trim() : "";
           step(`Downloading clip ${i + 1}/${ids.length}`);
           const cached = path.join(WORK, "videos", ids[i] + ".mp4");
-          if (fs.existsSync(cached)) fs.copyFileSync(cached, path.join(dir, `raw${i}.mp4`));
-          else {
-            const r = await orFetch(`${API}/videos/${ids[i]}/content?index=0`, { headers: { Authorization: `Bearer ${getKey()}` } });
-            if (!r.ok) throw new Error(`Clip ${i + 1} download failed (${r.status})`);
-            fs.writeFileSync(path.join(dir, `raw${i}.mp4`), Buffer.from(await r.arrayBuffer()));
+          if (!fs.existsSync(cached)) { // downloads once into the shared video cache (works for every provider)
+            try { await ctx.ensureVideo(ids[i]); } catch (e) { throw new Error(`Clip ${i + 1} download failed (${e.status || e.message})`); }
           }
+          fs.copyFileSync(cached, path.join(dir, `raw${i}.mp4`));
           step(`Preparing clip ${i + 1}/${ids.length}`);
           const audio = await hasAudio(path.join(dir, `raw${i}.mp4`));
           let args;
@@ -196,7 +196,9 @@ module.exports = function storyRoutes(ctx) {
         // keep only what's needed to replay / re-stitch
         for (const f of fs.readdirSync(dir)) if (/^(n\d+\.mp4|joined\.mp4)$/.test(f)) fs.rm(path.join(dir, f), { force: true }, () => {});
         st.status = "completed"; st.step = "Done"; saveStatus(sid, st);
-      }).catch((e) => { st.status = "failed"; st.error = e.message.slice(-500); saveStatus(sid, st); })
+        const clipCost = ids.reduce((a, i) => a + (ctx.history?.get(i)?.cost || 0), 0);
+        hist({ status: "completed", duration: Math.round(await mediaDuration(path.join(dir, "final.mp4"))), cost: clipCost || undefined });
+      }).catch((e) => { st.status = "failed"; st.error = e.message.slice(-500); saveStatus(sid, st); hist({ status: "failed", error: st.error }); })
         .finally(() => setTimeout(() => stitches.delete(sid), 3600000));
       return send(res, 202, { id: sid }), true;
     }

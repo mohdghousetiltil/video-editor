@@ -68,13 +68,15 @@
   .cands img.sel{border-color:var(--acc)}
 </style>
 <link rel="stylesheet" href="/app.css">
+<script src="/studio.js"></script>
 </head>
 <body data-title="Influencers" data-sub="Create and manage the AI influencers used across your videos.">
 <div class="wrap">
   <div class="layout">
     <div class="panel" id="formPanel">
       <h2 id="formTitle">Add influencer</h2>
-      <div class="drop" id="drop" style="cursor:default"><span id="dropText">No picture yet.<br><small>Generate pictures below, then click one to use it.</small></span></div>
+      <label class="drop" id="drop" style="cursor:pointer"><span id="dropText">No picture yet.<br><small>Generate pictures below (recommended), or click / drop an AI-made character image to upload it.</small></span><input type="file" id="upFile" accept="image/jpeg,image/png,image/webp" class="hidden" aria-label="Upload a character image"></label>
+      <p class="meta" style="margin:-6px 0 12px">Upload only AI-generated characters. <b>Photos of real people are blocked</b> by the video models, so they won't animate.</p>
       <label>Name<input type="text" id="name" placeholder="e.g. Maya"></label>
       <label>Description (reused word-for-word in prompts)
         <textarea id="desc" placeholder="A friendly woman in her mid-20s with warm light-brown skin, shoulder-length wavy dark brown hair, small gold hoop earrings, cream knit sweater."></textarea></label>
@@ -83,12 +85,12 @@
         <h2 style="margin-bottom:8px">✨ Generate pictures from the description</h2>
         <label style="margin-bottom:8px">Made for which video model?<select id="gTarget"><option value="seedance">Seedance (3D animated or anime, so it accepts the picture)</option><option value="grok">Grok Lite and others (realistic is fine)</option></select></label>
         <div class="row" style="margin-bottom:8px">
-          <select id="gStyle" style="flex:1"></select>
-          <select id="gCount" style="width:70px"><option>2</option><option selected>4</option></select>
+          <select id="gStyle" style="flex:1" aria-label="Picture style"></select>
+          <select id="gCount" style="width:70px" aria-label="Number of pictures"><option>2</option><option selected>4</option></select>
         </div>
-        <select id="gModel" style="margin-bottom:8px"><option value="qwen/qwen-image-3">Qwen Image 3 (~$0.03/pic, measured)</option><option value="x-ai/grok-imagine-image-2.0">Grok Imagine Image 2.0 (~$0.06/pic, measured)</option><option value="bytedance-seed/seedream-5-0-lite">Seedream 5.0 Lite (price not checked)</option><option value="google/gemini-3.1-flash-image">Gemini 3.1 Flash Image (price not checked)</option></select>
+        <select id="gModel" style="margin-bottom:8px" aria-label="Picture model"><option value="qwen/qwen-image-3">Qwen Image 3 (~$0.03/pic, measured)</option><option value="x-ai/grok-imagine-image-2.0">Grok Imagine Image 2.0 (~$0.06/pic, measured)</option><option value="bytedance-seed/seedream-5-0-lite">Seedream 5.0 Lite (price not checked)</option><option value="google/gemini-3.1-flash-image">Gemini 3.1 Flash Image (price not checked)</option></select>
         <button class="btn" id="gen" type="button" style="width:100%">✨ Generate pictures</button>
-        <div id="gMsg" style="font-size:12px;color:var(--mute);margin-top:6px">Pick one below, then Save. That picture becomes this influencer's face in videos.</div>
+        <div id="gMsg" class="meta" style="margin-top:6px">Pictures first, video second: a picture costs 1–6 cents, so you lock the look cheaply before paying for video. Pick one, Save, then press <b>🎬 Animate</b> on the card.</div>
         <div class="cands" id="cands"></div>
       </div>
       <label>Seed (keeps the look similar between videos)
@@ -98,7 +100,7 @@
         <button class="btn" id="reset" type="button">Clear</button>
       </div>
       <div class="err" id="err"></div>
-      <div class="note">Uploading photos isn't supported: video models block photos of real people. Generate the influencer here instead. Seedance also blocks realistic AI faces, so for Seedance pick a stylized look, then press <b>Test with Seedance</b> on the card to see if it's accepted.</div>
+      <div class="note">Seedance also blocks realistic AI faces, so for Seedance pick a stylized look, then press <b>Test with Seedance</b> on the card to see if it's accepted. The description, seed and picture are saved exactly and reused in every video, so the character stays the same.</div>
     </div>
 
     <div>
@@ -107,9 +109,21 @@
   </div>
 </div>
 
+<dialog class="spend-dlg" id="animDlg" aria-label="Animate influencer">
+  <div class="sd-head"><h2 id="animTitle">Animate</h2><button class="btn sd-x" data-x type="button" aria-label="Close">✕</button></div>
+  <label>What should they do?<textarea id="animPrompt" style="min-height:80px">smiles, waves at the camera and says hi, natural handheld selfie video</textarea></label>
+  <div class="grid" style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;margin:10px 0">
+    <label>Model<select id="animModel"><option value="x-ai/grok-imagine-video-1.5-lite">Grok Imagine 1.5 Lite</option><option value="bytedance/seedance-2.0-mini">Seedance 2.0 Mini (stylized only)</option><option value="google/veo-3.1-lite">Veo 3.1 Lite</option></select></label>
+    <label>Length<select id="animDur"></select></label>
+    <label>Resolution<select id="animRes"></select></label>
+  </div>
+  <div class="model-notes" id="animCost"></div>
+  <div id="animStage"></div>
+  <div class="cf-act"><button class="btn primary" id="animGo" type="button">Animate</button></div>
+</dialog>
 <script>
 if(location.protocol==='file:'){location.replace('http://localhost:3100/influencers.html');}
-const $=id=>document.getElementById(id);
+const $=id=>document.getElementById(id), S=window.studio;
 let editing=null, image=null, removeImage=false, items=[];
 
 function shrink(file,max=768){
@@ -130,6 +144,16 @@ function showPreview(src){
   if(src){const im=document.createElement('img');im.src=src;$('drop').appendChild(im);}
 }
 
+async function upload(f){
+  if(!f) return; $('err').textContent='';
+  if(!/^image\/(jpeg|png|webp)$/.test(f.type)) return $('err').textContent='Use a JPG, PNG or WEBP picture.';
+  if(f.size>8*1048576) return $('err').textContent='That picture is over 8 MB.';
+  try{ image=await shrink(f); removeImage=false; showPreview(image); toast('Picture added. Save to keep it. Real people\'s photos will be blocked by the video models.'); }catch(e){ $('err').textContent=e.message; }
+}
+$('upFile').onchange=e=>upload(e.target.files[0]);
+['dragenter','dragover'].forEach(t=>$('drop').addEventListener(t,ev=>{ev.preventDefault();$('drop').classList.add('over')}));
+['dragleave','drop'].forEach(t=>$('drop').addEventListener(t,ev=>{ev.preventDefault();$('drop').classList.remove('over')}));
+$('drop').addEventListener('drop',ev=>upload(ev.dataTransfer.files[0]));
 const newSeed=()=>Math.floor(Math.random()*2e9);
 $('dice').onclick=()=>{$('seed').value=newSeed()};
 
@@ -151,6 +175,8 @@ $('descPic').onclick=async()=>{
 };
 $('gen').onclick=async()=>{
   $('err').textContent=''; if(!$('desc').value.trim()) return $('err').textContent='Write a description first.';
+  const per={'qwen/qwen-image-3':0.03,'x-ai/grok-imagine-image-2.0':0.06}[$('gModel').value]??0.04, n=+$('gCount').value;
+  if(!(await S.confirmSpend({title:`Generate ${n} pictures?`,total:per*n,rows:[['Model',$('gModel').selectedOptions[0].textContent.split(' (')[0]],['Pictures',n+' × ~'+S.money(per)],['Style',$('gStyle').selectedOptions[0].textContent]]}))) return;
   const b=$('gen'); b.disabled=true; b.textContent='Generating…'; $('gMsg').textContent='This takes 10-40 seconds…'; $('cands').innerHTML='';
   try{
     const r=await fetch('/api/portraits',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({desc:$('desc').value,style:$('gStyle').value,model:$('gModel').value,count:+$('gCount').value})});
@@ -213,6 +239,7 @@ function render(){
       <div class="pic">${p.image?`<img src="${p.image}" alt="">`:'🧑'}</div>
       <div class="info"><b>${esc(p.name)}</b><div class="desc">${esc(p.desc)||'<i>No description</i>'}</div><div class="seed">Seed ${p.seed} · ${p.seedance==='ok'?'<span style="color:var(--ok)">✓ Seedance accepts</span>':p.seedance==='blocked'?'<span style="color:var(--err)">✗ Seedance blocks</span>':'Seedance: untested'}</div>
         <div class="actions">
+          ${p.image?`<button class="btn primary" data-a="${p.id}" style="width:auto">🎬 Animate</button>`:''}
           <a class="btn" href="/ugc?inf=${p.id}">Use in UGC</a>
           <button class="btn" data-e="${p.id}">Edit</button>
           ${p.image?`<button class="btn" data-t="${p.id}">Test with Seedance</button>`:''}
@@ -222,7 +249,7 @@ function render(){
   $('list').querySelectorAll('[data-e]').forEach(b=>b.onclick=()=>edit(items.find(x=>x.id===b.dataset.e)));
   $('list').querySelectorAll('[data-t]').forEach(b=>b.onclick=async()=>{
     const p=items.find(x=>x.id===b.dataset.t);
-    if(!confirm('Test "'+p.name+'" with Seedance?\n\nIf Seedance REJECTS the picture it costs nothing.\nIf it ACCEPTS it, it makes a real 4-second test clip, about $0.15.')) return;
+    if(!(await S.confirmSpend({title:'Test "'+p.name+'" with Seedance?',total:0.15,rows:[['Model','Seedance 2.0 Mini, 480p'],['If rejected','nothing is charged'],['If accepted','a real 4 s test clip']],note:'The total is what you pay only if Seedance accepts the picture.'}))) return;
     b.disabled=true; b.textContent='Testing…';
     try{
       const r=await fetch('/api/influencers/'+p.id+'/check',{method:'POST'}); const j=await r.json(); if(!r.ok) throw new Error(j.error||'Test failed');
@@ -231,7 +258,41 @@ function render(){
     await load();
   });
   $('list').querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>del(items.find(x=>x.id===b.dataset.d)));
+  $('list').querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>openAnim(items.find(x=>x.id===b.dataset.a)));
 }
+// ---------- picture -> video: animate a saved influencer from their picture (same face, seed and description) ----------
+let MM={}, animP=null, animT=null;
+S.models().then(({map})=>{ MM=map; fillAnim(); });
+function fillAnim(){
+  const x=MM[$('animModel').value]; if(!x) return;
+  const d=+$('animDur').value||4, ds=x.durs.filter(n=>n<=8);
+  $('animDur').innerHTML=ds.map(n=>`<option value="${n}">${n} s</option>`).join(''); $('animDur').value=String(ds.reduce((b,n)=>Math.abs(n-d)<Math.abs(b-d)?n:b,ds[0]));
+  const r=$('animRes').value; $('animRes').innerHTML=x.res.map(o=>`<option>${o}</option>`).join(''); $('animRes').value=x.res.includes(r)?r:(x.res.includes('720p')?'720p':x.res[0]);
+  $('animCost').textContent=S.costLine(x,{res:$('animRes').value,dur:$('animDur').value,audio:false}).text;
+}
+['animModel','animDur','animRes'].forEach(id=>$(id).addEventListener('change',fillAnim));
+function openAnim(p){ animP=p; $('animTitle').textContent='Animate '+p.name; $('animStage').innerHTML=''; $('animGo').disabled=false; fillAnim(); $('animDlg').showModal(); }
+$('animDlg').addEventListener('click',e=>{ if(e.target.closest('[data-x]')){ clearInterval(animT); $('animDlg').close(); } });
+$('animGo').onclick=async()=>{
+  const x=MM[$('animModel').value], c=S.costLine(x,{res:$('animRes').value,dur:$('animDur').value,audio:false});
+  $('animDlg').close();
+  const ok=await S.confirmSpend({title:'Animate '+animP.name+'?',total:c.total,rows:[['Model',x.name],['Length',$('animDur').value+' s'],['Resolution',$('animRes').value],['Starts from','the saved picture, seed '+animP.seed]]});
+  $('animDlg').showModal(); if(!ok) return;
+  $('animGo').disabled=true; $('animStage').innerHTML=S.stageHTML({stage:'queued',msg:'Submitting…'});
+  try{
+    const r=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:$('animModel').value,
+      prompt:(animP.desc?animP.desc+' ':'')+'The person '+$('animPrompt').value.trim()+'. Same face, hair and clothes as the first frame.',title:'Animate '+animP.name,
+      duration:+$('animDur').value,resolution:$('animRes').value,aspect_ratio:'9:16',generate_audio:false,seed:animP.seed,influencer_id:animP.id,use_frame:true})});
+    const j=await r.json(); if(!r.ok) throw new Error(j.error||'Failed');
+    const poll=async()=>{ const d=await (await fetch('/api/jobs/'+j.id)).json();
+      if(d.status==='failed'){ clearInterval(animT); $('animStage').innerHTML='<p class="err">❌ '+S.esc(d.error||'failed')+'</p>'; $('animGo').disabled=false; return; }
+      if(d.status!=='completed') return $('animStage').innerHTML=S.stageHTML(d);
+      clearInterval(animT); $('animGo').disabled=false;
+      $('animStage').innerHTML=`<video src="${d.videoUrl}" controls autoplay loop playsinline style="width:100%;max-height:50vh"></video><a class="btn" href="${d.videoUrl}?download=1">⬇ Download</a>`;
+      window.dispatchEvent(new Event('spend-changed')); };
+    animT=setInterval(poll,3000); poll();
+  }catch(e){ $('animStage').innerHTML='<p class="err">❌ '+S.esc(e.message)+'</p>'; $('animGo').disabled=false; }
+};
 async function load(){
   try{items=(await (await fetch('/api/influencers')).json()).influencers||[];}catch{items=[];}
   render();

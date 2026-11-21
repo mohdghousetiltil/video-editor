@@ -47,6 +47,7 @@
   .saved span.show{opacity:1}
 </style>
 <link rel="stylesheet" href="/app.css">
+<script src="/studio.js"></script>
 </head>
 <body data-title="Settings" data-sub="Which AI models do the work, Muse by Meta, your monthly spending cap and how long files are kept. Saved on the server, so every device uses the same settings.">
 <div class="wrap">
@@ -81,10 +82,17 @@
   <div class="panel">
     <h2>Spending</h2>
     <div class="grid">
-      <label>Monthly cap in $ (0 = no cap)<input id="monthlyCap" type="number" min="0" step="1" inputmode="decimal"></label>
+      <label>Monthly cap in $ ($10 by default, 0 = no cap)<input id="monthlyCap" type="number" min="0" step="1" inputmode="decimal"></label>
       <div><div class="meta" id="spendNow">This month: …</div><div class="meta" id="capNote" style="margin-top:6px"></div></div>
+      <label>Skip the cost confirmation below<select id="confirmUnder"><option value="0">Never: always ask</option><option value="0.1">$0.10</option><option value="0.25">$0.25</option><option value="0.5">$0.50</option></select></label>
     </div>
     <p class="meta">When this month's spend reaches the cap, anything that costs money is refused until next month or until you raise it. For a hard limit on OpenRouter's side too, give your API key a monthly limit at openrouter.ai/settings/keys.</p>
+  </div>
+
+  <div class="panel">
+    <h2>Video providers</h2>
+    <div id="provList" class="meta">Checking…</div>
+    <p class="meta">OpenRouter is always used. For cheaper routes add keys on the server: <code>FAL_KEY</code> (fal.ai, used for Kling, about half the price) and <code>BYTEPLUS_KEY</code> (BytePlus ModelArk, used for Seedance, about half again). The cheapest route with a key is picked automatically for each model; their prices are estimates in the app log.</p>
   </div>
 
   <div class="panel">
@@ -109,7 +117,8 @@ function paint() {
   for (const k of ['textModel', 'visionModel', 'imageModel', 'monthlyCap', 'keepDays', 'keepShortsDays']) if (document.activeElement !== $(k)) $(k).value = S[k];
   if ($('voice').options.length) $('voice').value = S.voice;
   $('eggs').checked = !!S.eggs;
-  $('capNote').textContent = S.monthlyCap > 0 ? 'Cap: $' + (+S.monthlyCap).toFixed(2) + ' a month.' : 'No cap set.';
+  $('capNote').textContent = S.monthlyCap > 0 ? 'Cap: $' + (+S.monthlyCap).toFixed(2) + ' a month. Paid buttons stop once this month reaches it.' : '⚠ No cap: nothing stops paid calls except your OpenRouter credit.';
+  $('confirmUnder').value = String(S.confirmUnder || 0);
 }
 let savedT;
 async function save(patch) {
@@ -138,6 +147,12 @@ document.querySelectorAll('.prov').forEach((b) => b.onclick = () => save({ provi
 for (const k of ['textModel', 'visionModel', 'imageModel', 'voice']) $(k).addEventListener('change', () => save({ [k]: $(k).value }));
 for (const k of ['monthlyCap', 'keepDays', 'keepShortsDays']) $(k).addEventListener('change', () => save({ [k]: +$(k).value }));
 $('eggs').addEventListener('change', () => save({ eggs: $('eggs').checked }));
+$('confirmUnder').addEventListener('change', () => save({ confirmUnder: +$('confirmUnder').value }));
+fetch('/api/models').then((r) => r.json()).then((j) => {
+  const p = j.providers || {}, routed = (j.models || []).filter((m) => m.route !== 'openrouter');
+  $('provList').innerHTML = `<div>✓ OpenRouter</div><div>${p.fal ? '✓' : '○'} fal.ai ${p.fal ? '(key set)' : '(no FAL_KEY)'}</div><div>${p.byteplus ? '✓' : '○'} BytePlus ModelArk ${p.byteplus ? '(key set)' : '(no BYTEPLUS_KEY)'}</div>` +
+    (routed.length ? `<div style="margin-top:6px">Routed now: ${routed.map((m) => esc(m.name) + ' → ' + esc(m.route)).join(', ')}</div>` : '');
+}).catch(() => { $('provList').textContent = 'Could not load providers.'; });
 $('test').onclick = async () => {
   const out = $('testOut'); out.className = 'status'; out.textContent = 'Pinging ' + $('textModel').value + '…'; $('test').disabled = true;
   try {
