@@ -182,8 +182,9 @@
   // ---------- Easter eggs (Settings → "Little easter-egg glitches"; off when the OS asks for reduced motion) ----------
   //  · now and then a title, heading or button glitches for a split second
   //  · ↑ ↑ ↓ ↓ ← → ← → B A  → OVERDRIVE
-  //  · click the logo 5 times fast → the nav gets hacked for a moment
+  //  · click the logo (or, on a phone, tap the page title) 5 times fast → the nav gets hacked for a moment
   //  · type "glitch" anywhere outside a text box → the screen tears
+  //  · phones: swipe ↑ ↑ ↓ ↓ ← → ← → then tap twice, or hold the centre orb 1.5 s → OVERDRIVE; shake → tear (Android)
   //  · after midnight the server light says NETRUNNER ONLINE
   (() => {
     let on = true;
@@ -203,45 +204,93 @@
     };
     const tick = () => {
       if (!document.hidden) {
-        const pool = [...document.querySelectorAll('.pagehead h1, .sb-brand, .panel h2, .btn.primary, .spend-v')].filter((e) => e.offsetParent);
+        const pool = [...document.querySelectorAll('.pagehead h1, .sb-brand, .panel h2, .btn.primary, .spend-v, .spend-chip, .tabbar a.on, .tb-orb')].filter((e) => e.offsetParent);
         glitch(pool[Math.floor(Math.random() * pool.length)]);
         if (Math.random() < .25) tear(2);
       }
       setTimeout(tick, 25000 + Math.random() * 45000);
     };
     setTimeout(tick, 9000 + Math.random() * 12000);
-    // Konami code
+    const buzz = (p) => { try { navigator.vibrate && navigator.vibrate(p); } catch {} }; // Android only; iPhones ignore it
+    const overdrive = () => {
+      document.body.classList.add('eg-overdrive'); tear(14); buzz([40, 30, 40, 30, 120]);
+      toast('⚡ OVERDRIVE ENGAGED // all limiters off (not really)', 'ok');
+      setTimeout(() => document.body.classList.remove('eg-overdrive'), 2500);
+    };
+    // nav labels (sidebar on desktop, tab bar on phones) scramble into hex/katakana for a moment
+    const hack = () => {
+      const nodes = [...side.querySelectorAll('.sb-nav .tx b')]
+        .concat([...tabs.querySelectorAll('a, .tb-more small')].map((el) => [...el.childNodes].find((n) => n.nodeType === 3 && n.textContent.trim()) || el.querySelector('small')).filter(Boolean));
+      const orig = nodes.map((n) => n.textContent);
+      const junk = (len) => Array.from({ length: len }, () => '0123456789ABCDEF#$%&ｱｲｳｴｵ'[Math.floor(Math.random() * 25)]).join('');
+      let n = 0;
+      const iv = setInterval(() => {
+        nodes.forEach((x, i) => { x.textContent = junk(Math.max(4, orig[i].length)); x.parentElement?.classList.add('eg-scramble'); });
+        if (++n > 12) { clearInterval(iv); nodes.forEach((x, i) => { x.textContent = orig[i]; x.parentElement?.classList.remove('eg-scramble'); }); }
+      }, 70);
+      tear(6); buzz([20, 40, 20, 40, 20]); toast('SIGNAL INTRUSION DETECTED // 0xDEADBEEF // just kidding', 'err');
+    };
+
+    // ---- keyboard: Konami code, typing "glitch" ----
     const KON = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a'];
     let k = 0, typed = '';
     addEventListener('keydown', (e) => {
       const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
       k = key === KON[k] ? k + 1 : key === KON[0] ? 1 : 0;
-      if (k === KON.length) {
-        k = 0;
-        document.body.classList.add('eg-overdrive'); tear(14);
-        toast('⚡ OVERDRIVE ENGAGED // all limiters off (not really)', 'ok');
-        setTimeout(() => document.body.classList.remove('eg-overdrive'), 2500);
-      }
+      if (k === KON.length) { k = 0; overdrive(); }
       if (/^(input|textarea|select)$/i.test(e.target.tagName) || e.target.isContentEditable || key.length !== 1) return;
       typed = (typed + key).slice(-6);
       if (typed === 'glitch') { tear(9); glitch(document.querySelector('.pagehead h1')); typed = ''; }
     });
-    // logo, 5 fast clicks: the nav labels scramble into hex and come back
-    let clicks = [];
-    side.querySelector('.sb-logo').addEventListener('click', (e) => {
-      const now = Date.now(); clicks = clicks.filter((t) => now - t < 1500); clicks.push(now);
-      if (clicks.length < 5) return;
-      e.preventDefault(); clicks = [];
-      const labels = [...side.querySelectorAll('.sb-nav .tx b')];
-      const orig = labels.map((b) => b.textContent);
-      const junk = () => Array.from({ length: 6 + Math.floor(Math.random() * 6) }, () => '0123456789ABCDEF#$%&ｱｲｳｴｵ'[Math.floor(Math.random() * 25)]).join('');
-      let n = 0;
-      const iv = setInterval(() => { labels.forEach((b) => { b.textContent = junk(); b.classList.add('eg-scramble'); }); if (++n > 12) { clearInterval(iv); labels.forEach((b, i) => { b.textContent = orig[i]; b.classList.remove('eg-scramble'); }); } }, 70);
-      tear(6); toast('SIGNAL INTRUSION DETECTED // 0xDEADBEEF // just kidding', 'err');
-    });
-    // night owls
+
+    // ---- mouse / touch: 5 fast taps on the logo (desktop) or the page title (phones) hacks the nav ----
+    const fastTaps = (el, n, fn) => {
+      let ts = [];
+      el && el.addEventListener('click', (e) => {
+        const now = Date.now(); ts = ts.filter((t) => now - t < 1600); ts.push(now);
+        if (ts.length >= n) { ts = []; e.preventDefault(); fn(); }
+      });
+    };
+    fastTaps(side.querySelector('.sb-logo'), 5, hack);
+    fastTaps(document.querySelector('.pagehead h1'), 5, hack);
+
+    // ---- touch: swipe the Konami code (↑ ↑ ↓ ↓ ← → ← →, then two taps) ----
+    const SWIPE = ['U', 'U', 'D', 'D', 'L', 'R', 'L', 'R', 'T', 'T'];
+    let sk = 0, t0 = null;
+    addEventListener('touchstart', (e) => { if (e.touches.length === 1) t0 = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() }; }, { passive: true });
+    addEventListener('touchend', (e) => {
+      if (!t0 || /^(input|textarea|select)$/i.test(e.target.tagName)) { t0 = null; return; }
+      const c = e.changedTouches[0], dx = c.clientX - t0.x, dy = c.clientY - t0.y, dt = Date.now() - t0.t;
+      t0 = null;
+      const g = Math.hypot(dx, dy) < 12 && dt < 300 ? 'T' : dt < 800 && Math.max(Math.abs(dx), Math.abs(dy)) > 40
+        ? (Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'R' : 'L') : (dy > 0 ? 'D' : 'U')) : null;
+      if (!g) { sk = 0; return; }
+      sk = g === SWIPE[sk] ? sk + 1 : g === SWIPE[0] ? 1 : 0;
+      if (sk === SWIPE.length) { sk = 0; overdrive(); }
+    }, { passive: true });
+
+    // ---- touch: hold the centre "More" orb for 1.5 s → overdrive (the tap that follows doesn't open the menu) ----
+    let holdT = null, held = false;
+    const orb = tabs.querySelector('.tb-more');
+    orb.addEventListener('pointerdown', () => { held = false; clearTimeout(holdT); holdT = setTimeout(() => { held = true; overdrive(); }, 1500); });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => orb.addEventListener(ev, () => clearTimeout(holdT)));
+    orb.addEventListener('click', (e) => { if (held) { held = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
+    orb.addEventListener('contextmenu', (e) => e.preventDefault()); // no long-press menu on Android
+
+    // ---- shake the phone → the screen tears (Android; iPhones only send motion after a permission prompt) ----
+    if ('DeviceMotionEvent' in window && typeof DeviceMotionEvent.requestPermission !== 'function') {
+      let last = 0, hits = [];
+      addEventListener('devicemotion', (e) => {
+        const a = e.accelerationIncludingGravity; if (!a) return;
+        const f = Math.abs(a.x || 0) + Math.abs(a.y || 0) + Math.abs(a.z || 0), now = Date.now();
+        if (f > 38) { hits = hits.filter((t) => now - t < 900); hits.push(now); }
+        if (hits.length >= 3 && now - last > 4000) { last = now; hits = []; tear(10); buzz(60); glitch(document.querySelector('.pagehead h1')); }
+      });
+    }
+
+    // night owls: after midnight the status light (desktop) says NETRUNNER ONLINE and the phone orb glows magenta
     const hr = new Date().getHours();
-    if (hr < 4) window.__eggNight = true;
+    if (hr < 4) { window.__eggNight = true; document.body.classList.add('eg-night'); }
   })();
 
   const dot = document.getElementById('sbDot'), txt = document.getElementById('sbTxt');
