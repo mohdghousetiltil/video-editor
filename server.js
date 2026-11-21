@@ -404,7 +404,14 @@ const server = http.createServer(async (req, res) => {
             const out = await providers.submit(route, body, fetch, { negative: [b.quality !== false && NEGATIVE, theme && theme.negative, b.negative].filter(Boolean).join(", ") });
             extJob = out.job;
             return { r: { ok: true, status: 202 }, j: { id: out.id, status: "pending" } };
-          } catch (e) { return { r: { ok: false, status: e.status || 502 }, j: { error: { message: `${route.provider}: ${e.message}` } } }; }
+          } catch (e) {
+            // refused at submit (no balance, model not activated, bad key): nothing was charged, so fall back to
+            // OpenRouter when it still has the model
+            if (live.live === false) return { r: { ok: false, status: e.status || 502 }, j: { error: { message: `${route.provider}: ${e.message}` } } };
+            note = `${route.provider === "byteplus" ? "BytePlus" : "fal.ai"} refused this job (${String(e.message).slice(0, 120)}), so it was made through OpenRouter instead.`;
+            console.error("provider fallback:", route.provider, e.message);
+            route.provider = "openrouter"; route.factor = 1; route.price = null; extJob = null;
+          }
         }
         const r = await orFetch(`${API}/videos`, { method: "POST", headers: orHeaders(), body: JSON.stringify(body) }, { safe: false });
         return { r, j: await r.json().catch(() => ({})) };

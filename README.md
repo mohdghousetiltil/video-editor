@@ -17,7 +17,7 @@ Run: copy `.env.example` to `.env`, add your OpenRouter key, then `node server.j
 | `SHORTS_MODEL` | optional, video model for the Shorts maker (default `google/gemini-3.5-flash-lite`) |
 | `YT_COOKIES` | optional, contents of a `cookies.txt` exported from a logged-in YouTube browser session; only needed if YouTube links fail with "blocked" |
 | `FAL_KEY` | optional, fal.ai key: Kling goes through fal.ai (about half the price) |
-| `BYTEPLUS_KEY` | optional, BytePlus ModelArk key: Seedance goes through BytePlus (about half again). Model ids: `BYTEPLUS_SEEDANCE_FAST_MODEL`, `BYTEPLUS_SEEDANCE_MODEL`, `BYTEPLUS_SEEDANCE_MINI_MODEL`; fal app ids: `FAL_KLING_APP`, `FAL_KLING_I2V_APP` |
+| `BYTEPLUS_KEY` | optional, BytePlus ModelArk key: Seedance goes through BytePlus (about half again). Model ids default to the ModelArk ids of Nov 2026 (`dreamina-seedance-2-0-fast-260128`…); override with `BYTEPLUS_SEEDANCE_FAST_MODEL`, `BYTEPLUS_SEEDANCE_MODEL`, `BYTEPLUS_SEEDANCE_MINI_MODEL`, `BYTEPLUS_SEEDANCE_25_MODEL`. Each model must be activated in the ModelArk console; fal app ids: `FAL_KLING_APP`, `FAL_KLING_I2V_APP` |
 
 **Cloudflare** (connect the same GitHub repo). As a **Worker** (current setup): `wrangler.jsonc` + `worker.js` serve `public/`, ask for the password and proxy `/api` to Railway; deploy command `npx wrangler deploy`, and the `name` in `wrangler.jsonc` must match the Worker name. As a **Pages** project instead: build command empty, output directory `public`, and `functions/` is picked up automatically. Variables (either way):
 
