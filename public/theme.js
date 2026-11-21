@@ -27,8 +27,9 @@
     const t = active();
     bar.innerHTML = `<button type="button" class="theme-chip" aria-label="Theme settings"><span class="tsw" style="background:${t ? swatch(t) : 'var(--line2)'}"></span>🎨 Theme: <b>${t ? esc(t.emoji || '') + ' ' + esc(t.name) : 'none'}</b></button>` +
       `<label class="theme-lock"><input type="checkbox" ${state.lock ? 'checked' : ''} ${t ? '' : 'disabled'}> 🔒 Theme Lock</label>` +
-      (state.lock ? `<span class="meta">Style, palette, lighting, camera${t && (t.character || t.influencerId) ? ', character' : ''}${t && t.outfit ? ', outfit' : ''}${t && t.styleImage ? ' and style picture' : ''} go into every clip.</span>`
-        : `<span class="theme-warn">${t ? 'Theme Lock is off: each clip can drift to a different look.' : 'No theme: each clip can look different. Pick one to keep a series consistent.'}</span>`);
+      // one short hint, the full explanation is in the tooltip
+      (state.lock ? `<span class="meta" title="Style, palette, lighting, camera, character, outfit and style picture go into every clip.">applied to every clip</span>`
+        : `<span class="theme-warn" title="${t ? 'Theme Lock is off: each clip can drift to a different look.' : 'No theme: each clip can look different. Pick one to keep a series consistent.'}">${t ? 'lock off: clips may drift' : 'no theme'}</span>`);
     bar.querySelector('.theme-chip').onclick = openDialog;
     bar.querySelector('input').onchange = (e) => setActive(state.active, e.target.checked);
   }

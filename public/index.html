@@ -92,22 +92,18 @@
     <div>
       <div class="panel">
         <h2>1 · Script / prompt</h2>
-        <div id="tplBox"></div>
-        <div class="ex-chips" id="examples" aria-label="Example prompts"></div>
         <label for="script" class="sr-only" style="position:absolute;left:-9999px">Prompt</label>
         <textarea id="script" maxlength="1000" placeholder="Drop a .txt file here, or type / paste your scene idea…&#10;&#10;Tip: write a rough idea, then press ✨ Enhance."></textarea>
         <div class="tools">
           <button class="btn" id="enh" type="button">✨ Enhance prompt</button>
           <span class="count" id="count" aria-live="polite">0 / 1000</span>
         </div>
-        <h2>2 · Format</h2>
-        <div class="chips" id="presets" aria-label="Presets"></div>
-        <h2>3 · Model</h2>
+        <h2>2 · Model</h2>
         <div class="models" id="models" role="radiogroup" aria-label="Video model"></div>
-        <h2>4 · Style</h2>
+        <h2>3 · Style</h2>
         <div class="meta" id="styleTheme" hidden style="margin-bottom:12px"></div>
         <div class="chips" id="styles"></div>
-        <h2>5 · Settings</h2>
+        <h2>4 · Settings</h2>
         <div class="grid4">
           <label id="durWrap">Duration<select id="duration" aria-describedby="modelNotes"></select></label>
           <label id="resWrap">Resolution<select id="resolution"></select></label>
@@ -116,18 +112,22 @@
           <label id="audioWrap">Audio<select id="audio"><option value="true">On</option><option value="false">Off</option></select></label>
         </div>
         <div class="model-notes" id="modelNotes" aria-live="polite"></div>
-        <div class="grid4" style="grid-template-columns:2fr 1fr 1fr">
-          <label>Never show (negative prompt)<input id="negative" placeholder="e.g. text on screen, extra people, logos"></label>
-          <label>Seed<input id="seed" inputmode="numeric" placeholder="Random" aria-describedby="seedNote"></label>
-          <label style="flex-direction:row;align-items:center;gap:6px;align-self:end;color:var(--text)"><input type="checkbox" id="seedLock" style="width:auto"> Lock seed</label>
-        </div>
-        <label style="flex-direction:row;align-items:center;gap:8px;margin:-4px 0 12px;color:var(--text)"><input type="checkbox" id="quality" checked style="width:auto"> Quality booster <span class="meta" id="seedNote">(adds "sharp focus, natural motion, no warping, no extra fingers, no garbled text" for you)</span></label>
-        <div class="grid4" style="grid-template-columns:1fr 3fr">
-          <label>Variations<select id="variations"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
-          <span class="meta" style="align-self:end">Make 2–3 versions at once (different seeds) and keep the best, instead of retrying one by one.</span>
-        </div>
-        <div class="cost"><span class="meta">Estimated total</span><b id="cost">—</b></div>
+        <details class="more-opts">
+          <summary>More options</summary>
+          <div class="chips" id="presets" aria-label="Format presets"></div>
+          <div id="tplBox"></div>
+          <div class="ex-chips" id="examples" aria-label="Example prompts"></div>
+          <div class="grid4" style="grid-template-columns:1fr 2fr 1fr">
+            <label>Variations<select id="variations"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
+            <label>Never show (negative prompt)<input id="negative" placeholder="e.g. text on screen, logos"></label>
+            <label>Seed<input id="seed" inputmode="numeric" placeholder="Random"></label>
+          </div>
+          <label class="ck"><input type="checkbox" id="seedLock"> Lock seed</label>
+          <label class="ck"><input type="checkbox" id="quality" checked> Quality booster <span class="meta">(sharp focus, natural motion, no warping or extra fingers)</span></label>
+        </details>
+        <div class="cost"><span class="meta">Estimated cost</span><b id="cost">—</b></div>
         <button class="btn primary" id="go" type="button">Generate video</button>
+        <div id="confirmHost"></div>
         <div class="err" id="err" role="alert"></div>
       </div>
     </div>
@@ -168,7 +168,8 @@ const EXAMPLES=[
   ['🌃 Neon street','A woman in a yellow raincoat walks through a rainy neon-lit Tokyo street at night, reflections on the wet ground, slow dolly shot behind her.'],
 ];
 // models shown here: cheapest first inside each tier
-const SHOWN=['x-ai/grok-imagine-video-1.5-lite','google/veo-3.1-lite','bytedance/seedance-2.0-mini','alibaba/wan-3.0','google/gemini-omni-1.2-flash','google/veo-3.1-fast','kwaivgi/kling-v3.0-pro','bytedance/seedance-2.0'];
+// the few shown by default (as before); every other model is one tap away under "More models"
+const SHOWN=['google/veo-3.1-fast','kwaivgi/kling-v3.0-pro','google/gemini-omni-1.2-flash','google/veo-3.1-lite','x-ai/grok-imagine-video-1.5-lite'];
 let seeds={}, MODELS={}, model=null, style=S.formValue('clip','style')||'movie', timers=[], showAll=false, autoEnhance={};
 const LIMIT=1000;
 const isAuto=()=>model===S.AUTO;
@@ -177,12 +178,12 @@ const m=()=>isAuto()?MODELS['google/veo-3.1-lite']||Object.values(MODELS)[0]:MOD
 
 function renderModels(){
   const card=(id)=>{const x=MODELS[id],r=x.res.includes('720p')?'720p':x.res[0];
-    return `<div class="model ${id===model?'sel':''}" data-id="${id}" role="radio" tabindex="0" aria-checked="${id===model}"><b>${S.esc(x.name)}<span class="tier ${x.tier}">${S.tierLabel(x.tier)}</span></b><span>${S.money(S.rate(x,r,true),3)}/s @${r} · quality ${x.q}/10${x.route!=='openrouter'?' · via '+x.route:''}${x.note?' · '+S.esc(x.note):''}</span></div>`;};
+    return `<div class="model ${id===model?'sel':''}" data-id="${id}" role="radio" tabindex="0" aria-checked="${id===model}"><b>${S.esc(x.name)}<span class="tier ${x.tier}">${S.tierLabel(x.tier)}</span></b><span>~${S.money(S.rate(x,r,true),2)}/s @${r}${x.route!=='openrouter'?' · via '+x.route:''}</span></div>`;};
   // every model the app can use: the usual ones first, the rest behind "More models", cheapest first in each tier
   const order={draft:0,regular:1,hero:2};
   const rest=Object.keys(MODELS).filter(id=>!SHOWN.includes(id)).sort((a,b)=>order[MODELS[a].tier]-order[MODELS[b].tier]||S.rate(MODELS[a],'720p')-S.rate(MODELS[b],'720p'));
   if(rest.includes(model)) showAll=true;
-  $('models').innerHTML=`<div class="model auto ${isAuto()?'sel':''}" data-id="${S.AUTO}" role="radio" tabindex="0" aria-checked="${isAuto()}"><b>🧠 Auto<span class="tier hero">Director</span></b><span>Reads all ${Object.keys(MODELS).length} models and picks the best quality for your budget, with the process (picture first, Enhance)</span></div>`+
+  $('models').innerHTML=`<div class="model auto ${isAuto()?'sel':''}" data-id="${S.AUTO}" role="radio" tabindex="0" aria-checked="${isAuto()}"><b>🧠 Auto<span class="tier hero">Director</span></b><span>Picks the best of all ${Object.keys(MODELS).length} models for your budget</span></div>`+
     SHOWN.filter(id=>MODELS[id]).map(card).join('')+(showAll?rest.map(card).join(''):'')+
     (rest.length?`<button type="button" class="btn" id="moreModels" style="grid-column:1/-1">${showAll?'Fewer models':'More models ('+rest.length+')'}</button>`:'');
   if($('moreModels')) $('moreModels').onclick=()=>{showAll=!showAll;renderModels();};

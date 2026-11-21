@@ -523,3 +523,22 @@ button.chip.sel{color:#04121a;background:var(--acc);border-color:var(--acc)}
 .dir-note{border:1px solid var(--violet);padding:8px 12px;margin:8px 0;font-size:13px;line-height:1.5}
 .scene .dir{color:var(--acc2);font-size:12.5px;margin:4px 0}
 .sd-fal{margin-top:8px}
+/* ---------- simpler UI: collapsed extras, inline confirmation, quiet status line ---------- */
+.more-opts{margin:0 0 14px;border:1px solid var(--line);padding:8px 12px}
+.more-opts summary{cursor:pointer;color:var(--mute);font-size:13px;font-weight:600}
+.more-opts[open] summary{margin-bottom:12px}
+.more-opts .ck{flex-direction:row !important;align-items:center;gap:8px;color:var(--text) !important;margin:6px 0}
+.more-opts .ck input{width:auto}
+.inline-confirm{border:1px solid var(--acc);background:rgba(0,229,255,.05);padding:12px 14px;margin-top:12px}
+.inline-confirm h3{margin:0 0 8px;font-size:14px;letter-spacing:.06em;text-transform:uppercase}
+.inline-confirm .cf-rows{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:0 0 8px;font-size:14px}
+.inline-confirm dt{color:var(--mute)}.inline-confirm dd{margin:0}
+.inline-confirm .cf-total{color:var(--warn);font-weight:700}
+.inline-confirm .cf-act{margin-top:10px;justify-content:flex-start}
+.page-status{min-height:0;margin:8px 0 0;font-size:13px;color:var(--acc2)}
+.page-status.err{color:var(--err)}
+.page-status:empty{display:none}
+.theme-bar{padding:6px 10px;margin:-8px 0 16px;gap:8px 12px}
+.theme-bar .theme-warn,.theme-bar .meta{font-size:12px}
+#toasts{display:none !important}
+.inline-confirm{flex-basis:100%;width:100%;box-sizing:border-box}.inline-confirm.director-dlg{width:100%}

@@ -56,8 +56,9 @@
   radial.id = 'radial';
   radial.setAttribute('role', 'menu');
   radial.setAttribute('aria-label', 'More pages');
-  const R = 112, n = more.length, span = Math.min(140, 64 * (n - 1));
-  radial.innerHTML = '<span class="radial-ring" aria-hidden="true"></span>' + more.map((i, k) => {
+  // 4+ items: a taller, narrower arc, so the outer items (icon + label) stay above the tab bar instead of behind it
+  const n = more.length, R = n > 3 ? 150 : 112, span = n > 3 ? 108 : Math.min(140, 64 * (n - 1));
+  radial.innerHTML = `<span class="radial-ring" aria-hidden="true" style="left:${-R - 6}px;top:${-R - 6}px;width:${2 * R + 12}px;height:${2 * R + 12}px"></span>` + more.map((i, k) => {
     const a = (-90 - span / 2 + (n > 1 ? (span * k) / (n - 1) : span / 2)) * Math.PI / 180;
     return `<a role="menuitem" href="${i[0]}" class="${i[0] === here ? 'on' : ''}" style="--x:${(Math.cos(a) * R).toFixed(1)}px;--y:${(Math.sin(a) * R).toFixed(1)}px;--d:${k * 45}ms">` +
       `<span class="ro">${i[2]}</span><b>${i[1]}</b></a>`;
@@ -310,14 +311,10 @@
     if (hr < 4) { window.__eggNight = true; document.body.classList.add('eg-night'); }
   })();
 
-  // ---------- Help, first-run tour, footer, render queue ----------
+  // ---------- Help (sidebar ? and footer), footer, render queue ----------
   const S = window.studio;
   if (S) {
     document.getElementById('sbHelp').onclick = () => S.openInfo('help');
-    const hh = document.createElement('button');
-    hh.type = 'button'; hh.className = 'help-chip'; hh.setAttribute('aria-label', 'Help'); hh.textContent = '? Help';
-    hh.onclick = () => S.openInfo('help');
-    chipHost()?.append(hh);
     // theme bar under the title on the pages that make videos
     if (S.mountThemeBar && ['/', '/story', '/ugc', '/motion', '/shorts'].includes(here)) { S.mountThemeBar(wrap && wrap.querySelector('.pagehead')); S.loadThemes(); }
     if (wrap) {
@@ -328,23 +325,6 @@
       ft.addEventListener('click', (e) => { const b = e.target.closest('button[data-k]'); if (b) S.openInfo(b.dataset.k); });
       wrap.append(ft);
     }
-    // first visit: three steps (key, cap, a cheap first clip)
-    if (!S.store.get('onboarded', false) && !/history/.test(here)) setTimeout(() => {
-      const d = document.createElement('dialog');
-      d.className = 'spend-dlg info-dlg';
-      d.setAttribute('aria-label', 'Welcome');
-      d.innerHTML = `<div class="sd-head"><h2>Welcome to Video Studio</h2></div><ol class="tour">
-        <li><b>Your OpenRouter key pays for everything.</b> OpenRouter is one account for many AI models. Each video, picture or voice is charged to its credit. The app shows the total and asks before anything is charged.</li>
-        <li><b>A $10 monthly cap is on.</b> Once this month's spend reaches it, paid buttons stop working until you raise it in <a href="/settings">Settings</a>.</li>
-        <li><b>Start cheap.</b> On Single clip, pick a <i>Draft</i> model at 720p and a 4 s length: a few cents per try.</li></ol>
-        <div class="cf-act"><button class="btn" data-help type="button">Read help</button><button class="btn primary" data-ok type="button">Got it</button></div>`;
-      document.body.append(d);
-      const close = () => { S.store.set('onboarded', true); d.close(); d.remove(); };
-      d.querySelector('[data-ok]').onclick = close;
-      d.querySelector('[data-help]').onclick = () => { close(); S.openInfo('help'); };
-      d.addEventListener('cancel', close);
-      d.showModal();
-    }, 600);
   }
   const qa = document.getElementById('sbQueue'), qt = document.getElementById('sbQueueTxt');
   const loadQueue = () => fetch('/api/queue').then((r) => r.json()).then((q) => {
@@ -365,15 +345,18 @@
   ping();
   setInterval(ping, 15000);
 
-  const box = document.createElement('div');
-  box.id = 'toasts';
-  document.body.append(box);
+  // Messages go to one quiet line under the page title (no pop-up notifications at the bottom of the screen)
+  const status = document.createElement('p');
+  status.className = 'page-status';
+  status.setAttribute('role', 'status');
+  status.setAttribute('aria-live', 'polite');
+  (document.querySelector('.pagehead') || document.querySelector('.wrap') || document.body).append(status);
+  let statusT = null;
   window.toast = (msg, type) => {
-    const t = document.createElement('div');
-    t.className = 'toast ' + (type || '');
-    t.textContent = msg;
-    box.append(t);
-    setTimeout(() => t.remove(), 4500);
+    status.textContent = msg;
+    status.className = 'page-status' + (type === 'err' ? ' err' : '');
+    clearTimeout(statusT);
+    statusT = setTimeout(() => { status.textContent = ''; }, type === 'err' ? 12000 : 6000);
   };
 
   // ---------- Share: the video file itself (posts straight into TikTok / Instagram / WhatsApp / YouTube on a

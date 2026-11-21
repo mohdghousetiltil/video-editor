@@ -36,28 +36,42 @@
   let settingsP = null;
   const settings = () => (settingsP ||= fetch('/api/settings').then((r) => r.json()).then((j) => j.settings || {}).catch(() => ({})));
   S.settings = settings;
+  // Confirmations show inline, right under the button that asked for them (or in the page's #confirmHost), never as
+  // a pop-up. One at a time; Esc or Cancel closes it.
+  let lastBtn = null;
+  if (typeof addEventListener === 'function') addEventListener('click', (e) => { const b = e.target.closest && e.target.closest('button, a.btn'); if (b && !b.closest('.inline-confirm')) lastBtn = b; }, true);
+  function inlinePanel(cls, title) {
+    document.querySelectorAll('.inline-confirm').forEach((x) => x._cancel ? x._cancel() : x.remove());
+    const el = document.createElement('div');
+    el.className = 'inline-confirm ' + (cls || '');
+    el.setAttribute('role', 'group');
+    el.setAttribute('aria-label', title);
+    const host = document.getElementById('confirmHost');
+    if (host) host.append(el);
+    else if (lastBtn && lastBtn.isConnected) lastBtn.insertAdjacentElement('afterend', el);
+    else (document.querySelector('.wrap') || document.body).append(el);
+    setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }));
+    return el;
+  }
   // rows: [[label, value], ...]; total: dollars. Resolves true (go) or false.
   S.confirmSpend = async ({ title = 'Start this generation?', rows = [], total = 0, note = '' } = {}) => {
     const st = await settings();
     const first = !ls.get('paidOk', false);
     if (!first && total > 0 && total < (+st.confirmUnder || 0)) return true;
     return new Promise((resolve) => {
-      const d = document.createElement('dialog');
-      d.className = 'spend-dlg confirm-dlg';
-      d.setAttribute('aria-label', title);
-      d.innerHTML = `<div class="sd-head"><h2>${esc(title)}</h2></div>` +
+      const d = inlinePanel('', title);
+      d.innerHTML = `<h3>${esc(title)}</h3>` +
         `<dl class="cf-rows">${rows.filter((r) => r && r[1] != null && r[1] !== '').map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}` +
         `<dt>Estimated total</dt><dd class="cf-total">${money(total)}</dd></dl>` +
         (note ? `<p class="sd-note">${esc(note)}</p>` : '') +
         (first ? '<p class="cf-warn" role="alert"><b>Heads up:</b> this charges real money to your OpenRouter key. The monthly cap in Settings stops paid calls once it is reached.</p>' : '') +
-        `<div class="cf-act"><button class="btn" data-no type="button">Cancel</button><button class="btn primary" data-yes type="button">Confirm · ${money(total)}</button></div>`;
-      document.body.append(d);
-      const done = (v) => { d.close(); d.remove(); if (v) ls.set('paidOk', true); resolve(v); };
+        `<div class="cf-act"><button class="btn primary" data-yes type="button">Confirm · ${money(total)}</button><button class="btn" data-no type="button">Cancel</button></div>`;
+      const done = (v) => { d.remove(); if (v) ls.set('paidOk', true); resolve(v); };
+      d._cancel = () => done(false);
       d.querySelector('[data-yes]').onclick = () => done(true);
       d.querySelector('[data-no]').onclick = () => done(false);
-      d.addEventListener('cancel', (e) => { e.preventDefault(); done(false); });
-      d.showModal();
-      d.querySelector('[data-yes]').focus();
+      d.addEventListener('keydown', (e) => { if (e.key === 'Escape') done(false); });
+      d.querySelector('[data-yes]').focus({ preventScroll: true });
     });
   };
 
@@ -78,12 +92,10 @@
     let plan = { ...res.plan };
     const totalOf = (p) => { const m = map[p.model]; return (m ? S.rate(m, p.resolution, p.audio) * p.duration : 0) * n + (p.pictureFirst ? 0.02 * n : 0); };
     return new Promise((resolve) => {
-      const d = document.createElement('dialog');
-      d.className = 'spend-dlg confirm-dlg director-dlg';
-      d.setAttribute('aria-label', title);
+      const d = inlinePanel('director-dlg', title);
       const paint = () => {
         const m = map[plan.model] || { name: plan.model }, total = totalOf(plan), over = res.budget && total > res.budget + 1e-9;
-        d.innerHTML = `<div class="sd-head"><h2>🧠 ${esc(title)}</h2></div>
+        d.innerHTML = `<h3>🧠 ${esc(title)}</h3>
           <p class="dir-why">${esc(plan.reason || '')}</p>
           <dl class="cf-rows"><dt>Model</dt><dd>${esc(m.name)} <span class="tier ${esc(m.tier || '')}">${S.tierLabel(m.tier)}</span> · quality ${m.q || '?'}/10</dd>
           <dt>Length</dt><dd>${plan.duration} s${n > 1 ? ' × ' + n : ''}</dd><dt>Resolution</dt><dd>${esc(plan.resolution)}</dd>
@@ -95,7 +107,7 @@
           ${(plan.alternatives || []).length ? `<div class="dir-alts"><span class="meta">Or switch to:</span>${plan.alternatives.map((a, i) => `<button type="button" class="btn" data-alt="${i}">${esc(a.name || a.model)} · ${money(totalOf({ ...plan, model: a.model, resolution: (map[a.model] || {}).res && map[a.model].res.includes(plan.resolution) ? plan.resolution : ((map[a.model] || {}).res || [])[0] }))}<small>${esc(a.why || '')}</small></button>`).join('')}</div>` : ''}
           <p class="meta">Decided by ${res.source === 'brain' ? esc(res.brain || 'the AI') + ` (${money(res.brainCost, 4)})` : 'the built-in rules (the AI brain did not answer)'} from ${res.candidates} models.</p>
           ${first ? '<p class="cf-warn" role="alert"><b>Heads up:</b> this charges real money to your account. The monthly cap in Settings stops paid calls once it is reached.</p>' : ''}
-          <div class="cf-act"><button class="btn" data-no type="button">Cancel</button><button class="btn primary" data-yes type="button">Confirm · ${money(total)}</button></div>`;
+          <div class="cf-act"><button class="btn primary" data-yes type="button">Confirm · ${money(total)}</button><button class="btn" data-no type="button">Cancel</button></div>`;
         d.querySelectorAll('[data-alt]').forEach((b) => (b.onclick = () => {
           const a = plan.alternatives[+b.dataset.alt], am = map[a.model];
           const prev = { model: plan.model, name: (map[plan.model] || {}).name, why: 'The Director’s first choice' };
@@ -108,9 +120,10 @@
         d.querySelector('[data-yes]').onclick = () => done(plan);
         d.querySelector('[data-no]').onclick = () => done(null);
       };
-      const done = (v) => { d.close(); d.remove(); if (v) ls.set('paidOk', true); resolve(v); };
-      d.addEventListener('cancel', (e) => { e.preventDefault(); done(null); });
-      document.body.append(d); paint(); d.showModal();
+      const done = (v) => { d.remove(); if (v) ls.set('paidOk', true); resolve(v); };
+      d._cancel = () => done(null);
+      d.addEventListener('keydown', (e) => { if (e.key === 'Escape') done(null); });
+      paint();
     });
   };
 
