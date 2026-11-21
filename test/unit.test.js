@@ -185,10 +185,12 @@ test("providers: OpenRouter unless a cheaper keyed route exists; fal and BytePlu
     delete process.env.FAL_KEY; delete process.env.BYTEPLUS_KEY;
     assert.equal(providers.pickRoute("kwaivgi/kling-v3.0-pro").provider, "openrouter");
     process.env.FAL_KEY = "k"; process.env.BYTEPLUS_KEY = "b";
-    assert.equal(providers.pickRoute("kwaivgi/kling-v3.0-pro").provider, "fal");
+    assert.equal(providers.pickRoute("kwaivgi/kling-v3.0-pro").provider, "openrouter"); // same price: stay on OpenRouter
+    assert.equal(providers.pickRoute("kwaivgi/kling-v3.0-pro", { orAvailable: false }).provider, "fal"); // OpenRouter dropped Kling
+    assert.equal(providers.pickRoute("kwaivgi/kling-v3.0-pro", { orAvailable: false }).price, 0.14);
     assert.equal(providers.pickRoute("bytedance/seedance-2.0-fast").provider, "byteplus");
     assert.equal(providers.pickRoute("google/veo-3.1-lite").provider, "openrouter");
-    process.env.FAL_KLING_FACTOR = "1.4"; // pricier than OpenRouter: only used when OpenRouter lacks the model
+    process.env.FAL_KLING_FACTOR = "1.4"; // not cheaper than OpenRouter: only used when OpenRouter lacks the model
     assert.equal(providers.pickRoute("kwaivgi/kling-v3.0-pro").provider, "openrouter");
     assert.equal(providers.pickRoute("kwaivgi/kling-v3.0-pro", { orAvailable: false }).provider, "fal");
     delete process.env.FAL_KLING_FACTOR;
@@ -204,10 +206,12 @@ test("providers: OpenRouter unless a cheaper keyed route exists; fal and BytePlu
       if (url.endsWith("/contents/generations/tasks/t9")) return json({ status: "running" });
       return json({}, 404);
     };
-    const f = await providers.submit(providers.pickRoute("kwaivgi/kling-v3.0-pro"), { prompt: "p", duration: 5, aspect_ratio: "9:16", frame_images: [{ frame_type: "first_frame", image_url: { url: "data:x" } }] }, fake);
+    const f = await providers.submit(providers.pickRoute("kwaivgi/kling-v3.0-pro", { orAvailable: false }), { prompt: "p", duration: 5, aspect_ratio: "9:16", frame_images: [{ frame_type: "first_frame", image_url: { url: "data:x" } }, { frame_type: "last_frame", image_url: { url: "data:y" } }] }, fake, { negative: "extra fingers" });
+    assert.equal(calls[0][1].end_image_url, "data:y");
+    assert.equal(calls[0][1].negative_prompt, "extra fingers");
     assert.equal(f.id, "fal_r1");
     assert.match(calls[0][0], /image-to-video/);
-    assert.equal(calls[0][1].image_url, "data:x");
+    assert.equal(calls[0][1].start_image_url, "data:x");
     assert.deepEqual(await providers.poll(f.id, f.job, fake), { status: "completed", videoUrl: "https://cdn/v.mp4" });
     const b = await providers.submit(providers.pickRoute("bytedance/seedance-2.0-fast"), { prompt: "p", duration: 4, resolution: "720p", aspect_ratio: "9:16" }, fake);
     assert.equal(b.id, "bp_t9");

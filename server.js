@@ -16,7 +16,7 @@ const { startCleanup } = require("./lib/cleanup");
 const modelsLib = require("./lib/models");
 const { createHistory } = require("./lib/history");
 const providers = require("./lib/providers");
-const { createThemes, themeText, qualityText } = require("./lib/themes");
+const { createThemes, themeText, qualityText, NEGATIVE } = require("./lib/themes");
 
 // Tiny .env loader (first, so every setting below can come from .env)
 try {
@@ -401,7 +401,7 @@ const server = http.createServer(async (req, res) => {
       const submit = async () => {
         if (route.provider !== "openrouter") {
           try {
-            const out = await providers.submit(route, body);
+            const out = await providers.submit(route, body, fetch, { negative: [b.quality !== false && NEGATIVE, theme && theme.negative, b.negative].filter(Boolean).join(", ") });
             extJob = out.job;
             return { r: { ok: true, status: 202 }, j: { id: out.id, status: "pending" } };
           } catch (e) { return { r: { ok: false, status: e.status || 502 }, j: { error: { message: `${route.provider}: ${e.message}` } } }; }
@@ -423,7 +423,7 @@ const server = http.createServer(async (req, res) => {
       if (!r.ok) return send(res, r.status, { error: j.error?.message || JSON.stringify(j) });
       const feature = pageFeature(req);
       // estimated price for routes that don't report cost (OpenRouter's own figure replaces it when it does)
-      const rate = (live.price[body.resolution || live.res[0]] || [0, 0])[body.generate_audio === false ? 1 : 0] * (route.factor || 1);
+      const rate = route.price != null ? route.price : (live.price[body.resolution || live.res[0]] || [0, 0])[body.generate_audio === false ? 1 : 0] * (route.factor || 1);
       jobs.set(j.id, { startedAt: Date.now(), status: j.status || "pending", polling_url: j.polling_url, model, feature, ...(extJob || {}), estimate: +(rate * (body.duration || modelsLib.defaultDur(live))).toFixed(4) });
       history.put(j.id, { kind: FEATURE_KIND[feature] || "clip", title: String(b.title || b.prompt).slice(0, 140), model, duration: body.duration, res: body.resolution, status: "pending", provider: route.provider,
         url: `/api/video/${j.id}`, thumb: `/api/video/${j.id}/thumb.jpg`, retry: { endpoint: "/api/generate", body: retryBody(b) } });
@@ -739,7 +739,11 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "GET" && url.pathname === "/api/models") {
       const all = await liveModels();
-      const out = Object.values(all).filter((x) => !x.hidden).map((x) => ({ ...x, defaultDur: modelsLib.defaultDur(x), notes: modelsLib.notes(x), route: providers.pickRoute(x.id, { orAvailable: x.live !== false }).provider }))
+      const out = Object.values(all).filter((x) => !x.hidden).map((x) => {
+        const rt = providers.pickRoute(x.id, { orAvailable: x.live !== false });
+        const price = rt.price != null ? Object.fromEntries(x.res.map((r) => [r, [rt.price, rt.price]])) : rt.factor !== 1 ? Object.fromEntries(Object.entries(x.price).map(([r, p]) => [r, p.map((v) => +(v * rt.factor).toFixed(4))])) : x.price;
+        return { ...x, price, defaultDur: modelsLib.defaultDur(x), notes: modelsLib.notes(x), route: rt.provider };
+      })
         // a model OpenRouter no longer lists (and no other provider has a key for) can't be generated: leave it out
         .filter((x) => x.live !== false || x.route !== "openrouter");
       return send(res, 200, { models: out, default: modelsLib.DEFAULT_MODEL, providers: providers.configured() });
