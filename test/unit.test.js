@@ -284,3 +284,67 @@ test("enhance: filter chain only upscales, in the right orientation", () => {
   assert.doesNotMatch(enhanceFilter({ upscale: "720p" }, 1080, 1920), /scale=/); // never shrinks
   assert.equal(enhanceFilter({ upscale: "none", sharpen: false, denoise: false }, 480, 854), "format=yuv420p");
 });
+
+// ---------- the Director ----------
+const D = require("../lib/director");
+// a small live list: one known model, two new ones (one an edit model that must be left out)
+const LIVE = [
+  { id: "google/veo-3.1-fast", supported_durations: [4, 6, 8], supported_resolutions: ["720p", "1080p"], supported_aspect_ratios: ["9:16", "16:9"], supported_frame_images: ["first_frame", "last_frame"] },
+  { id: "x-ai/grok-imagine-video-1.5-lite", supported_durations: [1, 2, 3, 4, 5, 6], supported_resolutions: ["480p", "720p"], supported_aspect_ratios: ["9:16"], supported_frame_images: ["first_frame"] },
+  { id: "acme/newvid-2", name: "Acme: NewVid 2", description: "Cinematic realistic people and faces", generate_audio: true, supported_durations: [5, 10], supported_resolutions: ["720p"], supported_aspect_ratios: ["9:16", "16:9"], supported_frame_images: ["first_frame"] },
+  { id: "acme/video-edit-1", supported_durations: [5], supported_resolutions: ["720p"], supported_aspect_ratios: ["9:16"] },
+];
+const PRICES = { "google/veo-3.1-fast": { "720p": 0.08, audio: { "720p": 0.1 } }, "x-ai/grok-imagine-video-1.5-lite": { "480p": 0.02, "720p": 0.03 }, "acme/newvid-2": { "720p": 0.05, audio: { "720p": 0.05 } }, "acme/video-edit-1": { "720p": 0.03 } };
+const CAT = () => modelsLib.merge(LIVE, PRICES);
+const avail = (m) => m.live !== false;
+
+test("catalog: new live models join automatically with a tier and tags; edit models stay out", () => {
+  const c = CAT();
+  assert.ok(c["acme/newvid-2"]);
+  assert.equal(c["acme/newvid-2"].name, "NewVid 2");
+  assert.equal(c["acme/newvid-2"].tier, "draft"); // $0.05/s at 720p
+  assert.ok(c["acme/newvid-2"].tags.includes("faces") && c["acme/newvid-2"].tags.includes("realism"));
+  assert.equal(c["acme/video-edit-1"], undefined);
+  assert.equal(c["google/veo-3.1-fast"].q, 9);
+});
+
+test("director: brain plan is checked, snapped and costed by the server; rubbish falls back to the rules", async () => {
+  const c = CAT();
+  const req = { page: "clip", prompt: "Close-up of a woman smiling", aspect: "9:16", budget: 1 };
+  const brain = async () => ({ text: JSON.stringify({ model: "google/veo-3.1-fast", duration: 5, resolution: "4K", audio: true, pictureFirst: true, reason: "faces", alternatives: [{ model: "nope/x" }, { model: "acme/newvid-2", why: "cheaper" }], total: 0.01 }), cost: 0.004 });
+  const out = await D.decide(req, { catalog: c, available: avail, callBrain: brain });
+  assert.equal(out.source, "brain");
+  assert.equal(out.plan.duration, 4); // 5 s snapped to an allowed length (4 or 6, nearest first)
+  assert.equal(out.plan.resolution, "720p"); // 4K isn't offered
+  assert.equal(out.cost.total, 0.42); // server's own maths: 4 s x $0.10 + $0.02 picture (the brain's 0.01 is ignored)
+  assert.deepEqual(out.plan.alternatives.map((a) => a.model), ["acme/newvid-2"]); // unknown model dropped
+  const bad = await D.decide(req, { catalog: c, available: avail, callBrain: async () => ({ text: "sorry, no JSON" }) });
+  assert.equal(bad.source, "rules");
+  assert.ok(c[bad.plan.model]);
+  const down = await D.decide(req, { catalog: c, available: avail, callBrain: async () => { throw new Error("down"); } });
+  assert.equal(down.source, "rules");
+  assert.equal(down.brainError, "down");
+});
+
+test("director: budget fit swaps or skips the least visible things first and stays under budget", async () => {
+  const c = CAT();
+  const scenes = [{ prompt: "Wide skyline at dusk", seconds: 4 }, { prompt: "Close-up of her face as the flash goes off", seconds: 4, key: true }, { prompt: "Wide shot of a taxi in the rain", seconds: 4 }];
+  const brain = async () => ({ text: JSON.stringify({ resolution: "720p", pictureFirst: true, scenes: scenes.map((s, i) => ({ i, model: "google/veo-3.1-fast", duration: 4 })) }) });
+  const out = await D.decide({ page: "story", aspect: "9:16", budget: 0.6, scenes }, { catalog: c, available: avail, callBrain: brain });
+  assert.ok(out.cost.total <= 0.6 + 1e-9, "fits the budget: " + out.cost.total);
+  assert.equal(out.plan.scenes[1].model, "google/veo-3.1-fast"); // the face close-up keeps the best model
+  assert.ok(out.warnings.length > 0);
+  // rules only: leftover budget upgrades the key close-up first
+  const rules = await D.decide({ page: "story", aspect: "9:16", budget: 0.6, scenes }, { catalog: c, available: avail, callBrain: async () => { throw new Error("x"); } });
+  assert.ok(rules.cost.total <= 0.6 + 1e-9);
+  assert.equal(rules.plan.scenes[1].model, "google/veo-3.1-fast");
+});
+
+test("director: page limits decide which models can be used", () => {
+  const c = CAT();
+  const ids = (req) => D.candidates(c, req, avail).map((m) => m.id).sort();
+  assert.deepEqual(ids({ page: "clip", aspect: "16:9" }), ["acme/newvid-2", "google/veo-3.1-fast"]); // Grok Lite has no 16:9 here
+  assert.ok(!ids({ page: "clip", aspect: "9:16", audio: true }).includes("x-ai/grok-imagine-video-1.5-lite")); // silent
+  assert.deepEqual(ids({ page: "motion", aspect: "9:16" }), []); // nothing here can copy a reference video
+  assert.ok(D.needs("Close-up of her face").closeup && D.needs("a girl dances").faces && !D.needs("a skyline").faces);
+});

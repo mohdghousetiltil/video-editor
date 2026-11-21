@@ -87,6 +87,7 @@
         <option value="budget">💰 Budget: fixed budget, short clips slowed and held to fit</option>
         <option value="balanced" selected>⚖ Balanced: cheap drafts + better key scenes, 720p</option>
         <option value="best">💎 Best: sharpest models, 720p</option>
+        <option value="auto">🧠 Auto (Director): best quality within your budget</option>
         <option value="custom">🛠 Custom (use Advanced settings)</option>
       </select></label>
       <label>Length<select id="quickLen"><option value="15">15 s</option><option value="30" selected>30 s</option><option value="45">45 s</option><option value="60">60 s</option></select></label>
@@ -94,6 +95,8 @@
       <label>Main character (optional)<select id="castInf"><option value="">Invent from the story</option></select></label>
     </div>
     <div class="warnbox" id="budgetWarn" hidden></div>
+    <label id="autoBudgetRow" hidden style="max-width:260px">🧠 Director budget for the whole story ($)<input id="autoBudget" inputmode="decimal" value="2.00"></label>
+    <div class="dir-note" id="dirNote" hidden aria-live="polite"></div>
     <label class="lockrow"><input type="checkbox" id="lock" checked> <span>🔒 <b>Keep characters consistent</b>: AI draws one character sheet, then starts every scene from a picture made from it, so faces, hair and clothes stay the same across the video. Adds about $0.02 per scene.</span></label>
     <div class="meta" id="presetNote" style="margin:8px 0 12px"></div>
     <div class="actions" style="display:flex;gap:10px;flex-wrap:wrap">
@@ -193,7 +196,10 @@ const PRICE={
 const MIN={'x-ai/grok-imagine-video-1.5-lite':1,'heygen/heygen-video-1':5};
 const MAX={}, DURS={};
 const S=window.studio;
+let CAT={};
 S.models().then(({map})=>{
+  CAT=map;
+  for(const [id,x] of Object.entries(map)){ if(!PRICE[id]) PRICE[id]={}; x.res.forEach(r=>{ if(x.price[r]) PRICE[id][r]=x.price[r][1]; }); if(x.durs.length){ DURS[id]=x.durs; MIN[id]=x.durs[0]; MAX[id]=x.durs[x.durs.length-1]; } }
   for(const m of Object.keys(PRICE)){ const x=map[m]; if(!x) continue;
     ['480p','720p'].forEach(r=>{ if(x.price[r]) PRICE[m][r]=x.price[r][1]; });
     if(x.durs.length){ DURS[m]=x.durs; MIN[m]=x.durs[0]; MAX[m]=x.durs[x.durs.length-1]; }
@@ -205,15 +211,16 @@ const BUDGET_VIDEO='x-ai/grok-imagine-video-1.5-lite', BUDGET_RESERVE=0.005; // 
 // character lock: one sheet (~$0.01) + per scene a first frame (~$0.01) and the video model reading it (~$0.01)
 const LOCK_SHEET=0.01, LOCK_SCENE=0.02;
 const STILL_COST=0.02; // one storyboard picture + the video model reading it
-const boardScenes=()=>scenes.map((s,i)=>i).filter(i=>!(i>0&&scenes[i].continues&&$('chain').checked));
+const boardScenes=()=>scenes.map((s,i)=>i).filter(i=>!scenes[i].noPicture&&!(i>0&&scenes[i].continues&&$('chain').checked));
 const stillCost=()=>$('pictureFirst')&&$('pictureFirst').checked?boardScenes().filter(i=>!scenes[i].still).length*STILL_COST:0;
 const lockCost=()=>$('lock').checked?LOCK_SHEET+($('pictureFirst')&&$('pictureFirst').checked?0:boardScenes().length*LOCK_SCENE):0;
 const minSec=m=>MIN[m]||4, maxSec=m=>MAX[m]||15;
-const NAME=m=>$('cheap').querySelector(`option[value="${m}"]`)?.textContent.split(' (')[0]||$('good').querySelector(`option[value="${m}"]`)?.textContent.split(' (')[0]||m;
+const NAME=m=>(CAT[m]&&CAT[m].name)||$('cheap').querySelector(`option[value="${m}"]`)?.textContent.split(' (')[0]||$('good').querySelector(`option[value="${m}"]`)?.textContent.split(' (')[0]||m;
 let scenes=[];
 
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')}
-function models(){const set=new Set([...$('cheap').options,...$('good').options].map(o=>o.value));return [...set]}
+// the cheap / quality lists, plus any model the Director chose for a scene
+function models(){const set=new Set([...$('cheap').options,...$('good').options].map(o=>o.value).concat(scenes.map(s=>s.model)));return [...set]}
 
 function render(){
   $('scenes').innerHTML=scenes.map((s,i)=>`
@@ -225,6 +232,7 @@ function render(){
       ${i>0?`<label style="flex-direction:row;align-items:center;gap:6px;margin-bottom:6px"><input type="checkbox" data-f="continues" ${s.continues?'checked':''} style="width:auto"> ↪ Start from previous scene's last frame</label>`:''}
       <textarea data-f="prompt">${esc(s.prompt)}</textarea>
       <textarea data-f="narration" placeholder="Narration spoken in this scene (leave empty for silence)" style="min-height:48px;margin-top:6px;border-color:#2f3550">${esc(s.narration||'')}</textarea>
+      ${s.dir?`<div class="dir">🧠 ${esc(NAME(s.model))}${s.res&&s.res!==$('res').value?' · '+s.res:''}: ${esc(s.dir)}</div>`:''}
       <div class="meta" data-nw>${nwText(s)}</div>
       <div class="bar"><div class="fill" id="f${i}"></div></div><div class="meta" id="m${i}" aria-live="polite"></div><div id="r${i}"></div>
     </div>`).join('');
@@ -255,7 +263,8 @@ function nwText(s){
 function narCost(){ if(!$('narOn').checked) return 0; const p=TTS[$('ttsModel').value]?.perSec||0; return scenes.reduce((a,s)=>a+((s.narration||'').trim()?dur(s)*p:0),0); }
 // a length the scene's model really accepts (e.g. Veo only 4, 6 or 8 s)
 function dur(s){const d=Math.max(minSec(s.model),Math.min(maxSec(s.model),Math.round(s.seconds)||minSec(s.model))), a=DURS[s.model]; return a&&a.length?a.reduce((b,n)=>Math.abs(n-d)<Math.abs(b-d)?n:b,a[0]):d}
-function price(s){return (PRICE[s.model]?.[$('res').value]||0)*dur(s)}
+const resOf=s=>s.res&&PRICE[s.model]?.[s.res]!=null?s.res:$('res').value;
+function price(s){const p=PRICE[s.model]||{}; return (p[resOf(s)]??p['720p']??Object.values(p)[0]??0)*dur(s)}
 function totals(){
   const nc=narCost(), lc=lockCost()+stillCost(), t=scenes.reduce((a,s)=>a+price(s),0)+nc+lc, d=scenes.reduce((a,s)=>a+dur(s),0);
   budgetNote();
@@ -309,6 +318,8 @@ const PRESETS={
   budget:{budget:true,res:'480p',cheap:BUDGET_VIDEO,good:BUDGET_VIDEO},
   balanced:{budget:false,res:'720p',cheap:'x-ai/grok-imagine-video-1.5-lite',good:'bytedance/seedance-2.0-mini'},
   best:{budget:false,res:'720p',cheap:'bytedance/seedance-2.0-mini',good:'bytedance/seedance-2.0-fast'},
+  // 🧠 Auto starts from Balanced; the Director then replaces every scene's model after planning
+  auto:{budget:false,res:'720p',cheap:'x-ai/grok-imagine-video-1.5-lite',good:'bytedance/seedance-2.0-mini',auto:true},
 };
 function applyPreset(){
   const p=PRESETS[$('preset').value];
@@ -318,6 +329,8 @@ function applyPreset(){
 }
 function presetNote(){
   const p=PRESETS[$('preset').value], secs=+$('quickLen').value||30;
+  $('autoBudgetRow').hidden=$('preset').value!=='auto';
+  if($('preset').value==='auto'){ $('budgetWarn').hidden=true; $('presetNote').textContent=`🧠 After planning, the Director picks a model for every scene from all available models: the best quality where it shows (faces, close-ups, key scenes), cheaper models elsewhere, within ${S.money(parseFloat($('autoBudget').value)||2)} in total. You see every choice and the total before paying.`; return; }
   if(!p){ $('presetNote').textContent='Custom: your Advanced settings are used as they are.'; return; }
   const n=Math.max(2,Math.round(secs/6)), keys=Math.max(1,Math.round(n*.3));
   const est=p.budget?+$('budgetAmt').value||0.15:
@@ -365,6 +378,7 @@ async function planScenes(){
     $('bible').value=j.bible||'';
     scenes=j.scenes.map(s=>({title:s.title,prompt:s.prompt,seconds:Math.round(s.seconds)||6,key:!!s.key,continues:!!s.continues,narration:s.narration||'',model:s.key?$('good').value:$('cheap').value}));
     applyBudget();
+    if($('preset').value==='auto') await directScenes();
     jobs=[]; runP=[]; projFinal=null; projCast=null; showCast(); projId='p'+Date.now().toString(36); $('outPanel').classList.add('hidden');
     $('planPanel').classList.remove('hidden'); render(); updateGen(); saveNow(); ok=true;
   }catch(e){$('err').textContent=e.message}
@@ -372,6 +386,24 @@ async function planScenes(){
   return ok;
 }
 $('plan').onclick=()=>{ applyPreset(); planScenes(); };
+// 🧠 the Director: a model, length and resolution for every scene, plus picture first / connect, within the budget
+async function directScenes(){
+  $('dirNote').hidden=false; $('dirNote').textContent='🧠 The Director is choosing a model for every scene…';
+  try{
+    const budget=parseFloat($('autoBudget').value)||undefined;
+    const r=await S.director({page:'story',aspect:$('aspect').value,budget,style:S.theme&&S.theme()?undefined:$('style').selectedOptions[0]?.textContent,
+      scenes:scenes.map(s=>({title:s.title,prompt:s.prompt,seconds:s.seconds,key:s.key}))});
+    const p=r.plan;
+    p.scenes.forEach(d=>{ const s=scenes[d.i]; if(!s) return; s.model=d.model; s.seconds=d.duration; s.res=d.resolution; s.dir=d.reason||''; if(d.picture===false) s.noPicture=true; });
+    if(['480p','720p'].includes(p.resolution)) $('res').value=p.resolution;
+    $('pictureFirst').checked=!!p.pictureFirst; $('connect').checked=p.connect!==false;
+    $('dirNote').innerHTML=`🧠 <b>Director:</b> ${esc(p.reason||'')}<br>Video ${S.money(r.cost.video)} + pictures ${S.money(r.cost.still)} = <b>${S.money(r.cost.total)}</b>${r.budget?' of your '+S.money(r.budget)+' budget':''} · decided by ${r.source==='brain'?esc(r.brain)+' ('+S.money(r.brainCost,4)+')':'the built-in rules'} from ${r.candidates} models.`+
+      (r.warnings.length?'<br><span class="meta">'+r.warnings.map(esc).join('<br>')+'</span>':'');
+    window.dispatchEvent(new Event('spend-changed'));
+  }catch(e){ $('dirNote').textContent='🧠 The Director could not plan ('+e.message+'), so the Balanced models are used.'; }
+}
+$('autoBudget').addEventListener('change',()=>{ const v=Math.max(0.1,Math.min(50,parseFloat($('autoBudget').value)||2)); $('autoBudget').value=v.toFixed(2); presetNote(); });
+S.directorBudget('story').then(b=>{ if(!S.formValue('story','autoBudget')) $('autoBudget').value=(+b).toFixed(2); presetNote(); });
 // one button: plan, lock the cast, generate every scene, stitch
 $('auto').onclick=async()=>{
   if(!$('script').value.trim()) return $('err').textContent='Paste a story first.';
@@ -449,7 +481,7 @@ async function run(i){
       else if(s._frame&&!prev) $('r'+i).innerHTML=`<img class="kf" src="${s._frame}" alt="First frame">`;
       const r=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
         model:s.model,prompt:(bible?bible+' ':'')+s.prompt+(style?' Visual style: '+style:''),duration:dur(s),
-        resolution:$('res').value,aspect_ratio:$('aspect').value,generate_audio:false,frame_from_job:prev,seed:storySeed(),title:'Scene '+(i+1)+': '+(s.title||''),
+        resolution:resOf(s),aspect_ratio:$('aspect').value,generate_audio:false,frame_from_job:prev,seed:storySeed(),title:'Scene '+(i+1)+': '+(s.title||''),
         ...(pf?{still_id:s.still.id,last_still_id:endStill}:s._frame&&!prev?{frame_image:s._frame,frame_note:'🔒 Started from the locked character frame.'}:{})})});
       const j=await r.json(); if(!r.ok) throw new Error(j.error||'failed');
       job.id=j.id; note=j.note?'⚠ '+j.note+' · ':(prev?'↪ from previous last frame · ':pf?'🖼 from its picture'+(endStill?' → next picture':'')+' · ':''); save();
@@ -654,7 +686,7 @@ fetch('/api/stories').then(r=>r.json()).then(j=>{
   try{ localStorage.removeItem(HKEY); }catch{}
   HIST.sort((a,b)=>b.ts-a.ts); renderHist();
 }).catch(()=>renderHist());
-S.persistForm('story',['script','preset','quickLen','quickLook','castInf','lock','budgetAmt']);
+S.persistForm('story',['script','preset','quickLen','quickLook','castInf','lock','budgetAmt','autoBudget']);
 S.templatePicker($('tplBox'),'story',t=>{ $('script').value=t.prompt; $('script').dispatchEvent(new Event('input')); });
 S.presetChips($('fmtPresets'),p=>{
   $('quickLen').value=String(p.len); $('aspect').value=p.aspect; if($('preset').value==='budget'||$('preset').value==='custom') $('preset').value='balanced';

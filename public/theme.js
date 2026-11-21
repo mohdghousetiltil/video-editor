@@ -129,8 +129,14 @@
   S.openThemes = openDialog;
 
   // ---------- Enhance: free upscale / sharpen / denoise / smooth on the server ----------
-  S.mountEnhance = (el, { src } = {}) => {
+  // auto: { upscale, smooth } starts it straight away (the Director planned it)
+  S.mountEnhance = (el, { src, auto } = {}) => {
     if (!el || !src) return;
+    if (auto) setTimeout(() => {
+      box.querySelector('details').open = true;
+      $o('upscale').value = auto.upscale || '720p'; $o('smooth').checked = !!auto.smooth;
+      box.querySelector('[data-go]').click();
+    });
     const box = document.createElement('div');
     box.className = 'enh';
     box.innerHTML = `<details><summary>✨ Enhance (free, on your server)</summary>

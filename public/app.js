@@ -134,19 +134,22 @@
   let spend = null;
   const paintSpend = (j) => {
     spend = j;
-    const or = j.openrouter, total = or && or.month != null ? or.month : j.local.total;
+    // this month across every provider (OpenRouter's own figure + fal.ai), the same number the cap checks
+    const or = j.openrouter, total = j.capUsed != null ? j.capUsed : or && or.month != null ? or.month : j.local.total;
     sbSpend.querySelector('.spend-v').textContent = money(total, 2);
     chip.querySelector('b').textContent = money(total, 2);
     // the bar shows the monthly cap from Settings when there is one, else the API key's own limit
     const cap = j.cap > 0 ? j.cap : 0;
     const lim = cap || (or && or.keyLimit), used = cap ? total : lim ? lim - (or.keyRemaining ?? lim) : 0;
+    const falBal = j.fal && j.fal.balance != null ? ' · fal ' + money(j.fal.balance, 2) : '';
     const bar = sbSpend.querySelector('.spend-bar');
     bar.hidden = !lim;
     if (lim) { const p = Math.min(100, (used / lim) * 100); bar.firstChild.style.width = p + '%'; bar.classList.toggle('hot', p > 85); }
     // one meaning per number, same labels as the dialog: cap left (the app's own monthly cap), else OpenRouter credit left
-    sbSpend.querySelector('.spend-s').textContent = cap ? money(Math.max(0, cap - total), 2) + ' cap left of ' + money(cap, 0)
-      : or && or.balance != null ? money(or.balance, 2) + ' credit left' : 'tap for details';
-    sbSpend.title = 'OpenRouter month total ' + money(total, 2) + (or && or.balance != null ? ' · credit left ' + money(or.balance, 2) : '') + (cap ? ' · app cap ' + money(cap, 0) : '');
+    sbSpend.querySelector('.spend-s').textContent = (cap ? money(Math.max(0, cap - total), 2) + ' cap left of ' + money(cap, 0)
+      : or && or.balance != null ? money(or.balance, 2) + ' credit left' : 'tap for details') + falBal;
+    sbSpend.title = 'This month, all providers ' + money(total, 2) + (or && or.month != null ? ' · OpenRouter ' + money(or.month, 2) : '') + (or && or.balance != null ? ' · OpenRouter credit left ' + money(or.balance, 2) : '') +
+      (j.fal && j.fal.balance != null ? ' · fal.ai credit left ' + money(j.fal.balance, 2) : '') + (cap ? ' · app cap ' + money(cap, 0) : '');
   };
   const loadSpend = (month) => fetch('/api/spend' + (month ? '?month=' + month : ''))
     .then((r) => (r.ok ? r.json() : Promise.reject()))
@@ -167,13 +170,19 @@
         <div><span>OpenRouter month total</span><b>${money(or.month, 2)}</b></div>
         <div><span>This week</span><b>${money(or.week, 2)}</b></div>
         <div><span>Today</span><b>${money(or.day, 2)}</b></div>
-        <div><span>Credit left</span><b>${money(or.balance, 2)}</b></div></div>` +
-        (j.cap > 0 ? `<div class="sd-lim"><div class="sd-lim-t"><span>App monthly cap</span><span>${money(or.month, 2)} of ${money(j.cap, 2)} used · ${money(Math.max(0, j.cap - (or.month || 0)), 2)} cap left · <a href="/settings">change</a></span></div><div class="spend-bar${(or.month || 0) / j.cap > .85 ? ' hot' : ''}"><i style="width:${Math.min(100, ((or.month || 0) / j.cap) * 100)}%"></i></div></div>`
+        <div><span>OpenRouter credit left</span><b>${money(or.balance, 2)}</b></div></div>` +
+        (j.fal ? `<div class="sd-tiles sd-fal">
+        <div><span>fal.ai this month</span><b>${money(j.fal.month != null ? j.fal.month : (L.byProvider || {}).fal || 0, 2)}</b></div>
+        <div><span>fal.ai credit left</span><b>${money(j.fal.balance, 2)}</b></div>
+        <div><span>All providers this month</span><b>${money(j.capUsed, 2)}</b></div></div>
+        <p class="sd-note">fal.ai credit comes straight from fal. ${j.fal.month != null ? 'Its month total is fal\'s own figure (admin key).' : 'Its month total is this app\'s log (fal.ai prices per second); add FAL_ADMIN_KEY for fal\'s own figure.'}</p>` : '') +
+        (j.cap > 0 ? `<div class="sd-lim"><div class="sd-lim-t"><span>App monthly cap (all providers)</span><span>${money(j.capUsed, 2)} of ${money(j.cap, 2)} used · ${money(Math.max(0, j.cap - (j.capUsed || 0)), 2)} cap left · <a href="/settings">change</a></span></div><div class="spend-bar${(j.capUsed || 0) / j.cap > .85 ? ' hot' : ''}"><i style="width:${Math.min(100, ((j.capUsed || 0) / j.cap) * 100)}%"></i></div></div>`
           : '<p class="sd-note">No monthly cap set. <a href="/settings">Set one in Settings</a> so paid calls stop at a limit you choose.</p>') +
         (lim ? `<div class="sd-lim"><div class="sd-lim-t"><span>API key limit (set at openrouter.ai)</span><span>${money(used, 2)} of ${money(lim, 2)} used · ${money(or.keyRemaining, 2)} left on key</span></div><div class="spend-bar${used / lim > .85 ? ' hot' : ''}"><i style="width:${Math.min(100, (used / lim) * 100)}%"></i></div></div>` : '') +
         `<p class="sd-note">The month total and credit come straight from OpenRouter (calendar month, UTC) and include everything this key spent, also outside this app. They are the numbers that count.</p>` : '') +
       `<h3>App log (estimate) <small>${money(L.total)} recorded by this app</small></h3>` +
-      (j.current && or.month != null && Math.abs(or.month - L.total) >= 0.01 ? `<p class="sd-note">${money(Math.abs(or.month - L.total), 2)} ${or.month > L.total ? 'not in the app log: calls made elsewhere with this key, or before the log started' : 'more in the app log than OpenRouter reports: voice costs are estimates and OpenRouter can lag a few minutes'}.</p>` : '') +
+      (L.byProvider && Object.keys(L.byProvider).length > 1 ? `<p class="sd-note">By provider: ${Object.entries(L.byProvider).map(([k, v]) => `${k === 'fal' ? 'fal.ai' : k === 'byteplus' ? 'BytePlus' : 'OpenRouter'} ${money(v)}`).join(' · ')}</p>` : '') +
+      (j.current && or.month != null && Math.abs(or.month - ((L.byProvider || {}).openrouter ?? L.total)) >= 0.01 ? `<p class="sd-note">${money(Math.abs(or.month - L.total), 2)} ${or.month > L.total ? 'not in the app log: calls made elsewhere with this key, or before the log started' : 'more in the app log than OpenRouter reports: voice costs are estimates and OpenRouter can lag a few minutes'}.</p>` : '') +
       (L.byFeature.length ? `<div class="sd-rows">${L.byFeature.map((f) => `<div class="sd-row"><span>${esc(f.feature)} <small>${f.count}×</small></span><span class="sd-track"><i style="width:${(f.cost / maxF) * 100}%"></i></span><b>${money(f.cost)}</b></div>`).join('')}</div>`
         : '<p class="sd-note">Nothing logged yet this month. Costs are recorded from now on as you make videos.</p>') +
       (L.byDay.length ? `<h3>By day</h3><div class="sd-days">${L.byDay.map((d) => `<i title="${d.day}: ${money(d.cost)}" style="height:${Math.max(4, (d.cost / maxD) * 100)}%"></i>`).join('')}</div>

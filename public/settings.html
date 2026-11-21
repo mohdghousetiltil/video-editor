@@ -81,6 +81,21 @@
   </div>
 
   <div class="panel">
+    <h2>🧠 Director (Auto)</h2>
+    <div class="grid">
+      <label>Director's brain (reads every model and plans each job)<select id="directorModel"></select></label>
+    </div>
+    <p class="meta">Default budget per job when you pick 🧠 Auto. It always aims for the best quality that fits, and you can change the budget on each page.</p>
+    <div class="grid">
+      <label>Single clip ($)<input data-db="clip" inputmode="decimal"></label>
+      <label>Whole story ($)<input data-db="story" inputmode="decimal"></label>
+      <label>UGC video ($)<input data-db="ugc" inputmode="decimal"></label>
+      <label>Per pose clip ($)<input data-db="poses" inputmode="decimal"></label>
+      <label>Copy motion ($)<input data-db="motion" inputmode="decimal"></label>
+    </div>
+  </div>
+
+  <div class="panel">
     <h2>Spending</h2>
     <div class="grid">
       <label>Monthly cap in $ ($10 by default, 0 = no cap)<input id="monthlyCap" type="number" min="0" step="1" inputmode="decimal"></label>
@@ -115,7 +130,8 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 let S = null;
 function paint() {
   document.querySelectorAll('.prov').forEach((b) => b.classList.toggle('on', b.dataset.p === S.provider));
-  for (const k of ['textModel', 'visionModel', 'imageModel', 'monthlyCap', 'keepDays', 'keepShortsDays']) if (document.activeElement !== $(k)) $(k).value = S[k];
+  for (const k of ['textModel', 'visionModel', 'imageModel', 'directorModel', 'monthlyCap', 'keepDays', 'keepShortsDays']) if (document.activeElement !== $(k)) $(k).value = S[k];
+  document.querySelectorAll('[data-db]').forEach((el) => { if (document.activeElement !== el) el.value = (+((S.directorBudget || {})[el.dataset.db] || 0)).toFixed(2); });
   if ($('voice').options.length) $('voice').value = S.voice;
   $('eggs').checked = !!S.eggs;
   $('capNote').textContent = S.monthlyCap > 0 ? 'Cap: $' + (+S.monthlyCap).toFixed(2) + ' a month. Paid buttons stop once this month reaches it.' : '⚠ No cap: nothing stops paid calls except your OpenRouter credit.';
@@ -132,7 +148,7 @@ async function save(patch) {
 }
 fetch('/api/settings').then((r) => r.json()).then((j) => {
   S = j.settings;
-  for (const k of ['textModel', 'visionModel', 'imageModel']) $(k).innerHTML = j.choices[k].map(([id, label]) => `<option value="${esc(id)}">${esc(label)}</option>`).join('');
+  for (const k of ['textModel', 'visionModel', 'imageModel', 'directorModel']) $(k).innerHTML = j.choices[k].map(([id, label]) => `<option value="${esc(id)}">${esc(label)}</option>`).join('');
   paint();
 });
 fetch('/api/shorts/voices').then((r) => r.json()).then((j) => {
@@ -145,7 +161,8 @@ fetch('/api/spend').then((r) => r.json()).then((j) => {
 }).catch(() => {});
 fetch('/api/queue').then((r) => r.json()).then((q) => { $('queue').textContent = `Render queue: ${q.active} running, ${q.waiting} waiting (${q.slots} at a time).`; }).catch(() => {});
 document.querySelectorAll('.prov').forEach((b) => b.onclick = () => save({ provider: b.dataset.p }));
-for (const k of ['textModel', 'visionModel', 'imageModel', 'voice']) $(k).addEventListener('change', () => save({ [k]: $(k).value }));
+document.querySelectorAll('[data-db]').forEach((el) => el.addEventListener('change', () => save({ directorBudget: { [el.dataset.db]: parseFloat(el.value) || 0 } })));
+for (const k of ['textModel', 'visionModel', 'imageModel', 'directorModel', 'voice']) $(k).addEventListener('change', () => save({ [k]: $(k).value }));
 for (const k of ['monthlyCap', 'keepDays', 'keepShortsDays']) $(k).addEventListener('change', () => save({ [k]: +$(k).value }));
 $('eggs').addEventListener('change', () => save({ eggs: $('eggs').checked }));
 $('confirmUnder').addEventListener('change', () => save({ confirmUnder: +$('confirmUnder').value }));

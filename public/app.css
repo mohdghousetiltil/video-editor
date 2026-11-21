@@ -512,3 +512,14 @@ button.chip.sel{color:#04121a;background:var(--acc);border-color:var(--acc)}
 .sboard.r11 .sb-img{aspect-ratio:1/1}
 .sboard .sb-cell .row2{display:flex;gap:4px}
 .sboard .sb-cell button,.sboard .sb-cell label.btn{padding:3px 6px !important;min-height:0 !important;font-size:12px !important}
+/* ---------- 🧠 Director ---------- */
+.director-dlg{width:min(640px,calc(100vw - 32px))}
+.dir-why{border-left:3px solid var(--acc);padding:6px 10px;margin:0 0 12px;background:rgba(0,229,255,.06);line-height:1.5}
+.dir-alts{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0 10px}
+.dir-alts .btn{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;font-size:13px;text-transform:none;letter-spacing:0}
+.dir-alts .btn small{color:var(--mute);font-weight:400;font-size:12px}
+.model.auto{border-color:var(--violet) !important;background:linear-gradient(135deg,rgba(139,92,255,.18),rgba(0,229,255,.06)) !important}
+.model.auto.sel{box-shadow:0 0 0 1px var(--violet),0 0 18px -2px rgba(139,92,255,.6)}
+.dir-note{border:1px solid var(--violet);padding:8px 12px;margin:8px 0;font-size:13px;line-height:1.5}
+.scene .dir{color:var(--acc2);font-size:12.5px;margin:4px 0}
+.sd-fal{margin-top:8px}

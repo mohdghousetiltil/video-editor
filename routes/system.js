@@ -3,6 +3,21 @@ const fs = require("fs");
 
 module.exports = function systemRoutes(ctx) {
   const { DATA, send, readBody, settings, spend, prices, renderSlot, getKey } = ctx;
+  // fal.ai credit left (any API key can read it) and, with an admin-scoped FAL_ADMIN_KEY, its official usage this month
+  let falCache = null;
+  async function falCredit(force) {
+    if (!force && falCache && Date.now() - falCache.t < 60000) return falCache.v;
+    const get = (u, k) => fetch(u, { headers: { Authorization: `Key ${k}` }, signal: AbortSignal.timeout(10000) }).then(async (r) => (r.ok ? r.text() : null)).catch(() => null);
+    const bal = await get("https://rest.alpha.fal.ai/billing/user_balance", process.env.FAL_KEY);
+    const v = { balance: bal != null && isFinite(+bal) ? +(+bal).toFixed(4) : null, month: null };
+    if (process.env.FAL_ADMIN_KEY) {
+      const start = new Date(); start.setUTCDate(1); start.setUTCHours(0, 0, 0, 0);
+      const u = await get(`https://api.fal.ai/v1/models/usage?expand=summary&start=${start.toISOString()}`, process.env.FAL_ADMIN_KEY);
+      try { const j = JSON.parse(u); v.month = +(j.summary || []).reduce((a, x) => a + (+x.cost || 0), 0).toFixed(4); } catch {}
+    }
+    falCache = { t: Date.now(), v };
+    return v;
+  }
   return async function handle(req, res, url) {
     if (url.pathname === "/api/settings") {
       if (req.method === "GET") return send(res, 200, { settings: settings.get(), choices: settings.CHOICES, presets: settings.PRESETS }), true;
@@ -31,7 +46,8 @@ module.exports = function systemRoutes(ctx) {
       const months = fs.existsSync(DATA) ? fs.readdirSync(DATA).map((f) => (f.match(/^spend-(\d{4}-\d{2})\.json$/) || [])[1]).filter(Boolean).sort().reverse() : [];
       const or = current && getKey() ? await spend.openrouter(url.searchParams.has("fresh")) : null;
       const cap = Number(settings.get().monthlyCap) || 0;
-      return send(res, 200, { month: m, current, openrouter: or, local: spend.summarise(spend.read(m)), months, cap }), true;
+      const fal = current && process.env.FAL_KEY ? await falCredit(url.searchParams.has("fresh")) : null;
+      return send(res, 200, { month: m, current, openrouter: or, fal, local: spend.summarise(spend.read(m)), months, cap, capUsed: current ? await spend.monthTotal() : null }), true;
     }
     if (req.method === "GET" && url.pathname === "/api/prices") return send(res, 200, { prices: await prices() }), true;
     // what's running and waiting: render slots (Story stitches, Shorts) plus video generations still in progress

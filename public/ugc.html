@@ -274,6 +274,7 @@ for(const id of ['d1','d2']){
 // lengths, resolutions and prices from the shared model table (only lengths the model accepts are offered)
 let MODELS={};
 function applyModel(){
+  if($('model').value===window.studio.AUTO){ $('modelNotes').textContent='🧠 The Director picks the model, length and resolution for a realistic person holding your product, within your budget. You see its plan before paying.'; return cost(); }
   const x=MODELS[$('model').value]; if(!x) return cost();
   const cur=+$('duration').value||8;
   $('duration').innerHTML=x.durs.filter(d=>d>=4).map(d=>`<option value="${d}">${d} s</option>`).join('');
@@ -282,12 +283,14 @@ function applyModel(){
   $('modelNotes').innerHTML=window.studio.notesHTML(x); cost();
 }
 function cost(){
+  if($('model').value===window.studio.AUTO){ $('cost').textContent='🧠 Director decides · plan and total shown before paying'; return; }
   const x=MODELS[$('model').value];
   if(x){ $('cost').textContent=window.studio.costLine(x,{res:$('res').value,dur:$('duration').value,audio:$('audio').value==='true'}).text; return; }
   const p=PRICE[$('model').value][$('res').value]||0, d=+$('duration').value||0;
   $('cost').textContent=d?`≈ $${(p*d).toFixed(2)} for ${d} s`:'—';
 }
 ['res','duration','audio'].forEach(i=>$(i).addEventListener('change',cost)); $('model').addEventListener('change',applyModel); cost();
+window.studio.addAutoOption($('model'));
 window.studio.models().then(({map})=>{ MODELS=map;
   [...$('model').options].forEach(o=>{const x=map[o.value]; if(x) o.textContent=`${x.name} (${window.studio.money(window.studio.rate(x,'720p',true),3)}/s @720p · ${window.studio.tierLabel(x.tier)})`+(o.value.includes('grok')?' - works with a saved picture':'');});
   applyModel(); });
@@ -344,8 +347,11 @@ $('go').onclick=async()=>{
   if(fm&&!startFrameData&&!$('plook').value.trim()) return $('err').textContent='Describe what the product looks like (or click Create start frame to use your product photo).';
   if(!fm&&(!imgs.d2||(!persona&&!imgs.d1))) return $('err').textContent=persona?'Add the product photo.':'Add both photos (influencer and product).';
   if(!$('prompt').value.trim()) return $('err').textContent='Write or generate a prompt first.';
+  // 🧠 Auto: the Director's approved plan sets model, length and resolution and replaces the confirmation below
+  const auto=await window.studio.autoSelect($('model'),{page:'ugc',prompt:$('prompt').value,aspect:$('aspect').value,startPicture:!!(fm&&(startFrameData||fm.id)),durSel:$('duration'),resSel:$('res'),audioSel:$('audio'),title:'Director’s plan for this UGC video'});
+  if(!auto.ok) return;
   const x=MODELS[$('model').value], c=x?window.studio.costLine(x,{res:$('res').value,dur:$('duration').value,audio:$('audio').value==='true'}):{total:0};
-  if(!(await window.studio.confirmSpend({title:'Make this UGC video?',total:c.total,rows:[['Model',x?x.name:$('model').value],['Length',$('duration').value+' s'],['Resolution',$('res').value],['Aspect',$('aspect').value],['Voice / sound',$('audio').value==='true'?'On':'Off']]}))) return;
+  if(!auto.plan&&!(await window.studio.confirmSpend({title:'Make this UGC video?',total:c.total,rows:[['Model',x?x.name:$('model').value],['Length',$('duration').value+' s'],['Resolution',$('res').value],['Aspect',$('aspect').value],['Voice / sound',$('audio').value==='true'?'On':'Off']]}))) return;
   $('go').disabled=true; show(0,'Submitting…');
   try{
     const r=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({

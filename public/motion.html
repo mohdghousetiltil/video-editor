@@ -308,6 +308,7 @@ function fillDur(sel,model,want,max){
   sel.value=String(ds.reduce((b,n)=>Math.abs(n-want)<Math.abs(b-want)?n:b,ds[0]));
 }
 function cost(){
+  if($('pModel').value===S.AUTO){ $('pCost').textContent='🧠 Director decides'; $('pCostLbl').textContent=`${sel.size} poses · plan and total shown before paying`; return 0; }
   const n=sel.size, d=+$('pDur').value||0, p=(PP[$('pModel').value]||{})[$('pRes').value]||0;
   const extra=needsLook()&&!lookFrame?0.07:0; $('pCost').textContent=n&&d?`≈ $${(n*d*p+extra).toFixed(2)} for ${n} × ${d} s`:'-'; $('pCostLbl').textContent=`Estimated total (${n} poses × ${d} s)`;
   return n*d*p+extra;
@@ -327,7 +328,9 @@ $('pGo').onclick=async()=>{
   const all=[...POSES,...custom.map(t=>['✨ '+t.slice(0,22),t])];
   const chosen=[...sel].sort((a,b)=>a-b).map(i=>all[i]); if(!chosen.length) return $('pErr').textContent='Pick at least one pose.';
   const per=(PP[$('pModel').value]||{})[$('pRes').value]||0;
-  if(!(await S.confirmSpend({title:`Make ${chosen.length} pose clip${chosen.length>1?'s':''}?`,total:cost(),rows:[['Model',MM[$('pModel').value]?.name||$('pModel').value],['Clips',`${chosen.length} × ${$('pDur').value} s`],['Resolution',$('pRes').value],['New look picture',needsLook()&&!lookFrame?'$0.07 (estimate)':'none']]}))) return;
+  const auto=await S.autoSelect($('pModel'),{page:'poses',prompt:'The person '+chosen.map(c=>c[1]).join('; '),aspect:'9:16',startPicture:true,n:chosen.length,budget:((await S.directorBudget('poses'))||0.15),durSel:$('pDur'),resSel:$('pRes'),title:`Director’s plan for ${chosen.length} pose clip${chosen.length>1?'s':''}`});
+  if(!auto.ok) return;
+  if(!auto.plan&&!(await S.confirmSpend({title:`Make ${chosen.length} pose clip${chosen.length>1?'s':''}?`,total:cost(),rows:[['Model',MM[$('pModel').value]?.name||$('pModel').value],['Clips',`${chosen.length} × ${$('pDur').value} s`],['Resolution',$('pRes').value],['New look picture',needsLook()&&!lookFrame?'$0.07 (estimate)':'none']]}))) return;
   $('pGo').disabled=true; $('pStitch').classList.add('hidden'); $('pReel').innerHTML='';
   if(needsLook()&&(!lookFrame||lookSig!==lookKey())){ try{ $('pErr').textContent=''; $('pGo').textContent='Creating the new look…'; await makeLook(); }catch(e){ $('pErr').textContent=e.message; $('pGo').disabled=false; $('pGo').textContent='Generate pose pack'; return; } $('pGo').textContent='Generate pose pack'; }
   cards=chosen.map((c,k)=>({k,label:c[0],action:c[1],id:null,done:false,failed:false}));
@@ -407,6 +410,7 @@ function autoPrompt(){
     : `@Image1 is the permanent character identity reference (${d}). @Video1 is the motion reference. Generate a vertical 9:16 video of the exact character from @Image1 performing the same movements, body positions, timing and rhythm shown in @Video1, as closely as possible. Preserve the character's face, hairstyle, skin tone, proportions, clothing and art style from @Image1. Do not adopt the identity of the person in @Video1. Natural anatomy, stable clothing, smooth realistic motion, full-body framing.`;
 }
 function mcost(){
+  if(method!=='flux'&&$('mModel').value===S.AUTO){ $('mCost').textContent='🧠 Director decides (models that can copy a video)'; return 0; }
   const dur=driver?driver.duration:(+$('mDur').value||8);
   if(method==='flux') $('mCost').textContent='≈ $'+(0.03*dur).toFixed(2)+' ('+Math.round(dur)+'s)';
   else { const x=MM[$('mModel').value]; if(x){ const c=S.costLine(x,{res:$('mRes').value,dur:$('mDur').value,audio:false}); $('mCost').textContent=c.text; return c.total; }
@@ -489,8 +493,10 @@ $('mGo').onclick=async()=>{
   const p=inf($('mInf').value);
   if(method==='flux'&&!(p&&(p.desc||'').trim())) return $('mErr').textContent='This method needs a description of the influencer to swap in. Click "Describe from picture" above (or write one on the Influencers page).';
   if(method==='flux'&&/with: a person\./.test($('mPrompt').value)) return $('mErr').textContent='The prompt has no description of who to swap in. Add one before generating.';
+  const auto=method==='flux'?{ok:true,plan:null}:await S.autoSelect($('mModel'),{page:'motion',prompt:$('mPrompt').value,aspect:'9:16',durSel:$('mDur'),resSel:$('mRes'),title:'Director’s plan for copying this motion'});
+  if(!auto.ok) return;
   const mt=mcost(), outfitExtra=outfitPic&&method!=='flux'&&(!outfitLook||outfitSig!==oKey())?0.07:0;
-  if(!(await S.confirmSpend({title:'Copy this motion?',total:mt+outfitExtra,rows:[['Method',method==='flux'?'FLUX Video Edit':'Reference video'],['Model',method==='flux'?'FLUX Video Edit':(MM[$('mModel').value]?.name||$('mModel').value)],['Length',method==='flux'?Math.round(driver?driver.duration:8)+' s':$('mDur').value+' s'],['Resolution',method==='flux'?'source':$('mRes').value],['Outfit picture',outfitExtra?'$0.07 (estimate)':'none']]}))) return;
+  if(!auto.plan&&!(await S.confirmSpend({title:'Copy this motion?',total:mt+outfitExtra,rows:[['Method',method==='flux'?'FLUX Video Edit':'Reference video'],['Model',method==='flux'?'FLUX Video Edit':(MM[$('mModel').value]?.name||$('mModel').value)],['Length',method==='flux'?Math.round(driver?driver.duration:8)+' s':$('mDur').value+' s'],['Resolution',method==='flux'?'source':$('mRes').value],['Outfit picture',outfitExtra?'$0.07 (estimate)':'none']]}))) return;
   $('mGo').disabled=true;
   if(outfitPic&&method!=='flux'&&(!outfitLook||outfitSig!==oKey())){ mshow(0,'Dressing the influencer in your outfit…'); try{ await oMake(); }catch(e){ $('mErr').textContent=e.message; $('mStage').innerHTML='<div class="meta" style="padding:30px">Failed.</div>'; $('mGo').disabled=false; return; } }
   mshow(0,'Submitting…');
@@ -520,6 +526,7 @@ async function mpoll(id){
 }
 
 renderPoses(); loadInfs(); lookUi();
+S.addAutoOption($('pModel')); S.addAutoOption($('mModel'));
 S.persistForm('motion',['pModel','pDur','pRes','pExtra','mModel','mDur','mRes','drvUrl']);
 </script>
 <script src="/app.js"></script>
