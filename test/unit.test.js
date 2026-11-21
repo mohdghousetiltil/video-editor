@@ -133,3 +133,113 @@ test("cleanup: removes only old matching entries", () => {
   assert.ok(!fs.existsSync(old) && fs.existsSync(fresh) && fs.existsSync(other));
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+// ---------- fix-list additions ----------
+const modelsLib = require("../lib/models");
+const { createHistory } = require("../lib/history");
+const providers = require("../lib/providers");
+
+test("models: live list wins, only allowed lengths pass, Auto picks a short length", () => {
+  const live = [{ id: "google/veo-3.1-fast", supported_durations: [8, 4, 6], supported_resolutions: ["720p", "1080p", "4K"], supported_aspect_ratios: ["16:9", "9:16"], supported_frame_images: ["first_frame"] }];
+  const m = modelsLib.merge(live, { "google/veo-3.1-fast": { "720p": 0.08, audio: { "720p": 0.1 } } });
+  const veo = m["google/veo-3.1-fast"];
+  assert.deepEqual(veo.durs, [4, 6, 8]);
+  assert.deepEqual(veo.res, ["720p", "1080p"]);
+  assert.deepEqual(veo.price["720p"], [0.1, 0.08]);
+  assert.equal(veo.live, true);
+  assert.equal(m["kwaivgi/kling-v3.0-pro"].live, false); // not on the live list
+  assert.equal(modelsLib.allowedDuration(veo, 6), 6);
+  assert.equal(modelsLib.allowedDuration(veo, 99), null);
+  assert.equal(modelsLib.allowedDuration(veo, 5), null);
+  assert.equal(modelsLib.defaultDur(veo), 4);
+  assert.equal(modelsLib.defaultDur({ durs: [1, 2, 3, 4, 5] }), 4);
+  const gem = modelsLib.merge(null, null)["google/gemini-omni-1.2-flash"];
+  assert.equal(gem.live, null); // unknown when the list can't be fetched
+  assert.ok(modelsLib.notes(gem).some((n) => /always on/.test(n)));
+  const kl = modelsLib.merge(null, null)["kwaivgi/kling-v3.0-pro"];
+  assert.ok(modelsLib.notes(kl).some((n) => /720p only/.test(n)) && modelsLib.notes(kl).includes("1:1 available"));
+});
+
+test("history: put merges, list filters and searches, delete", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hist-"));
+  const h = createHistory(dir);
+  h.put("a", { kind: "clip", title: "Surfer dog", model: "google/veo-3.1-lite", status: "pending", t: 1000 });
+  h.put("b", { kind: "short", title: "Cat fail", status: "completed", cost: 0.0123456, t: 2000 });
+  h.put("a", { status: "completed", cost: 0.2 });
+  assert.equal(h.get("a").title, "Surfer dog");
+  assert.equal(h.get("a").status, "completed");
+  assert.equal(h.get("b").cost, 0.0123);
+  assert.deepEqual(h.list().map((r) => r.id), ["b", "a"]);
+  assert.deepEqual(h.list({ kind: "clip" }).map((r) => r.id), ["a"]);
+  assert.deepEqual(h.list({ q: "veo" }).map((r) => r.id), ["a"]);
+  assert.deepEqual(h.list({ from: 1500 }).map((r) => r.id), ["b"]);
+  h.put("c", { kind: "story", status: "running" });
+  assert.deepEqual(h.list({ status: "running" }).map((r) => r.id), ["c"]);
+  h.del("a");
+  assert.equal(h.get("a"), null);
+});
+
+test("providers: OpenRouter unless a cheaper keyed route exists; fal and BytePlus round trips", async () => {
+  const save = { ...process.env };
+  try {
+    delete process.env.FAL_KEY; delete process.env.BYTEPLUS_KEY;
+    assert.equal(providers.pickRoute("kwaivgi/kling-v3.0-pro").provider, "openrouter");
+    process.env.FAL_KEY = "k"; process.env.BYTEPLUS_KEY = "b";
+    assert.equal(providers.pickRoute("kwaivgi/kling-v3.0-pro").provider, "fal");
+    assert.equal(providers.pickRoute("bytedance/seedance-2.0-fast").provider, "byteplus");
+    assert.equal(providers.pickRoute("google/veo-3.1-lite").provider, "openrouter");
+    process.env.FAL_KLING_FACTOR = "1.4"; // pricier than OpenRouter: only used when OpenRouter lacks the model
+    assert.equal(providers.pickRoute("kwaivgi/kling-v3.0-pro").provider, "openrouter");
+    assert.equal(providers.pickRoute("kwaivgi/kling-v3.0-pro", { orAvailable: false }).provider, "fal");
+    delete process.env.FAL_KLING_FACTOR;
+
+    const calls = [];
+    const fake = async (url, init = {}) => {
+      calls.push([url, init.body ? JSON.parse(init.body) : null]);
+      const json = (o, status = 200) => ({ ok: status < 300, status, json: async () => o });
+      if (url.startsWith("https://queue.fal.run/") && init.method === "POST") return json({ request_id: "r1", status_url: "https://s/status", response_url: "https://s/res" });
+      if (url === "https://s/status") return json({ status: "COMPLETED" });
+      if (url === "https://s/res") return json({ video: { url: "https://cdn/v.mp4" } });
+      if (url.endsWith("/contents/generations/tasks") && init.method === "POST") return json({ id: "t9" });
+      if (url.endsWith("/contents/generations/tasks/t9")) return json({ status: "running" });
+      return json({}, 404);
+    };
+    const f = await providers.submit(providers.pickRoute("kwaivgi/kling-v3.0-pro"), { prompt: "p", duration: 5, aspect_ratio: "9:16", frame_images: [{ frame_type: "first_frame", image_url: { url: "data:x" } }] }, fake);
+    assert.equal(f.id, "fal_r1");
+    assert.match(calls[0][0], /image-to-video/);
+    assert.equal(calls[0][1].image_url, "data:x");
+    assert.deepEqual(await providers.poll(f.id, f.job, fake), { status: "completed", videoUrl: "https://cdn/v.mp4" });
+    const b = await providers.submit(providers.pickRoute("bytedance/seedance-2.0-fast"), { prompt: "p", duration: 4, resolution: "720p", aspect_ratio: "9:16" }, fake);
+    assert.equal(b.id, "bp_t9");
+    assert.match(calls.at(-1)[1].content[0].text, /--dur 4/);
+    assert.deepEqual(await providers.poll(b.id, b.job, fake), { status: "in_progress" });
+    assert.ok(providers.isExternal("fal_x") && !providers.isExternal("gen-vid-1"));
+  } finally { process.env = save; }
+});
+
+test("settings: $10 default cap, old 'no cap' files get it, a chosen 0 stays", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "set-"));
+  assert.equal(createSettings(dir).get().monthlyCap, 10);
+  fs.writeFileSync(path.join(dir, "settings.json"), JSON.stringify({ monthlyCap: 0 }));
+  assert.equal(createSettings(dir).get().monthlyCap, 10);
+  const s = createSettings(dir);
+  s.set({ monthlyCap: 0 });
+  assert.equal(createSettings(dir).get().monthlyCap, 0);
+  assert.equal(s.set({ confirmUnder: 99 }).confirmUnder, 5);
+});
+
+test("studio (page helper): total cost line with Auto, and money formatting", () => {
+  const vm = require("vm");
+  const ctx = { window: {}, localStorage: { getItem: () => null, setItem() {} }, fetch: async () => ({ json: async () => ({}) }), document: {} };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../public/studio.js"), "utf8"), ctx);
+  const S = ctx.window.studio;
+  const veo = { name: "Veo", audio: true, durs: [4, 6, 8], defaultDur: 4, res: ["720p"], price: { "720p": [0.1, 0.08] } };
+  const auto = S.costLine(veo, { res: "720p", dur: "" });
+  assert.equal(auto.total.toFixed(2), "0.40");
+  assert.match(auto.text, /\$0\.40 for 4 s · Auto: 4 s default, may pick 4 \/ 6 \/ 8 s/);
+  assert.equal(S.costLine(veo, { res: "720p", dur: 8, audio: false, n: 3 }).total.toFixed(2), "1.92");
+  assert.equal(S.money(0.15000000596046448), "$0.15");
+  assert.equal(S.money(0.003, 3), "$0.003");
+  assert.equal(S.money(0.0001, 3), "<$0.001");
+  assert.ok(S.validJobId("gen-vid-abc123def") && !S.validJobId("x") && !S.validJobId("a b c d e f g h"));
+});

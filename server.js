@@ -130,7 +130,7 @@ const UNLOCKED = !!PROXY_KEY || !PUBLIC_URL_RAW() || process.env.ALLOW_OPEN === 
 function PUBLIC_URL_RAW() { return (process.env.PUBLIC_URL || "").trim(); }
 if (!UNLOCKED) console.error("PROXY_KEY is not set but PUBLIC_URL is: the API is locked. Set PROXY_KEY (same value as in Cloudflare).");
 // Paid endpoints are refused once the monthly cap (Settings) is reached.
-const PAID = /^\/api\/(generate|plan|cast|keyframe|tts|stitch|lookframe|startframe|describe|portraits|caption|enhance|shorts(\/upload)?|influencers\/[\w-]+\/check)$/;
+const PAID = /^\/api\/(generate|plan|cast|keyframe|tts|stitch|lookframe|startframe|describe|portraits|caption|enhance|shorts(\/upload)?|shorts\/\w+\/retry|influencers\/[\w-]+\/check)$/;
 
 const MODELS = modelsLib.VIDEO; // capabilities per model; lib/models.js
 // ---- Motion page: share uploaded driving clips with the video provider (it needs a public HTTPS link) ----
@@ -317,7 +317,7 @@ const server = http.createServer(async (req, res) => {
       if (b.resolution) body.resolution = b.resolution;
       if (b.aspect_ratio) body.aspect_ratio = b.aspect_ratio;
       if (MODELS[model]?.audio && typeof b.generate_audio === "boolean") body.generate_audio = b.generate_audio;
-      if (Number.isInteger(b.seed)) body.seed = b.seed;
+      if (Number.isInteger(b.seed) && live.seed !== false) body.seed = b.seed;
       if (Array.isArray(b.input_references) && b.input_references.length) body.input_references = b.input_references.slice(0, 4);
       // Story mode chaining: start this clip from the last frame of a previous clip
       let note;
@@ -367,6 +367,9 @@ const server = http.createServer(async (req, res) => {
         }
       }
       // cheapest configured provider for this model (fal.ai / BytePlus when their keys are set, else OpenRouter)
+      // end frame (Kling, Seedance, Veo, Wan…): the clip ends on this picture, so the next scene can start from it
+      if (typeof b.last_frame_image === "string" && /^data:image\/(jpeg|png|webp);base64,/.test(b.last_frame_image) && (live.frames || []).includes("last_frame"))
+        body.frame_images = [...(body.frame_images || []), { type: "image_url", image_url: { url: b.last_frame_image }, frame_type: "last_frame" }];
       const route = providers.pickRoute(model, { orAvailable: live.live !== false });
       let extJob = null;
       const submit = async () => {

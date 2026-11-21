@@ -474,3 +474,5 @@ small,.meta,.hint,.count,.sd-note{font-size:13px}
 .preflight{border:1px solid var(--line2);padding:12px;margin:10px 0;display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:14px}
 .preflight dt{color:var(--mute)}.preflight dd{margin:0}
 @media(max-width:600px){.sd-tiles{grid-template-columns:1fr 1fr}.spend-dlg{width:calc(100vw - 32px)}.site-foot .sf-note{margin-left:0}}
+button.chip{color:var(--text);font:inherit;background:var(--panel2);border:1px solid var(--line2);cursor:pointer}
+button.chip.sel{color:#04121a;background:var(--acc);border-color:var(--acc)}

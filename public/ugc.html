@@ -92,7 +92,7 @@
         <div id="personaBox">
           <label>Influencer description (reused word-for-word in every video so they stay consistent)
             <textarea id="pdesc" style="min-height:90px" placeholder="e.g. A friendly woman in her mid-20s with warm light-brown skin, shoulder-length wavy dark brown hair, small gold hoop earrings, wearing a plain cream knit sweater."></textarea></label>
-          <div class="row"><span style="display:flex;gap:8px;flex-wrap:wrap"><input type="text" id="pname2" placeholder="Name, e.g. Maya" style="width:160px"><button class="btn" id="psave" type="button">💾 Save influencer</button><button class="btn" id="pnew" type="button">New</button></span><span class="meta" id="pseed"></span></div>
+          <div class="row"><span style="display:flex;gap:8px;flex-wrap:wrap"><input type="text" id="pname2" aria-label="Influencer name" placeholder="Name, e.g. Maya" style="width:160px"><button class="btn" id="psave" type="button">💾 Save influencer</button><button class="btn" id="pnew" type="button">New</button></span><span class="meta" id="pseed"></span></div>
         </div>
         <div class="photos">
           <label class="drop" id="d1" style="display:none"><span class="tag">Influencer</span><span>📷 Click or drop<br>influencer photo</span><input type="file" accept="image/*"></label>
@@ -114,6 +114,7 @@
         <label>Key benefits / what to say (optional)<textarea id="notes" style="min-height:70px" placeholder="Lightweight, absorbs fast, smells amazing, visible glow in a week…"></textarea></label>
 
         <div class="row"><span style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="write" type="button">✨ Write UGC prompt</button><button class="btn" id="real" type="button">🎯 Make it realistic</button></span><span class="meta">Both add flawless-UGC realism rules</span></div>
+        <div id="tplBox"></div>
         <label>Final prompt (edit freely)<textarea id="prompt" placeholder="Click “Write UGC prompt”, or write your own…"></textarea></label>
 
         <h2 style="margin-top:16px">3 · Settings</h2>
@@ -123,12 +124,13 @@
             <option value="bytedance/seedance-2.0-fast">Seedance 2.0 Fast (~$0.04/s)</option>
             <option value="bytedance/seedance-2.0">Seedance 2.0 (~$0.07/s)</option>
           </select></label>
-          <label>Duration (s)<input type="number" id="duration" value="8" min="4" max="15"></label>
-          <label>Resolution<select id="res"><option>480p</option><option>720p</option></select></label>
+          <label>Duration<select id="duration"><option value="8">8 s</option></select></label>
+          <label>Resolution<select id="res"><option>480p</option><option selected>720p</option></select></label>
           <label>Aspect<select id="aspect"><option>9:16</option><option>1:1</option><option>16:9</option></select></label>
           <label>Audio (voice)<select id="audio"><option value="true">On</option><option value="false">Off</option></select></label>
         </div>
-        <div class="cost"><span class="meta">Estimated cost</span><b id="cost">—</b></div>
+        <div class="model-notes" id="modelNotes" aria-live="polite"></div>
+        <div class="cost"><span class="meta">Estimated total</span><b id="cost">—</b></div>
         <button class="btn primary" id="go" type="button">Generate UGC video</button>
         <div class="err" id="err"></div>
       </div>
@@ -268,11 +270,28 @@ for(const id of ['d1','d2']){
   el.addEventListener('drop',ev=>setImg(id,ev.dataTransfer.files[0]));
 }
 
-function cost(){
-  const p=PRICE[$('model').value][$('res').value]||0, d=+$('duration').value||0;
-  $('cost').textContent=d?`≈ $${(p*d).toFixed(2)}`:'—';
+// lengths, resolutions and prices from the shared model table (only lengths the model accepts are offered)
+let MODELS={};
+function applyModel(){
+  const x=MODELS[$('model').value]; if(!x) return cost();
+  const cur=+$('duration').value||8;
+  $('duration').innerHTML=x.durs.filter(d=>d>=4).map(d=>`<option value="${d}">${d} s</option>`).join('');
+  $('duration').value=String(x.durs.filter(d=>d>=4).reduce((b,n)=>Math.abs(n-cur)<Math.abs(b-cur)?n:b,x.durs.find(d=>d>=4)));
+  const r=$('res').value; $('res').innerHTML=x.res.map(o=>`<option>${o}</option>`).join(''); $('res').value=x.res.includes(r)?r:(x.res.includes('720p')?'720p':x.res[0]);
+  $('modelNotes').innerHTML=window.studio.notesHTML(x); cost();
 }
-['model','res','duration'].forEach(i=>$(i).addEventListener('input',cost)); cost();
+function cost(){
+  const x=MODELS[$('model').value];
+  if(x){ $('cost').textContent=window.studio.costLine(x,{res:$('res').value,dur:$('duration').value,audio:$('audio').value==='true'}).text; return; }
+  const p=PRICE[$('model').value][$('res').value]||0, d=+$('duration').value||0;
+  $('cost').textContent=d?`≈ $${(p*d).toFixed(2)} for ${d} s`:'—';
+}
+['res','duration','audio'].forEach(i=>$(i).addEventListener('change',cost)); $('model').addEventListener('change',applyModel); cost();
+window.studio.models().then(({map})=>{ MODELS=map;
+  [...$('model').options].forEach(o=>{const x=map[o.value]; if(x) o.textContent=`${x.name} (${window.studio.money(window.studio.rate(x,'720p',true),3)}/s @720p · ${window.studio.tierLabel(x.tier)})`+(o.value.includes('grok')?' - works with a saved picture':'');});
+  applyModel(); });
+window.studio.persistForm('ugc',['pname','notes','plook','prompt','model','res','aspect','audio','duration']);
+window.studio.templatePicker($('tplBox'),'ugc',t=>{ $('prompt').value=t.prompt; $('prompt').dispatchEvent(new Event('input')); });
 
 $('write').onclick=async()=>{
   $('err').textContent='';
@@ -303,20 +322,18 @@ $('real').onclick=async()=>{
   b.disabled=false; b.textContent='🎯 Make it realistic';
 };
 
-function show(p,msg){$('stage').innerHTML=`<div class="prog"><div class="pct">${p}%</div><div class="bar"><div class="fill" style="width:${p}%"></div></div><div class="meta">${msg}</div></div>`}
+function show(p,msg){$('stage').innerHTML=window.studio.stageHTML(typeof p==='object'?p:{stage:'queued',msg})}
 function stop(){clearInterval(timer);$('go').disabled=false}
 function fail(m){$('err').textContent=m;stop()}
 async function poll(id){
   let j; try{const r=await fetch('/api/jobs/'+id); j=await r.json(); if(!r.ok) return fail(j.error||'Poll failed')}catch{return fail('Lost connection to server.')}
   if(j.status==='failed') return fail('Generation failed: '+(j.error||'unknown'));
-  if(j.status!=='completed'){
-    const left=Math.max(5,Math.round(j.elapsed*(100-j.progress)/Math.max(j.progress,1)));
-    return show(j.progress,`${j.status==='pending'?'Queued at provider':'Generating'} · ${j.elapsed}s elapsed · ~${left}s left (estimate)`);
-  }
+  if(j.status!=='completed') return show(j);
   stop();
   $('stage').innerHTML=`<video controls autoplay loop playsinline src="${j.videoUrl}"></video>`;
-  $('actions').innerHTML=`<a class="btn" href="${j.videoUrl}?download=1">⬇ Download MP4</a>`+(j.cost!=null?`<span class="meta">Cost $${j.cost}</span><span class="meta">· job ${id}</span>`:'');
+  $('actions').innerHTML=`<a class="btn" href="${j.videoUrl}?download=1">⬇ Download MP4</a>`+(j.cost!=null?`<span class="meta">Cost ${j.estimated?'≈ ':''}$${(+j.cost).toFixed(2)}${j.estimated?' (estimate)':''}</span><span class="meta">· job ${id}</span>`:'');
   mountShare($('actions'),{url:j.videoUrl,name:'ugc-'+id.slice(-8)+'.mp4',prompt:$('prompt').value});
+  window.dispatchEvent(new Event('spend-changed'));
 }
 $('go').onclick=async()=>{
   $('err').textContent=''; $('actions').innerHTML='';
@@ -326,13 +343,15 @@ $('go').onclick=async()=>{
   if(fm&&!startFrameData&&!$('plook').value.trim()) return $('err').textContent='Describe what the product looks like (or click Create start frame to use your product photo).';
   if(!fm&&(!imgs.d2||(!persona&&!imgs.d1))) return $('err').textContent=persona?'Add the product photo.':'Add both photos (influencer and product).';
   if(!$('prompt').value.trim()) return $('err').textContent='Write or generate a prompt first.';
+  const x=MODELS[$('model').value], c=x?window.studio.costLine(x,{res:$('res').value,dur:$('duration').value,audio:$('audio').value==='true'}):{total:0};
+  if(!(await window.studio.confirmSpend({title:'Make this UGC video?',total:c.total,rows:[['Model',x?x.name:$('model').value],['Length',$('duration').value+' s'],['Resolution',$('res').value],['Aspect',$('aspect').value],['Voice / sound',$('audio').value==='true'?'On':'Off']]}))) return;
   $('go').disabled=true; show(0,'Submitting…');
   try{
     const r=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       model:$('model').value,duration:+$('duration').value,resolution:$('res').value,
       prompt:(()=>{let p=$('prompt').value.trim(),d=$('pdesc').value.trim();
         return persona&&d&&!p.includes(d.slice(0,25))?d+' '+p:p})(),
-      aspect_ratio:$('aspect').value,generate_audio:$('audio').value==='true',
+      aspect_ratio:$('aspect').value,generate_audio:$('audio').value==='true',title:'UGC: '+($('pname').value.trim()||'product review'),
       ...(persona?{seed}:{}),
       ...(fm?(startFrameData?{frame_image:startFrameData}:{influencer_id:fm.id,use_frame:true}):{input_references:(persona?[imgs.d2]:[imgs.d1,imgs.d2]).map(u=>({type:'image_url',image_url:{url:u}}))})})});
     const j=await r.json(); if(!r.ok) return fail(j.error||'Request failed');

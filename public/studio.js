@@ -4,7 +4,7 @@
 (function () {
   const S = (window.studio = {});
   const esc = (S.esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])));
-  const money = (S.money = (n, d = 2) => (n == null || !isFinite(n) ? '—' : n > 0 && n < 0.005 ? '<$0.01' : '$' + Number(n).toFixed(d)));
+  const money = (S.money = (n, d = 2) => (n == null || !isFinite(n) ? '—' : n > 0 && n < 0.5 * 10 ** -d ? '<$' + (10 ** -d).toFixed(d) : '$' + Number(n).toFixed(d)));
   const ls = {
     get: (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
     set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
