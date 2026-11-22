@@ -548,21 +548,51 @@ $('gen').onclick=async()=>{
   execute(todo,false);
 };
 $('regen').onclick=async()=>{ const all=scenes.map((_,i)=>i); if(!(await confirmScenes(all))) return; jobs=[]; runP=[]; projFinal=null; execute(all); };
+
+// the finished video: one player for every case. If it won't load, say why: the server was restarted and deleted the
+// file (then "Stitch again" rebuilds it from the clips already made, no new video is generated), or this browser can't play it.
+function showFinal(url,{warnings=[],costLine='',ids=null}={}){
+  $('outPanel').classList.remove('hidden');
+  if(!url){ // saved as finished but with no file (the server restarted mid-stitch): offer to stitch the clips again
+    $('final').innerHTML='The video was not finished because the server restarted. '+(ids&&ids.length?'Your clips are safe. ':'');
+    if(ids&&ids.length){ const b=document.createElement('button'); b.className='btn primary'; b.type='button'; b.innerHTML='<svg class=ic aria-hidden=true><use href=#i-film></use></svg> Stitch again'; b.onclick=()=>stitch(ids); $('final').append(b); }
+    return;
+  }
+  const warn=warnings.length?'<div style="color:var(--warn);margin-bottom:8px"><svg class=ic aria-hidden=true><use href=#i-alert></use></svg> '+warnings.map(escH).join('<br><svg class=ic aria-hidden=true><use href=#i-alert></use></svg> ')+'</div>':'';
+  const id=(url.match(/\/api\/final\/(\w+)/)||[])[1];
+  $('final').innerHTML=costLine+warn+`<video controls loop playsinline preload="metadata" ${id?`poster="/api/final/${id}/thumb.jpg"`:''} src="${url}?v=${Date.now()}"></video><div class="meta" data-vmsg hidden></div><a class="btn" href="${url}?download=1" style="text-decoration:none;display:inline-block"><svg class=ic aria-hidden=true><use href=#i-download></use></svg> Download MP4</a>`;
+  const v=$('final').querySelector('video'), msg=$('final').querySelector('[data-vmsg]');
+  v.play().catch(()=>{}); // starts when the browser allows it; otherwise the play button works as normal
+  v.onerror=async()=>{
+    let gone=false; try{ gone=(await fetch(url,{method:'HEAD'})).status===404; }catch{}
+    msg.hidden=false;
+    if(!gone){ msg.innerHTML=`Can't play it here. <a href="${url}" target="_blank" rel="noopener">Open the video</a> or use Download.`; return; }
+    v.remove();
+    const can=ids&&ids.length;
+    msg.innerHTML='The finished video was removed when the server restarted. '+(can?'Your clips are safe: stitch them again (no new video is made, only the narration is redone).':'Make the story again to get it back.');
+    if(can){ const b=document.createElement('button'); b.className='btn primary'; b.type='button'; b.style.marginTop='8px'; b.innerHTML='<svg class=ic aria-hidden=true><use href=#i-film></use></svg> Stitch again'; b.onclick=()=>{ b.disabled=true; stitch(ids); }; msg.append(document.createElement('br'),b); }
+  };
+  S.mountEnhance&&S.mountEnhance($('final'),{src:url});
+  mountShare($('final'),{url,name:'story.mp4',prompt:$('script').value});
+}
 async function stitch(ids){
   $('final').textContent='Stitching…';
   const r=await fetch('/api/stitch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids,title:($('script').value.trim().replace(/\s+/g,' ').slice(0,80))||'Story',aspect:$('aspect').value,extend:$('budget').checked,look:$('glitch').checked?'glitch':'clean',narration:$('narOn').checked?{model:$('ttsModel').value,voice:$('ttsVoice').value,instructions:$('ttsTone').value||undefined,lines:scenes.map(s=>s.narration||'')}:undefined})});
   const j=await r.json(); if(!r.ok){ $('final').textContent=j.error; $('gen').disabled=false; return; }
   const t=setInterval(async()=>{
-    const d=await (await fetch('/api/stitch/'+j.id)).json();
+    let d=null; try{ d=await (await fetch('/api/stitch/'+j.id)).json(); }catch{ return; } // a network blip: just ask again
     if(d.status==='running') return $('final').textContent=d.step;
     clearInterval(t); $('gen').disabled=false;
     if(d.status==='failed') return $('final').textContent='Stitch failed: '+d.error;
+    // the server restarted while stitching: the job is gone, the clips are not
+    if(d.status!=='completed'||!d.url){
+      $('final').innerHTML='The server restarted while stitching, so the video wasn\'t finished. Your clips are safe. ';
+      const b=document.createElement('button'); b.className='btn primary'; b.type='button'; b.innerHTML='<svg class=ic aria-hidden=true><use href=#i-film></use></svg> Stitch again'; b.onclick=()=>stitch(ids); $('final').append(b); return;
+    }
     projFinal={url:d.url,warnings:d.warnings||[]}; save();
     const actual=jobs.reduce((a,x)=>a+(x&&x.cost||0),0), est=scenes.reduce((a,s)=>a+price(s),0);
     const costLine=actual?`<p class="meta">Video cost reported by OpenRouter for these scenes: <b>${S.money(actual,3)}</b> (estimate was ${S.money(est,3)}). Character pictures and narration are on top; the month total in the sidebar is OpenRouter's own figure.</p>`:'';
-    $('final').innerHTML=costLine+(d.warnings&&d.warnings.length?'<div style="color:var(--warn);margin-bottom:8px"><svg class=ic aria-hidden=true><use href=#i-alert></use></svg> '+d.warnings.join('<br><svg class=ic aria-hidden=true><use href=#i-alert></use></svg> ')+'</div>':'')+`<video controls autoplay loop playsinline src="${d.url}"></video><a class="btn" href="${d.url}?download=1" style="text-decoration:none;display:inline-block"><svg class=ic aria-hidden=true><use href=#i-download></use></svg> Download MP4</a>`;
-    S.mountEnhance&&S.mountEnhance($('final'),{src:d.url});
-    mountShare($('final'),{url:d.url,name:'story.mp4',prompt:$('script').value});
+    showFinal(d.url,{warnings:d.warnings||[],costLine,ids});
     window.dispatchEvent(new Event('spend-changed'));
   },1500);
 }
@@ -688,7 +718,7 @@ function restore(id){
     if(j.done&&!j.failed){ $('f'+i).style.width='100%'; $('m'+i).innerHTML='<svg class=ic aria-hidden=true><use href=#i-circle-check></use></svg> done (from history)'; }
     else if(j.failed){ $('m'+i).innerHTML='<svg class=ic aria-hidden=true><use href=#i-circle-x></use></svg> failed last time'; showRetry(i); } });
   updateGen();
-  if(projFinal){ $('outPanel').classList.remove('hidden'); $('final').innerHTML=(projFinal.warnings&&projFinal.warnings.length?'<div style="color:var(--warn);margin-bottom:8px"><svg class=ic aria-hidden=true><use href=#i-alert></use></svg> '+projFinal.warnings.join('<br><svg class=ic aria-hidden=true><use href=#i-alert></use></svg> ')+'</div>':'')+`<video controls loop playsinline src="${projFinal.url}"></video><a class="btn" href="${projFinal.url}?download=1" style="text-decoration:none;display:inline-block"><svg class=ic aria-hidden=true><use href=#i-download></use></svg> Download MP4</a><div class="meta" style="margin-top:8px">If the video does not play, the server was restarted: click Regenerate to make it again.</div>`; mountShare($('final'),{url:projFinal.url,name:'story.mp4',prompt:$('script').value}); return; }
+  if(projFinal){ showFinal(projFinal.url,{warnings:projFinal.warnings||[],ids:jobs.filter(j=>j&&j.done&&!j.failed&&j.id).length===scenes.length?jobs.map(j=>j.id):null}); return; }
   const inflight=scenes.map((_,i)=>i).filter(i=>jobs[i]&&jobs[i].id&&!jobs[i].done&&!jobs[i].failed);
   if(inflight.length) execute(inflight,true);
 }
@@ -699,7 +729,7 @@ function renderDisk(){
   $('diskWrap').classList.toggle('hidden',!diskList.length);
   $('disk').innerHTML=diskList.map(f=>`<div class="item" data-u="${f.url}" style="cursor:default"><span class="t" style="flex:1"><b>${new Date(f.ts).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</b><br><span class="s">${f.clips} scenes${f.narrated?' · narrated':''} · ${(f.size/1048576).toFixed(1)} MB</span></span><button class="btn" data-a="play" type="button">▶ Play</button><a class="btn" href="${f.url}?download=1" style="text-decoration:none"><svg class=ic aria-hidden=true><use href=#i-download></use></svg></a></div>`).join('');
   $('disk').querySelectorAll('.item').forEach(el=>el.querySelector('[data-a=play]').onclick=()=>{
-    $('outPanel').classList.remove('hidden'); $('final').innerHTML=`<video controls autoplay loop playsinline src="${el.dataset.u}"></video><a class="btn" href="${el.dataset.u}?download=1" style="text-decoration:none;display:inline-block"><svg class=ic aria-hidden=true><use href=#i-download></use></svg> Download MP4</a>`; mountShare($('final'),{url:el.dataset.u,name:'story.mp4',prompt:$('script').value});
+    showFinal(el.dataset.u);
     $('outPanel').scrollIntoView({behavior:'smooth'});
   });
 }
