@@ -72,11 +72,10 @@
 </head>
 <body data-title="Story mode" data-sub="Paste a story, get one finished video.">
 <div class="wrap">
-  <div class="panel hidden" id="histPanel">
-    <h2>Recent stories</h2>
-    <div id="hist" class="hgrid"></div>
-    <div id="diskWrap" class="hidden" style="margin-top:14px"><div class="meta" style="margin-bottom:8px">Older videos</div>
-    <div id="disk" class="hgrid"></div></div>
+  <div class="cont-bar" id="contBar" hidden>
+    <span class="cb-t"><small>Continue where you left off</small><b id="contTitle"></b><span class="meta" id="contMeta"></span></span>
+    <button class="btn primary" id="contGo" type="button"><svg class=ic aria-hidden=true><use href=#i-film></use></svg> Continue</button>
+    <button class="cb-x" id="contX" type="button" aria-label="Hide"><svg class=ic aria-hidden=true><use href=#i-x></use></svg></button>
   </div>
   <div class="panel">
     <h2>1 · Script</h2>
@@ -173,6 +172,12 @@
     <h2>3 · Final video</h2>
     <div id="final" class="meta"></div>
   </div>
+  <div class="panel hidden" id="histPanel">
+    <h2>History</h2>
+    <div id="hist" class="hgrid"></div>
+    <div id="diskWrap" class="hidden" style="margin-top:14px"><div class="meta" style="margin-bottom:8px">Older videos</div>
+    <div id="disk" class="hgrid"></div></div>
+  </div>
 </div>
 
 <script>
@@ -224,10 +229,10 @@ function render(){
         <input type="number" min="1" max="15" value="${s.seconds}" data-f="seconds"> s
         <select data-f="model">${models().map(m=>`<option value="${m}" ${m===s.model?'selected':''}>${NAME(m)}</option>`).join('')}</select>
         <span class="meta" data-cost>$${(price(s)).toFixed(2)}</span></div>
-      ${i>0?`<label style="flex-direction:row;align-items:center;gap:6px;margin-bottom:6px"><input type="checkbox" data-f="continues" ${s.continues?'checked':''} style="width:auto"> <svg class=ic aria-hidden=true><use href=#i-corner-right></use></svg> Start from previous scene's last frame</label>`:''}
+      ${i>0?`<label style="flex-direction:row;align-items:center;gap:6px;margin-bottom:6px"><input type="checkbox" data-f="continues" ${s.continues?'checked':''} style="width:auto"> <svg class=ic aria-hidden=true><use href=#i-corner-right></use></svg> Continue from last scene</label>`:''}
       <textarea data-f="prompt">${esc(s.prompt)}</textarea>
-      <textarea data-f="narration" placeholder="Narration spoken in this scene (leave empty for silence)" style="min-height:48px;margin-top:6px;border-color:#2f3550">${esc(s.narration||'')}</textarea>
-      ${s.dir?`<div class="dir"><svg class=ic aria-hidden=true><use href=#i-brain></use></svg> ${esc(NAME(s.model))}${s.res&&s.res!==$('res').value?' · '+s.res:''}: ${esc(s.dir)}</div>`:''}
+      <textarea data-f="narration" placeholder="Narration (empty = silent)" style="min-height:48px;margin-top:6px;border-color:#2f3550">${esc(s.narration||'')}</textarea>
+      ${s.dir?`<div class="dir" title="${esc(s.dir)}"><svg class=ic aria-hidden=true><use href=#i-brain></use></svg> ${esc(NAME(s.model))}${s.res&&s.res!==$('res').value?' · '+s.res:''}</div>`:''}
       <div class="meta" data-nw>${nwText(s)}</div>
       <div class="bar"><div class="fill" id="f${i}"></div></div><div class="meta" id="m${i}" aria-live="polite"></div><div id="r${i}"></div>
     </div>`).join('');
@@ -250,10 +255,8 @@ function nwText(s){
   const words=(s.narration||'').trim().split(/\s+/).filter(Boolean).length, d=dur(s), max=Math.round(d*2.5);
   if(!words) return '<svg class=ic aria-hidden=true><use href=#i-volume-x></use></svg> silent scene';
   const speech=+(words/2.5).toFixed(1);
-  if(words<=max*1.05) return words+' words · about '+speech+' s of speech, fits the '+d+' s clip';
-  return '<svg class=ic aria-hidden=true><use href=#i-alert></use></svg> narration about '+speech+' s, clip '+d+' s: '+($('budget').checked
-    ?'the clip will be slowed (up to 1.5×) and then hold its last frame'+(speech>d*1.5?' for '+(speech-d*1.5).toFixed(1)+' s':'')
-    :'the voice will be sped up'+(speech>d*1.35?' and cut off at the end. Shorten the text or lengthen the scene':''));
+  if(words<=max*1.05) return '';
+  return '<svg class=ic aria-hidden=true><use href=#i-alert></use></svg> Narration too long for '+d+' s'+(!$('budget').checked&&speech>d*1.35?': shorten it':'');
 }
 function narCost(){ if(!$('narOn').checked) return 0; const p=TTS[$('ttsModel').value]?.perSec||0; return scenes.reduce((a,s)=>a+((s.narration||'').trim()?dur(s)*p:0),0); }
 // a length the scene's model really accepts (e.g. Veo only 4, 6 or 8 s)
@@ -647,12 +650,25 @@ function saveNow(){
     jobs:jobs.map(j=>j?{id:j.id,done:!!j.done,failed:!!j.failed,skipped:!!j.skipped}:null),final:projFinal,cast:projCast};
   HIST=[p,...HIST.filter(x=>x.id!==projId)]; putStory(p); renderHist();
 }
+const storyStatus=p=>{ const n=p.scenes.length, d=(p.jobs||[]).filter(j=>j&&j.done&&!j.failed).length; return p.final?'<svg class=ic aria-hidden=true><use href=#i-circle-check></use></svg> finished':d?d+'/'+n+' scenes done':n+' scenes planned'; };
 function renderHist(){
-  const h=hget(); $('histPanel').classList.toggle('hidden',!h.length&&!diskList.length); $('hist').hidden=!h.length;
+  const all=hget();
+  // the newest unfinished story gets a Continue bar at the top (unless it's already open or you closed the bar)
+  let hide=''; try{ hide=sessionStorage.getItem('contHide')||''; }catch{}
+  const cur=all.find(p=>!p.final), showCont=!!cur&&cur.id!==projId&&cur.id!==hide;
+  $('contBar').hidden=!showCont;
+  if(showCont){
+    $('contTitle').textContent=cur.title; $('contMeta').innerHTML=storyStatus(cur);
+    $('contGo').onclick=()=>{ restore(cur.id); $('contBar').hidden=true; };
+    $('contX').onclick=()=>{ try{ sessionStorage.setItem('contHide',cur.id); }catch{} $('contBar').hidden=true; };
+  }
+  // everything else lives in History at the bottom of the page
+  const h=all.filter(p=>!showCont||p.id!==cur.id);
+  $('histPanel').classList.toggle('hidden',!h.length&&!diskList.length); $('hist').hidden=!h.length;
+  $('diskWrap').style.marginTop=h.length?'14px':'0';
   if(h.length)
   $('hist').innerHTML=h.map(p=>{
-    const n=p.scenes.length, d=(p.jobs||[]).filter(j=>j&&j.done&&!j.failed).length;
-    const st=p.final?'<svg class=ic aria-hidden=true><use href=#i-circle-check></use></svg> finished':d?d+'/'+n+' scenes done':n+' scenes planned';
+    const st=storyStatus(p);
     return `<div class="item" data-id="${p.id}" style="cursor:default"><span class="t" style="flex:1"><b>${esc(p.title)}</b><br><span class="s">${new Date(p.ts).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})} · ${st}</span></span><button class="btn" data-a="open" type="button">▶ Continue</button><button class="btn danger" data-a="del" type="button" title="Delete"><svg class=ic aria-hidden=true><use href=#i-x></use></svg></button></div>`;
   }).join('');
   $('hist').querySelectorAll('.item').forEach(el=>{
@@ -680,7 +696,7 @@ document.querySelector('.wrap').addEventListener('input',save);
 document.querySelector('.wrap').addEventListener('change',save);
 let diskList=[];
 function renderDisk(){
-  $('diskWrap').classList.toggle('hidden',!diskList.length); $('diskWrap').style.marginTop=hget().length?'14px':'0';
+  $('diskWrap').classList.toggle('hidden',!diskList.length);
   $('disk').innerHTML=diskList.map(f=>`<div class="item" data-u="${f.url}" style="cursor:default"><span class="t" style="flex:1"><b>${new Date(f.ts).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</b><br><span class="s">${f.clips} scenes${f.narrated?' · narrated':''} · ${(f.size/1048576).toFixed(1)} MB</span></span><button class="btn" data-a="play" type="button">▶ Play</button><a class="btn" href="${f.url}?download=1" style="text-decoration:none"><svg class=ic aria-hidden=true><use href=#i-download></use></svg></a></div>`).join('');
   $('disk').querySelectorAll('.item').forEach(el=>el.querySelector('[data-a=play]').onclick=()=>{
     $('outPanel').classList.remove('hidden'); $('final').innerHTML=`<video controls autoplay loop playsinline src="${el.dataset.u}"></video><a class="btn" href="${el.dataset.u}?download=1" style="text-decoration:none;display:inline-block"><svg class=ic aria-hidden=true><use href=#i-download></use></svg> Download MP4</a>`; mountShare($('final'),{url:el.dataset.u,name:'story.mp4',prompt:$('script').value});

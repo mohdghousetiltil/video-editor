@@ -29,7 +29,9 @@
   textarea{min-height:90px;resize:vertical;line-height:1.55}
   textarea:focus,select:focus,input:focus{border-color:var(--acc)}
   label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--mute)}
-  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:12px 0}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:12px 0;align-items:end}
+  .grid>label{justify-content:flex-end}
+  .grid>label:has(#sfx){min-height:50px;justify-content:flex-start}
   .btn{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px 16px;font:inherit;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
   .btn:disabled{opacity:.5;cursor:not-allowed}
   .primary{background:linear-gradient(135deg,var(--acc),#9a6bff);border:0;color:#fff}
@@ -103,21 +105,21 @@
   <div class="panel">
     <h2>2 · Options</h2>
     <div class="grid">
-      <label>Short length<select id="len"><option value="15-30">15–30 seconds</option><option value="30-60">30–60 seconds</option></select></label>
-      <label>What should it focus on? (optional)<input id="hint" maxlength="300" placeholder="e.g. the funniest moment, the car chase, the reveal"></label>
+      <label>Length<select id="len"><option value="15-30">15–30 seconds</option><option value="30-60">30–60 seconds</option></select></label>
+      <label>Focus (optional)<input id="hint" maxlength="300" placeholder="e.g. the funniest moment, the car chase, the reveal"></label>
       <label>Voiceover<select id="narration">
-        <option value="story">Story: hook + "it happened like this" (recommended)</option>
-        <option value="auto">Commentary only where nobody talks</option>
-        <option value="intro">Hook line only</option>
-        <option value="off">No voiceover (captions only)</option>
+        <option value="story">Story (recommended)</option>
+        <option value="auto">Commentary</option>
+        <option value="intro">Hook only</option>
+        <option value="off">None (captions only)</option>
       </select></label>
-      <label id="voiceWrap">Narrator voice<select id="voice"><option value="am_michael">Michael (US male, Kokoro)</option></select></label>
-      <label>Music (made by the app, copyright-free)<select id="music">
-        <option value="auto">Auto: fits the video's mood</option>
+      <label id="voiceWrap">Voice<select id="voice"><option value="am_michael">Michael (US male, Kokoro)</option></select></label>
+      <label>Music<select id="music">
+        <option value="auto">Auto (fits the mood)</option>
         <option value="cinematic">Cinematic</option><option value="upbeat">Upbeat</option><option value="suspense">Suspense</option><option value="chill">Chill</option><option value="epic">Epic</option><option value="funny">Funny</option>
         <option value="none">None</option><option value="upload">Upload my own track…</option>
       </select></label>
-      <label style="flex-direction:row;align-items:center;gap:8px;color:var(--text)"><input type="checkbox" id="sfx" checked style="width:auto"> Sound effects (boom on the hook, whoosh on cuts)</label>
+      <label style="flex-direction:row;align-items:center;gap:8px;color:var(--text)"><input type="checkbox" id="sfx" checked style="width:auto"> Sound effects</label>
     </div>
     <p class="meta" style="margin:4px 0 12px">Hook, story voiceover and music. <a href="/guide#shorts">How it works</a></p>
     <details class="more-opts">
@@ -205,7 +207,7 @@ let VOICES = [];
 fetch('/api/shorts/voices').then((r) => r.json()).then((j) => {
   if (!j.voices) return;
   VOICES = j.voices;
-  $('voice').innerHTML = j.voices.map((v) => `<option value="${esc(v.voice)}">${esc(v.label)}</option>`).join('');
+  $('voice').innerHTML = j.voices.map((v) => `<option value="${esc(v.voice)}">${esc(String(v.label).replace(/\s*\((.*?)(?:,\s*(?:Kokoro|ElevenLabs))?\)\s*$/, (m, a) => a && !/^(Kokoro|ElevenLabs)$/.test(a) ? ' · ' + a : ''))}</option>`).join('');
   if ($('voice').dataset.want) $('voice').value = $('voice').dataset.want;
   if (!$('voice').value) $('voice').selectedIndex = 0;
   preflight();

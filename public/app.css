@@ -641,3 +641,13 @@ textarea{line-height:1.6;max-height:65vh;field-sizing:content}
 .hgrid .item .t b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hgrid .item .t .s{font-size:12.5px;color:var(--mute)}
 @media(max-width:700px){.hgrid .item .t{flex:1 1 100% !important;min-width:0}.hgrid .item .btn{padding:7px 12px;font-size:13px}}
+/* Story: Continue bar at the top for the newest unfinished story */
+.cont-bar{display:flex;align-items:center;gap:12px;margin:0 0 16px;padding:12px 14px;border:1px solid var(--acc);background:linear-gradient(90deg,rgba(0,229,255,.12),rgba(0,229,255,.02));box-shadow:0 0 18px -8px var(--acc)}
+.cont-bar .cb-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.cont-bar small{font-family:var(--font-ui);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--acc)}
+.cont-bar b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cont-bar .meta{font-size:12.5px}
+.cont-bar .btn{white-space:nowrap}
+.cb-x{all:unset;cursor:pointer;color:var(--mute);width:28px;height:28px;display:grid;place-items:center}
+.cb-x:hover{color:var(--text)}
+@media(max-width:600px){.cont-bar{flex-wrap:wrap;gap:10px}.cont-bar .cb-t{order:1;flex:1 1 calc(100% - 44px)}.cont-bar .cb-x{order:2;align-self:flex-start}.cont-bar .btn{order:3;flex:1 1 100%;justify-content:center}}
