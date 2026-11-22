@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -82,19 +82,19 @@
     <h2>1 · Script</h2>
     <div id="tplBox"></div>
     <textarea id="script" aria-label="Story script" placeholder="Paste your full script / story here…"></textarea>
-    <div class="chips" id="fmtPresets" aria-label="Format presets" style="margin-top:10px"></div>
     <div class="quick">
       <label>Quality<select id="preset">
+        <option value="auto" selected>Auto (Recommended): the Director picks every scene's model</option>
         <option value="budget">Budget: fixed budget, short clips slowed and held to fit</option>
-        <option value="balanced" selected>Balanced: cheap drafts + better key scenes, 720p</option>
+        <option value="balanced">Balanced: cheap drafts + better key scenes, 720p</option>
         <option value="best">Best: sharpest models, 720p</option>
-        <option value="auto">Auto (Director): best quality within your budget</option>
         <option value="custom">Custom (use Advanced settings)</option>
       </select></label>
       <label>Length<select id="quickLen"><option value="15">15 s</option><option value="30" selected>30 s</option><option value="45">45 s</option><option value="60">60 s</option></select></label>
-      <label>Look<select id="quickLook"><option value="clean">Clean</option><option value="glitch">Neon glitch</option></select></label>
+      <label>Effect<select id="quickLook"><option value="clean">None</option><option value="glitch">Neon glitch</option></select></label>
       <label>Main character (optional)<select id="castInf"><option value="">Invent from the story</option></select></label>
     </div>
+    <div class="story-look"><span class="sl-lbl"><svg class=ic aria-hidden=true><use href=#i-image></use></svg> Look</span><div id="lookHost"></div></div>
     <div class="warnbox" id="budgetWarn" hidden></div>
     <label id="autoBudgetRow" hidden style="max-width:260px"><svg class=ic aria-hidden=true><use href=#i-brain></use></svg> Director budget for the whole story ($)<input id="autoBudget" inputmode="decimal" value="2.00"></label>
     <div class="dir-note" id="dirNote" hidden aria-live="polite"></div>
@@ -164,7 +164,7 @@
     <div id="breakdown" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-bottom:12px"></div>
     <style>.hgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}@media(max-width:700px){.hgrid{grid-template-columns:1fr}}.hgrid .item{flex-wrap:wrap}</style>
     <style>#breakdown>div{display:flex;justify-content:space-between;gap:8px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel2)}</style>
-    <div class="meta" style="margin-bottom:10px">Audio is off for all clips so the sound stays consistent when stitched. Add narration and music afterwards. Clips from different models can look slightly different.</div>
+    <div class="meta" style="margin-bottom:10px">Clips are silent; narration and music are added when stitching.</div>
     <button class="btn primary" id="gen">Generate all scenes &amp; stitch</button>
     <button class="btn hidden" id="regen" type="button" style="margin-top:8px"><svg class=ic aria-hidden=true><use href=#i-repeat></use></svg> Regenerate everything from scratch</button>
   </div>
@@ -325,7 +325,7 @@ function applyPreset(){
 function presetNote(){
   const p=PRESETS[$('preset').value], secs=+$('quickLen').value||30;
   $('autoBudgetRow').hidden=$('preset').value!=='auto';
-  if($('preset').value==='auto'){ $('budgetWarn').hidden=true; $('presetNote').innerHTML=`<svg class=ic aria-hidden=true><use href=#i-brain></use></svg> After planning, the Director picks a model for every scene from all available models: the best quality where it shows (faces, close-ups, key scenes), cheaper models elsewhere, within ${S.money(parseFloat($('autoBudget').value)||2)} in total. You see every choice and the total before paying.`; return; }
+  if($('preset').value==='auto'){ $('budgetWarn').hidden=true; $('presetNote').innerHTML=`<svg class=ic aria-hidden=true><use href=#i-brain></use></svg> The Director picks a model for each scene, up to ${S.money(parseFloat($('autoBudget').value)||2)} in total. You see the plan before paying.`; return; }
   if(!p){ $('presetNote').textContent='Custom: your Advanced settings are used as they are.'; return; }
   const n=Math.max(2,Math.round(secs/6)), keys=Math.max(1,Math.round(n*.3));
   const est=p.budget?+$('budgetAmt').value||0.15:
@@ -609,13 +609,13 @@ async function drawBoard(idxs,confirmed,redo){
 }
 $('drawBoard').onclick=()=>{ const need=boardScenes().filter(i=>!scenes[i].still); drawBoard(need.length?need:boardScenes()); };
 ['pictureFirst','connect','chain','aspect'].forEach(id=>$(id).addEventListener('change',()=>{ if(scenes.length) render(); }));
-// the Look (bar under the title) styles every scene; picking one switches to its suggested models
+// the Look (inside the Script panel) styles every scene; picking one switches to its suggested models
 addEventListener('theme-changed',e=>{
   const t=e.detail.theme;
   if(t&&e.detail.picked&&t.models){ $('preset').value='custom'; if([...$('cheap').options].some(o=>o.value===t.models.cheap)) $('cheap').value=t.models.cheap; if([...$('good').options].some(o=>o.value===t.models.good)) $('good').value=t.models.good; else if(!$('good').querySelector(`option[value="${t.models.good}"]`)){ $('good').insertAdjacentHTML('beforeend',`<option value="${t.models.good}">${t.models.good}</option>`); $('good').value=t.models.good; } $('res').value=['480p','720p'].includes(t.models.res)?t.models.res:'720p'; $('glitch').checked=t.look==='glitch'; $('budget').checked=false; ['res','cheap','good'].forEach(id=>$(id).dispatchEvent(new Event('change'))); presetNote(); toast(`${t.name}: ${NAME(t.models.cheap)} for B-roll, ${NAME(t.models.good)} for key scenes`); }
 });
 
-// the Look and the character from the bar under the title (the server adds both to every clip and picture)
+// the Look and the character from the Look box in the Script panel (the server adds both to every clip and picture)
 function lookStyle(){ const t=S.theme&&S.theme(); return t?t.style:''; }
 function lookText(){ const t=S.theme&&S.theme(), c=S.character&&S.character(); return [t&&t.style, c&&'main character: '+c].filter(Boolean).join('; '); }
 // Enhance the character & setting bible: exact faces, hair, outfits and colours, so every scene matches
@@ -696,7 +696,10 @@ fetch('/api/stories').then(r=>r.json()).then(j=>{
   try{ localStorage.removeItem(HKEY); }catch{}
   HIST.sort((a,b)=>b.ts-a.ts); renderHist();
 }).catch(()=>renderHist());
+try{ if(!localStorage.getItem('storyAutoV1')){ localStorage.setItem('storyAutoV1','1'); const f=JSON.parse(localStorage.getItem('form:story')||'{}'); if(f.preset){ f.preset='auto'; localStorage.setItem('form:story',JSON.stringify(f)); } } }catch{}
 S.persistForm('story',['script','preset','quickLen','quickLook','castInf','lock','budgetAmt','autoBudget']);
+// a script sent from the Scripts page (Use in Story mode)
+try{ const inc=sessionStorage.getItem('scriptToStory'); if(inc){ sessionStorage.removeItem('scriptToStory'); $('script').value=inc; $('script').dispatchEvent(new Event('input')); toast('Script added from Scripts. Pick a look and press Make my video.'); } }catch{}
 S.templatePicker($('tplBox'),'story',t=>{ $('script').value=t.prompt; $('script').dispatchEvent(new Event('input')); });
 S.presetChips($('fmtPresets'),p=>{
   $('quickLen').value=String(p.len); $('aspect').value=p.aspect; if($('preset').value==='budget'||$('preset').value==='custom') $('preset').value='balanced';

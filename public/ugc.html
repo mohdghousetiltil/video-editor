@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -85,7 +85,7 @@
           <label style="flex-direction:row;align-items:center;gap:8px;color:var(--text);font-size:13px"><input type="checkbox" id="usePic" checked style="width:auto"> Use this influencer's saved picture as the first frame, so the face stays the same. (The product photo can't be sent in this mode, so describe the product below.)</label>
         </div>
         <div id="sfBox" style="display:none;margin-bottom:12px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--panel2)">
-          <div class="meta" style="margin-bottom:8px;color:var(--text)"><b><svg class=ic aria-hidden=true><use href=#i-image></use></svg> Start frame</b>: combines the influencer and your product photo into one picture of them holding your exact product. The video then starts from it, so the product matches.</div>
+          <div class="meta" style="margin-bottom:8px;color:var(--text)"><b><svg class=ic aria-hidden=true><use href=#i-image></use></svg> Start frame</b>: the influencer holding your exact product, so the video matches it.</div>
           <div class="row" style="margin:0;align-items:flex-start;gap:12px">
             <div><button class="btn" id="mkFrame" type="button"><svg class=ic aria-hidden=true><use href=#i-image></use></svg> Create start frame</button><div class="meta" id="sfMsg" style="margin-top:6px;max-width:220px"></div></div>
             <img id="sfImg" style="display:none;width:96px;aspect-ratio:9/16;object-fit:cover;border-radius:10px;border:1px solid var(--line)">
@@ -132,7 +132,7 @@
           <label>Audio (voice)<select id="audio"><option value="true">On</option><option value="false">Off</option></select></label>
         </div>
         <div class="model-notes" id="modelNotes" aria-live="polite"></div>
-        <div class="cost"><span class="meta">Estimated total</span><b id="cost">—</b></div>
+        <div class="cost"><span class="meta">Cost</span><b id="cost">—</b></div>
         <button class="btn primary" id="go" type="button">Generate UGC video</button>
         <div class="err" id="err"></div>
       </div>
@@ -284,11 +284,11 @@ function applyModel(){
   $('modelNotes').innerHTML=window.studio.notesHTML(x); cost();
 }
 function cost(){
-  if($('model').value===window.studio.AUTO){ $('cost').innerHTML='<svg class=ic aria-hidden=true><use href=#i-brain></use></svg> Director decides · plan and total shown before paying'; return; }
+  if($('model').value===window.studio.AUTO){ $('cost').innerHTML='<svg class=ic aria-hidden=true><use href=#i-brain></use></svg> shown before paying'; return; }
   const x=MODELS[$('model').value];
-  if(x){ $('cost').textContent=window.studio.costLine(x,{res:$('res').value,dur:$('duration').value,audio:$('audio').value==='true'}).text; return; }
+  if(x){ $('cost').textContent='≈ '+window.studio.money(window.studio.costLine(x,{res:$('res').value,dur:$('duration').value,audio:$('audio').value==='true'}).total); return; }
   const p=PRICE[$('model').value][$('res').value]||0, d=+$('duration').value||0;
-  $('cost').textContent=d?`≈ $${(p*d).toFixed(2)} for ${d} s`:'—';
+  $('cost').textContent=d?`≈ $${(p*d).toFixed(2)}`:'—';
 }
 ['res','duration','audio'].forEach(i=>$(i).addEventListener('change',cost)); $('model').addEventListener('change',applyModel); cost();
 window.studio.addAutoOption($('model'));

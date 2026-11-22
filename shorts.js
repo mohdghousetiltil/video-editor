@@ -24,6 +24,8 @@ const VOICES = [
   { voice: "jessica", model: "elevenlabs/eleven-turbo-v2.5", label: "Jessica (ElevenLabs)" },
 ];
 
+const { MOOD_EXPR, MOODS, renderMood } = require("./lib/music");
+
 module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, serveMp4, tts, logSpend = () => {}, orFetch = fetch, renderSlot = (fn) => fn(), getModel = () => null, serveThumb, history = null }) {
   const hist = (id, rec) => { try { history && history.put("short-" + id, { kind: "short", url: `/api/shorts/${id}/short.mp4`, thumb: `/api/shorts/${id}/thumb.jpg`, ...rec }); } catch {} };
   const DIR = path.join(STORE, "work", "shorts");
@@ -121,34 +123,10 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
   // aevalsrc), so there are never any rights issues. "pad" is the older soft chord bed, kept for saved settings.
   const MUSIC = path.join(DIR, "music");
   fs.mkdirSync(MUSIC, { recursive: true });
-  // b = position inside a beat of length L seconds; tones decay from each beat
-  const beat = (L) => `mod(t,${L})`;
-  const MOOD_EXPR = {
-    // 120 bpm: kick on every beat, off-beat hats, a bass line that moves every 2 bars
-    upbeat: `0.55*sin(2*PI*(45+90*exp(-25*${beat(0.5)}))*${beat(0.5)})*exp(-7*${beat(0.5)})` +
-      `+0.05*(random(1)-0.5)*exp(-60*mod(t+0.25,0.5))` +
-      `+0.16*sin(2*PI*110*if(lt(mod(t,4),2),1,if(lt(mod(t,4),3),1.335,1.189))*t)*(0.55+0.45*exp(-6*${beat(0.25)}))`,
-    // low drone, slow pulse, a soft clock tick: tension that builds
-    suspense: `(0.22*sin(2*PI*55*t)+0.12*sin(2*PI*82.41*t)+0.05*sin(2*PI*233.08*t))*(0.6+0.4*sin(2*PI*0.5*t))` +
-      `+0.12*sin(2*PI*1400*t)*exp(-90*${beat(0.5)})`,
-    // warm chords that change every 4 s, gently breathing
-    chill: `(0.15*sin(2*PI*220*t)+0.11*sin(2*PI*277.18*t)+0.1*sin(2*PI*329.63*t)+0.07*sin(2*PI*110*t))*if(lt(mod(t,8),4),1,0)` +
-      `+(0.15*sin(2*PI*196*t)+0.11*sin(2*PI*246.94*t)+0.1*sin(2*PI*293.66*t)+0.07*sin(2*PI*98*t))*if(lt(mod(t,8),4),0,1)`,
-    // big slow drums and a power chord
-    epic: `0.7*sin(2*PI*(40+60*exp(-18*${beat(1)}))*${beat(1)})*exp(-4*${beat(1)})` +
-      `+(0.12*sin(2*PI*73.42*t)+0.1*sin(2*PI*110*t)+0.08*sin(2*PI*146.83*t))*(0.7+0.3*sin(2*PI*0.25*t))`,
-    // bouncy plucks, like a cartoon
-    funny: `0.22*sin(2*PI*if(lt(mod(t,1),0.5),392,if(lt(mod(t,1),0.75),523.25,440))*t)*exp(-9*${beat(0.25)})` +
-      `+0.3*sin(2*PI*(60+60*exp(-30*${beat(0.5)}))*${beat(0.5)})*exp(-10*${beat(0.5)})`,
-  };
-  const MOODS = Object.keys(MOOD_EXPR);
+  // the moods (upbeat, suspense, cinematic, chill, epic, funny) live in lib/music.js, shared with Single clip
   async function musicPath(m, dir, len) {
     if (m === "pad") m = "chill";
-    if (MOOD_EXPR[m]) {
-      const f = path.join(dir, `music-${m}.m4a`), soft = m === "upbeat" || m === "funny" ? "lowpass=f=5000" : "lowpass=f=1800";
-      await run(["-y", "-f", "lavfi", "-i", `aevalsrc='${MOOD_EXPR[m]}':s=48000:d=${Math.ceil(len + 1)}`, "-af", `${soft},aecho=0.8:0.6:50:0.25,alimiter=limit=0.8`, "-ac", "2", "-c:a", "aac", "-b:a", "128k", path.basename(f)], dir);
-      return f;
-    }
+    if (MOOD_EXPR[m]) return renderMood(run, m, dir, len);
     const f = fs.readdirSync(MUSIC).find((n) => n.startsWith(m + "."));
     return f ? path.join(MUSIC, f) : null;
   }
@@ -282,7 +260,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
     `- framing: "crop" if the important action stays inside a central vertical strip (one person talking, one subject) - then focus_x is that subject's horizontal centre (0 = left edge, 1 = right edge). "fit" if important things span the width (gameplay with HUD, wide shots, on-screen text, burned-in subtitles, two people far apart).\n` +
     `- teaser: 1-2 seconds of the most surprising or satisfying instant (the payoff, the reveal, the crash, the punchline) INSIDE the chosen pieces; it is flashed first as a cold open before the story starts. {"start":0,"end":0} if nothing stands out.
 ` +
-    `- mood: the music that fits, one of: ${MOODS.join(", ")}.
+    `- mood: the music that fits, one of: ${MOODS.join(", ")} (cinematic for dramatic, emotional or story moments).
 ` +
     `- hook: on-screen text for the first 3 seconds, max 6 words, creates curiosity, no emojis; "" if the clip already hooks by itself.\n` +
     `- title: Shorts title, max 70 characters, punchy and honest, no hashtags.\n- description: 1-2 sentences plus a short call to action.\n` +

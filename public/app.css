@@ -92,13 +92,24 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:200;op
   .tabbar{z-index:60}
 
   /* scrim + arc */
-  .radial-scrim{position:fixed;inset:0;z-index:55;background:radial-gradient(420px 360px at 50% 100%,rgba(0,229,255,.12),transparent 70%),rgba(3,4,10,.62);
-    backdrop-filter:blur(3px);opacity:0;pointer-events:none;transition:opacity .16s ease-in}
-  .radial{position:fixed;left:50%;bottom:0;width:0;height:0;z-index:58;pointer-events:none}
-  .radial-ring{position:absolute;left:-118px;top:-118px;width:236px;height:236px;border-radius:50%;
-    border:1px dashed rgba(0,229,255,.35);box-shadow:inset 0 0 40px -10px rgba(0,229,255,.35);
-    clip-path:inset(0 0 50% 0);transform:scale(.4);opacity:0;transition:transform .16s ease-in,opacity .12s ease-in}
-  .radial a{position:absolute;left:0;top:0;width:84px;margin-left:-42px;margin-top:-30px;display:flex;flex-direction:column;align-items:center;gap:6px;
+  .radial-scrim{position:fixed;inset:0;z-index:55;background:radial-gradient(380px 380px at 50% 45%,rgba(0,229,255,.14),transparent 70%),rgba(3,4,10,.78);
+    -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);opacity:0;pointer-events:none;transition:opacity .18s ease-in}
+  .radial{position:fixed;left:50%;top:45%;width:0;height:0;z-index:58;pointer-events:none}
+  .radial-ring{position:absolute;border-radius:50%;
+    border:1px dashed rgba(0,229,255,.3);box-shadow:inset 0 0 60px -14px rgba(0,229,255,.35);
+    transform:scale(.4) rotate(-40deg);opacity:0;transition:transform .18s ease-in,opacity .12s ease-in}
+  /* centre: a hollow neon reticle with a thin ×, a dashed arc slowly circling it */
+  .radial-x{position:absolute;left:-28px;top:-28px;width:56px;height:56px;border-radius:50%;display:grid;place-items:center;cursor:pointer;
+    color:var(--acc);background:rgba(3,6,16,.6);border:1.5px solid var(--acc);
+    box-shadow:0 0 10px rgba(0,229,255,.55),inset 0 0 10px rgba(0,229,255,.35);transform:scale(0);transition:transform .16s ease-in}
+  .radial-x::before{content:"";position:absolute;inset:-9px;border-radius:50%;border:1.5px dashed rgba(0,229,255,.55);border-left-color:transparent;border-right-color:transparent;
+    animation:reticle 6s linear infinite}
+  .radial-x svg{width:20px;height:20px;stroke-width:1.6;filter:drop-shadow(0 0 4px var(--acc))}
+  @keyframes reticle{to{transform:rotate(360deg)}}
+  @media(prefers-reduced-motion:reduce){.radial-x::before{animation:none}}
+  .radial-open .radial-x{transform:scale(1);transition:transform .3s cubic-bezier(.3,1.4,.5,1)}
+  .radial-x:active{transform:scale(.9) !important}
+  .radial a{position:absolute;left:0;top:0;width:96px;margin-left:-48px;margin-top:-30px;display:flex;flex-direction:column;align-items:center;gap:6px;
     text-decoration:none;color:var(--text);transform:translate(0,0) scale(.3);opacity:0;
     transition:transform .16s ease-in,opacity .12s ease-in;touch-action:manipulation}
   .radial .ro{width:60px;height:60px;border-radius:50%;display:grid;place-items:center;color:var(--acc);
@@ -115,7 +126,7 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:200;op
 
   .radial-open .radial-scrim{opacity:1;pointer-events:auto;transition:opacity .22s ease-out}
   .radial-open .radial{pointer-events:auto}
-  .radial-open .radial-ring{transform:scale(1);opacity:1;transition:transform .3s var(--ease),opacity .2s ease-out}
+  .radial-open .radial-ring{transform:scale(1) rotate(0);opacity:1;transition:transform .45s var(--ease),opacity .2s ease-out}
   .radial-open .radial a{opacity:1;transform:translate(var(--x),var(--y)) scale(1);
     transition:transform .32s cubic-bezier(.3,1.4,.5,1) var(--d),opacity .18s ease-out var(--d)}
 }
@@ -450,8 +461,8 @@ small,.meta,.hint,.count,.sd-note{font-size:13px}
 .info-body a,.spend-dlg a{color:var(--acc)}
 .tour{padding-left:20px;display:flex;flex-direction:column;gap:12px;line-height:1.55}
 .site-foot{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;color:var(--mute);font-size:13px}
-.site-foot button{all:unset;cursor:pointer;color:var(--mute);text-decoration:underline;text-underline-offset:3px}
-.site-foot button:hover,.site-foot button:focus-visible{color:var(--acc)}
+.site-foot button,.site-foot a{all:unset;cursor:pointer;color:var(--mute);text-decoration:underline;text-underline-offset:3px}
+.site-foot button:hover,.site-foot button:focus-visible,.site-foot a:hover{color:var(--acc)}
 .site-foot .sf-note{margin-left:auto}
 .model-notes{color:var(--mute);font-size:13px;margin:-4px 0 14px;min-height:1em}
 .tier{display:inline-block;margin-left:6px;padding:1px 6px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;border:1px solid var(--line2);vertical-align:middle}
@@ -525,8 +536,30 @@ button.chip.sel{color:#04121a;background:var(--acc);border-color:var(--acc)}
 /* Look picker: one row of chips + optional character box */
 .look-bar{display:flex;flex-direction:column;gap:8px;margin:-6px 0 18px;padding:10px 12px;border:1px solid var(--line2);background:rgba(8,10,22,.55)}
 .look-bar.inline{margin:0 0 14px;padding:0;border:0;background:none}
-.look-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.look-row .chips{margin:0}
+/* Look: swipe carousel, the card in the middle is the look */
+.look-swipe{position:relative;display:flex;align-items:center;gap:2px}
+.look-track{flex:1;min-width:0;display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;overscroll-behavior-x:contain;
+  padding:6px calc(50% - 44px) 8px;scrollbar-width:none;-webkit-overflow-scrolling:touch;
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 16%,#000 84%,transparent);mask-image:linear-gradient(90deg,transparent,#000 16%,#000 84%,transparent)}
+.look-track::-webkit-scrollbar{display:none}
+/* each look: a neon icon (no box) and its name; the one in the middle lights up */
+.look-card{all:unset;box-sizing:border-box;flex:0 0 88px;scroll-snap-align:center;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;gap:8px;padding:6px 0;color:var(--n);
+  transform:scale(.8);opacity:.4;transition:transform .28s cubic-bezier(.2,.8,.2,1),opacity .28s}
+.look-card .lc-ic{display:grid;place-items:center;width:56px;height:56px}
+.look-card .lc-ic .ic{width:40px;height:40px;stroke-width:1.5;filter:drop-shadow(0 0 2px var(--n)) drop-shadow(0 0 6px var(--n));transition:filter .28s}
+.look-card b{font-family:var(--font-ui);font-weight:700;font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--text);transition:color .28s,text-shadow .28s}
+.look-card.near{transform:scale(1);opacity:1}
+.look-card.sel .lc-ic .ic{filter:drop-shadow(0 0 3px var(--n)) drop-shadow(0 0 10px var(--n)) drop-shadow(0 0 22px var(--n));animation:neon-hum 3s ease-in-out infinite}
+.look-card.sel b{color:var(--n);text-shadow:0 0 8px var(--n)}
+@keyframes neon-hum{50%{opacity:.82}}
+@media(prefers-reduced-motion:reduce){.look-card.sel .lc-ic .ic{animation:none}}
+.look-card:focus-visible{outline:1px dashed var(--n);outline-offset:4px}
+.look-arrow{all:unset;cursor:pointer;flex:0 0 30px;height:30px;display:grid;place-items:center;color:var(--mute)}
+.look-arrow:hover{color:var(--acc)}
+.look-arrow .ic{width:18px;height:18px}
+.look-arrow.prev .ic{transform:scaleX(-1)}
+@media(hover:none){.look-arrow{display:none}}
 .look-lbl{font-family:var(--font-ui);font-weight:700;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
 .look-char-btn{all:unset;cursor:pointer;font-size:14px;color:var(--text);padding:4px 0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .look-char-btn:hover,.look-char-btn:focus-visible{color:var(--acc)}
@@ -548,3 +581,52 @@ button.chip.sel{color:#04121a;background:var(--acc);border-color:var(--acc)}
    tab bar or the More orb never selects text or opens the copy menu */
 button,.btn,.chip,.model,a,label{touch-action:manipulation}
 .tabbar,.tabbar *,.radial,.radial *,.sb-nav{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+/* Story: the Look sits inside the Script panel, under the quick options */
+.story-look{margin:4px 0 12px;padding:12px 12px 0;border:1px solid var(--line2);background:rgba(8,10,22,.35)}
+.story-look .sl-lbl{display:flex;align-items:center;gap:6px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--mute);margin-bottom:8px}
+.story-look .look-bar.inline{margin:0 0 12px}
+
+/* ---------- app feel: no zoom, nav and icons act like buttons, smooth page changes ---------- */
+html{touch-action:manipulation;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+a,button,summary,label,.chip,.model{-webkit-tap-highlight-color:transparent}
+.sb,.tabbar,.radial,.radial-scrim,.btn,button,.chip,.model,.pagehead h1,.sb-brand,svg,svg.ic,.look-card,summary{
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+img,svg,a{-webkit-user-drag:none}
+/* iOS zooms into inputs with text under 16px: keep them at 16px on phones */
+@media(max-width:900px){input,select,textarea{font-size:16px !important}}
+/* press feedback on every button, quick and soft */
+.btn,button,.chip{transition:transform .12s ease,filter .15s ease,background .15s,border-color .15s,box-shadow .15s}
+.btn:active:not(:disabled),.chip:active{transform:scale(.97)}
+/* smooth fade between pages (Chrome, Edge, Safari 18+) */
+@view-transition{navigation:auto}
+::view-transition-old(root){animation:vt-out .14s ease-in both}
+::view-transition-new(root){animation:vt-in .2s ease-out both}
+@keyframes vt-out{to{opacity:0}}
+@keyframes vt-in{from{opacity:0;transform:translateY(6px)}}
+@media(prefers-reduced-motion:reduce){::view-transition-old(root),::view-transition-new(root){animation:none}}
+html{scroll-behavior:smooth}
+.enh details+details{margin-top:8px}
+
+/* ---------- touch / iPhone app easter eggs ---------- */
+.eg-rgb .wrap{animation:eg-rgb .6s steps(6) both}
+@keyframes eg-rgb{0%,100%{filter:none;transform:none}20%{filter:drop-shadow(4px 0 0 rgba(255,46,147,.8)) drop-shadow(-4px 0 0 rgba(0,229,255,.8));transform:translateX(-2px)}
+  50%{filter:drop-shadow(-6px 0 0 rgba(255,46,147,.8)) drop-shadow(6px 0 0 rgba(0,229,255,.8));transform:translateX(3px)}80%{filter:hue-rotate(90deg)}}
+.eg-holo{background:linear-gradient(100deg,#00e5ff,#ff2e93,#c6ff00,#00e5ff);background-size:300% 100%;-webkit-background-clip:text;background-clip:text;
+  color:transparent !important;animation:eg-holo 1.6s linear infinite}
+@keyframes eg-holo{to{background-position:300% 0}}
+.eg-reboot::after{content:"SYSTEM REBOOT";position:fixed;inset:0;z-index:200;display:grid;place-items:center;pointer-events:none;
+  font-family:var(--font-hud);font-weight:800;letter-spacing:.3em;color:var(--acc);text-shadow:0 0 18px var(--acc);
+  background:repeating-linear-gradient(0deg,rgba(0,229,255,.08) 0 2px,transparent 2px 4px),rgba(3,4,10,.85);animation:eg-reboot 1.3s ease both}
+@keyframes eg-reboot{0%{clip-path:inset(0 0 100% 0)}25%{clip-path:inset(0)}75%{clip-path:inset(0);opacity:1}100%{clip-path:inset(100% 0 0 0);opacity:0}}
+.eg-roll .wrap{animation:eg-roll 1s cubic-bezier(.6,0,.3,1) both}
+@keyframes eg-roll{to{transform:rotate(360deg)}}
+.eg-boot{position:fixed;inset:0;z-index:300;background:#03040a;color:var(--acc);font:600 13px/1.9 ui-monospace,Menlo,monospace;letter-spacing:.06em;
+  display:flex;flex-direction:column;justify-content:center;padding:24px calc(24px + env(safe-area-inset-left));transition:opacity .3s}
+.eg-boot div{opacity:0;animation:eg-line .2s var(--d) forwards}
+.eg-boot div:first-child{font-family:var(--font-hud);font-size:18px;color:#fff;margin-bottom:10px}
+.eg-boot.out{opacity:0}
+@keyframes eg-line{to{opacity:1}}
+/* nav circle and look icons: a ring around the icon instead of the square focus box */
+.radial a:focus-visible,.look-card:focus-visible{outline:none !important;box-shadow:none !important}
+.radial a:focus-visible .ro{box-shadow:0 0 0 2px var(--acc),0 0 22px 0 rgba(0,229,255,.7)}
+.look-card:focus-visible .lc-ic{border-radius:50%;box-shadow:0 0 0 1px var(--n)}

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -114,7 +114,6 @@
         <div class="model-notes" id="modelNotes" aria-live="polite"></div>
         <details class="more-opts">
           <summary>More options</summary>
-          <div class="chips" id="presets" aria-label="Format presets"></div>
           <div id="tplBox"></div>
           <div class="ex-chips" id="examples" aria-label="Example prompts"></div>
           <div class="grid4" style="grid-template-columns:1fr 2fr 1fr">
@@ -125,7 +124,7 @@
           <label class="ck"><input type="checkbox" id="seedLock"> Lock seed</label>
           <label class="ck"><input type="checkbox" id="quality" checked> Quality booster <span class="meta">(sharp focus, natural motion, no warping or extra fingers)</span></label>
         </details>
-        <div class="cost"><span class="meta">Estimated cost</span><b id="cost">—</b></div>
+        <div class="cost"><span class="meta">Cost</span><b id="cost">—</b></div>
         <button class="btn primary" id="go" type="button">Generate video</button>
         <div id="confirmHost"></div>
         <div class="err" id="err" role="alert"></div>
@@ -185,7 +184,7 @@ function fill(sel,opts,def){const cur=sel.dataset.pending||sel.value; delete sel
 function applyModel(){
   const x=m(); if(!x) return; renderModels();
   ['durWrap','resWrap'].forEach(id=>$(id).hidden=isAuto()); $('budgetWrap').hidden=!isAuto();
-  if(isAuto()){ $('modelNotes').innerHTML='<svg class=ic aria-hidden=true><use href=#i-brain></use></svg> The Director chooses model, length, resolution, sound, picture first and Enhance for the best quality within your budget. You see its plan, its reasons and the total before anything is charged.'; updateCost(); return; }
+  if(isAuto()){ $('modelNotes').innerHTML='<svg class=ic aria-hidden=true><use href=#i-brain></use></svg> You see the plan and exact price before paying.'; updateCost(); return; }
   fill($('resolution'),x.res,x.res.includes('720p')?'720p':x.res[0]);
   [...$('resolution').options].forEach(o=>{if(o.value==='1080p') o.textContent='1080p (hero / YouTube only)';});
   fill($('aspect'),x.asp,'9:16');
@@ -198,9 +197,9 @@ function applyModel(){
 }
 function updateCost(){
   const x=m(); if(!x) return;
-  if(isAuto()){ const b=parseFloat($('autoBudget').value)||0; $('cost').innerHTML=`<svg class=ic aria-hidden=true><use href=#i-brain></use></svg> best quality within ${S.money(b)}${+$('variations').value>1?' per version':''} · plan and exact total shown before paying`; return; }
+  if(isAuto()){ const b=parseFloat($('autoBudget').value)||0; $('cost').textContent=`up to ${S.money(b*(+$('variations').value||1))}`; return; }
   const c=S.costLine(x,{res:$('resolution').value,dur:$('duration').value,audio:$('audio').value==='true',n:+$('variations').value});
-  $('cost').textContent=c.text;
+  $('cost').textContent=`≈ ${S.money(c.total)}`; $('cost').title=c.text;
 }
 ['duration','resolution','audio','variations'].forEach(i=>$(i).addEventListener('change',updateCost));
 

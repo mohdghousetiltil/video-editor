@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -95,9 +95,9 @@
     <div id="srcLink" class="hidden">
       <input id="link" type="url" inputmode="url" autocomplete="off" placeholder="Direct .mp4 link, Dropbox / Google Drive share link, YouTube, X, Instagram, TikTok…">
       <div class="linkstat" id="linkStat" aria-live="polite"></div>
-      <div class="note">Direct download links (a URL ending in .mp4 or .mov, Dropbox, Google Drive, cloud storage) are fetched straight away. Page links (YouTube, X…) go through a downloader; YouTube sometimes blocks cloud servers, so if one fails, upload the file instead.</div>
+      <div class="note">If a link fails, upload the file instead.</div>
     </div>
-    <div class="note">Only use footage you have the rights to. Reposting other people's videos (game trailers, TV, other creators) usually gets a Content ID claim or strike.</div>
+    <div class="note">Use only footage you have the rights to.</div>
   </div>
 
   <div class="panel">
@@ -114,15 +114,14 @@
       <label id="voiceWrap">Narrator voice<select id="voice"><option value="am_michael">Michael (US male, Kokoro)</option></select></label>
       <label>Music (made by the app, copyright-free)<select id="music">
         <option value="auto">Auto: fits the video's mood</option>
-        <option value="upbeat">Upbeat</option><option value="suspense">Suspense</option><option value="chill">Chill</option><option value="epic">Epic</option><option value="funny">Funny</option>
+        <option value="cinematic">Cinematic</option><option value="upbeat">Upbeat</option><option value="suspense">Suspense</option><option value="chill">Chill</option><option value="epic">Epic</option><option value="funny">Funny</option>
         <option value="none">None</option><option value="upload">Upload my own track…</option>
       </select></label>
       <label style="flex-direction:row;align-items:center;gap:8px;color:var(--text)"><input type="checkbox" id="sfx" checked style="width:auto"> Sound effects (boom on the hook, whoosh on cuts)</label>
     </div>
-    <p class="meta" style="margin:4px 0 12px">The AI watches your video, opens with a 1–2 s flash of the best moment and a hook line ("Wait till you see what happens"), then tells it like a story. The video's own sound fades down whenever the narrator speaks.</p>
+    <p class="meta" style="margin:4px 0 12px">Hook, story voiceover and music. <a href="/guide#shorts">How it works</a></p>
     <details class="more-opts">
       <summary>More options</summary>
-      <div class="chips" id="presets" aria-label="Presets"></div>
       <div class="grid">
       <div class="range">
         <span class="range-l">Search only this part (optional)</span>
@@ -152,8 +151,8 @@
         <div id="aspectPrev" style="display:flex;gap:10px"></div>
       </div>
     </div>
-    <div class="note" style="margin:0 0 12px">AI watches the whole video (long ones in 10-minute parts, then compares the best candidates) and cuts the strongest moment tight. <b>Jump cuts</b> only happen when it picks more than one piece; a short single-shot source gets zooms only. <b>Zooms</b> are skipped with "Clean" editing.</div>
-    <div class="cost" style="display:flex;justify-content:space-between;padding:10px 12px;border:1px solid var(--line2);margin:0 0 12px"><span class="meta">Estimated cost</span><b id="estCost" style="color:var(--warn)">—</b></div>
+
+    <div class="cost" style="display:flex;justify-content:space-between;padding:10px 12px;border:1px solid var(--line2);margin:0 0 12px"><span class="meta">Cost</span><b id="estCost" style="color:var(--warn)">—</b></div>
     <button class="btn primary" id="go"><svg class=ic aria-hidden=true><use href=#i-scissors></use></svg> Make Short</button>
     <div class="err" id="err"></div>
   </div>
@@ -234,7 +233,7 @@ function estimate() {
 }
 function preflight() {
   const e = estimate(), [lo, hi] = target(), d = srcInfo && srcInfo.duration;
-  $('estCost').textContent = '≈ ' + S.money(e.total, 3) + ' (AI watching ≈ ' + S.money(e.analysis, 3) + (e.voice ? ' + voice ≈ ' + S.money(e.voice, 4) : '') + ')';
+  $('estCost').textContent = '≈ ' + S.money(e.total, 3);
   const eleven = /eleven/.test(e.v.model || '');
   $('voiceWarn').hidden = !(eleven && $('narration').value !== 'off');
   if (eleven) $('voiceWarn').innerHTML = `<svg class=ic aria-hidden=true><use href=#i-banknote></use></svg> <b>ElevenLabs</b> costs about ${S.money(e.v.perSec * 60, 3)} a minute of speech, about 15× Kokoro. Still small for one Short (≈ ${S.money(e.voice, 3)} here), but it adds up.`;

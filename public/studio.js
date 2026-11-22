@@ -197,11 +197,8 @@
     yt: { label: 'YouTube Short 9:16 · 30 s', aspect: '9:16', len: 30, res: '720p', model: 'google/veo-3.1-lite', voice: 'am_michael', shortsLen: '15-30' },
     tiktok: { label: 'TikTok 9:16 · 15 s', aspect: '9:16', len: 15, res: '720p', model: 'x-ai/grok-imagine-video-1.5-lite', voice: 'am_adam', shortsLen: '15-30' },
   };
-  S.presetChips = (el, onPick) => {
-    if (!el) return;
-    el.innerHTML = Object.entries(S.PRESETS).map(([k, p]) => `<button type="button" class="chip preset" data-k="${k}">${esc(p.label)}</button>`).join('');
-    el.querySelectorAll('button').forEach((b) => (b.onclick = () => { el.querySelectorAll('button').forEach((x) => x.classList.toggle('sel', x === b)); onPick(S.PRESETS[b.dataset.k], b.dataset.k); }));
-  };
+  // the Reels / YouTube Short / TikTok preset chips were removed from the UI to keep pages simple
+  S.presetChips = (el) => { if (el) el.remove(); };
 
   // ---------- templates: a starting point instead of a blank box ----------
   S.TEMPLATES = [
@@ -220,7 +217,7 @@
 
   // ---------- Help / About / Privacy / Spend & refunds ----------
   S.INFO = {
-    help: ['Help', `<h3>How paying works</h3><p>This app uses your own <b>OpenRouter</b> account. OpenRouter is a service that gives one key access to many AI models (video, pictures, voices). Every time you make something, OpenRouter charges your credit for it. The app never charges you itself.</p>
+    help: ['Help', `<p><a href="/guide">How it works</a>: the details behind every tool.</p><h3>How paying works</h3><p>This app uses your own <b>OpenRouter</b> account. OpenRouter is a service that gives one key access to many AI models (video, pictures, voices). Every time you make something, OpenRouter charges your credit for it. The app never charges you itself.</p>
       <h3>What the numbers mean</h3><ul><li><b>This month</b>: what your OpenRouter key spent this calendar month (UTC), straight from OpenRouter.</li><li><b>Credit left</b>: money still on your OpenRouter account.</li><li><b>Cap left</b>: how much more this app may spend this month before it refuses paid calls (Settings → monthly cap, $10 by default).</li><li><b>API key limit</b>: an optional limit you can set on the key itself at openrouter.ai. It is separate from the app's cap.</li><li><b>App log (estimate)</b>: what this app recorded, by feature. Voice costs there are estimates.</li></ul>
       <h3>Before anything is charged</h3><p>Every paid button shows the model, length, resolution and total first. Nothing is charged until you press Confirm.</p>
       <h3>Saving money</h3><ul><li>Draft on cheap models (marked Draft), keep Hero models for the one shot that matters.</li><li>720p looks the same as 1080p on a phone.</li><li>Short clips (2–4 s) stitched together drift less than one long clip.</li><li>Make a picture first, then animate it: pictures cost about 1–3 cents.</li></ul>`],

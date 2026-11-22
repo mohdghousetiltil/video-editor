@@ -9,8 +9,16 @@
     shorts: svg('<rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="m10.5 9.5 4 2.5-4 2.5z"/>'),
     gear: svg('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'),
     history: svg('<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/>'),
+    pen: svg('<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>'),
     people: svg('<circle cx="9" cy="8" r="3"/><path d="M3 19c.6-3 3-4.6 6-4.6s5.4 1.6 6 4.6"/><path d="M16 5.2a3 3 0 0 1 0 5.6M18 14.6c1.8.6 2.7 2 3 4.4"/>'),
   };
+  // App feel on phones: no pinch zoom (iOS ignores user-scalable=no; double-tap zoom is off via touch-action in CSS), and the nav,
+  // icons and buttons never open the copy / share callout on a long press.
+  ['gesturestart', 'gesturechange'].forEach((t) => document.addEventListener(t, (e) => e.preventDefault(), { passive: false }));
+  document.addEventListener('touchmove', (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+  document.addEventListener('contextmenu', (e) => { if (e.target.closest && e.target.closest('.sb,.tabbar,.radial,.btn,button,.chip,svg,.look-card')) e.preventDefault(); });
+  document.addEventListener('dragstart', (e) => { if (e.target.closest && e.target.closest('.sb,.tabbar,.radial,svg')) e.preventDefault(); });
+
   const items = [
     ['/', 'Single clip', ICON.clip, 'One prompt, one video'],
     ['/story', 'Story mode', ICON.story, 'Scenes, narration, stitch'],
@@ -18,6 +26,7 @@
     ['/motion', 'Poses & motion', ICON.motion, 'Poses for TikTok, copy motion'],
     ['/shorts', 'Shorts maker', ICON.shorts, 'Long video → ready-to-post Short'],
     ['/influencers', 'Influencers', ICON.people, 'Your AI influencer library'],
+    ['/scripts', 'Scripts', ICON.pen, 'Suspense script writer (chat)'],
     ['/history', 'History', ICON.history, 'Everything you made, search, retry'],
     ['/settings', 'Settings', ICON.gear, 'Models, Muse by Meta, spend cap'],
   ];
@@ -56,30 +65,32 @@
   radial.id = 'radial';
   radial.setAttribute('role', 'menu');
   radial.setAttribute('aria-label', 'More pages');
-  // 4+ items: a taller, narrower arc, so the outer items (icon + label) stay above the tab bar instead of behind it
-  const n = more.length, R = n > 3 ? 150 : 112, span = n > 3 ? 108 : Math.min(140, 64 * (n - 1));
-  radial.innerHTML = `<span class="radial-ring" aria-hidden="true" style="left:${-R - 6}px;top:${-R - 6}px;width:${2 * R + 12}px;height:${2 * R + 12}px"></span>` + more.map((i, k) => {
-    const a = (-90 - span / 2 + (n > 1 ? (span * k) / (n - 1) : span / 2)) * Math.PI / 180;
-    return `<a role="menuitem" href="${i[0]}" class="${i[0] === here ? 'on' : ''}" style="--x:${(Math.cos(a) * R).toFixed(1)}px;--y:${(Math.sin(a) * R).toFixed(1)}px;--d:${k * 45}ms">` +
+  // the pages fan out on a full circle in the middle of the screen (roomy on any phone), around a centre close button
+  const n = more.length, R = n > 5 ? 128 : 118;
+  radial.innerHTML = `<span class="radial-ring" aria-hidden="true" style="left:${-R - 46}px;top:${-R - 46}px;width:${2 * R + 92}px;height:${2 * R + 92}px"></span>` +
+    `<button type="button" class="radial-x" aria-label="Close menu">${svg('<path d="M6 6l12 12M18 6L6 18"/>')}</button>` + more.map((i, k) => {
+    const a = (-90 + (360 * k) / n) * Math.PI / 180;
+    return `<a role="menuitem" href="${i[0]}" draggable="false" class="${i[0] === here ? 'on' : ''}" style="--x:${(Math.cos(a) * R).toFixed(1)}px;--y:${(Math.sin(a) * R).toFixed(1)}px;--d:${k * 40}ms">` +
       `<span class="ro">${i[2]}</span><b>${i[1]}</b></a>`;
   }).join('');
   document.body.append(scrim, radial);
 
   const moreBtn = tabs.querySelector('.tb-more');
-  const setOpen = (open, refocus) => {
-    if (open) { // anchor the arc on the orb's centre
-      const r = moreBtn.querySelector('.tb-orb').getBoundingClientRect();
-      radial.style.left = r.left + r.width / 2 + 'px';
-      radial.style.top = r.top + r.height / 2 + 'px';
+  const setOpen = (open, refocus, kb) => {
+    if (open) { // centre of the visible screen, a little above the middle so the bottom labels clear the tab bar
+      const vv = window.visualViewport, h = vv ? vv.height : innerHeight, w = vv ? vv.width : innerWidth;
+      radial.style.left = w / 2 + 'px';
+      radial.style.top = Math.min(h / 2 - 20, h - 260) + 'px';
     }
     document.body.classList.toggle('radial-open', open);
     moreBtn.setAttribute('aria-expanded', String(open));
-    if (open) setTimeout(() => radial.querySelector('a')?.focus({ preventScroll: true }), 60);
+    if (open && kb) setTimeout(() => radial.querySelector('a')?.focus({ preventScroll: true }), 60); // keyboard only: no focus box on a tap
     else if (refocus) moreBtn.focus();
   };
   const isOpen = () => document.body.classList.contains('radial-open');
-  moreBtn.onclick = () => setOpen(!isOpen());
+  moreBtn.onclick = (e) => setOpen(!isOpen(), false, e.detail === 0);
   scrim.onclick = () => setOpen(false);
+  radial.querySelector('.radial-x').onclick = () => setOpen(false, true);
   document.addEventListener('keydown', (e) => {
     if (!isOpen()) return;
     if (e.key === 'Escape') { e.preventDefault(); setOpen(false, true); }
@@ -203,6 +214,8 @@
   //  · click the logo (or, on a phone, tap the page title) 5 times fast → the nav gets hacked for a moment
   //  · type "glitch" anywhere outside a text box → the screen tears
   //  · phones: hold the centre orb 1.5 s without moving → OVERDRIVE; shake hard → tear (Android)
+  //  · touch: 2-finger tap, 3-finger tap, hold the title, pull down 3 times, turn sideways and back (see below)
+  //  · iPhone home-screen app: a boot screen once a day
   //  · after midnight the server light says NETRUNNER ONLINE
   (() => {
     let on = true;
@@ -294,6 +307,64 @@
       });
     }
 
+    // ---- touch screens, extra for the iPhone home-screen app ----
+    //  · two-finger tap → RGB split flash   · three-finger tap → the nav gets hacked
+    //  · hold the page title 1 s → hologram title   · pull down hard at the top 3 times → SYSTEM REBOOT sweep
+    //  · turn the phone sideways and back within 2 s → barrel roll
+    //  · home-screen app: a short boot screen the first time you open it each day (tap to skip)
+    const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+    if (matchMedia('(pointer: coarse)').matches) {
+      const rgb = () => { document.body.classList.remove('eg-rgb'); void document.body.offsetWidth; document.body.classList.add('eg-rgb'); setTimeout(() => document.body.classList.remove('eg-rgb'), 650); };
+      let multi = null;
+      addEventListener('touchstart', (e) => { if (e.touches.length >= 2) multi = { n: e.touches.length, t: Date.now(), moved: false }; }, { passive: true });
+      addEventListener('touchmove', () => { if (multi) multi.moved = true; }, { passive: true });
+      addEventListener('touchend', (e) => {
+        if (!multi || e.touches.length) return;
+        const m = multi; multi = null;
+        if (m.moved || Date.now() - m.t > 350) return;
+        if (m.n === 2) rgb(); else if (m.n >= 3) hack();
+      }, { passive: true });
+      // hold the title
+      const h1 = document.querySelector('.pagehead h1');
+      if (h1) {
+        let ht;
+        h1.addEventListener('touchstart', () => { ht = setTimeout(() => { h1.classList.add('eg-holo'); buzz(30); setTimeout(() => h1.classList.remove('eg-holo'), 6000); }, 1000); }, { passive: true });
+        ['touchend', 'touchmove', 'touchcancel'].forEach((ev) => h1.addEventListener(ev, () => clearTimeout(ht), { passive: true }));
+      }
+      // pull down hard at the very top (the iPhone bounce) three times
+      let py = null, pulls = [];
+      addEventListener('touchstart', (e) => { py = scrollY <= 0 && e.touches.length === 1 ? e.touches[0].clientY : null; }, { passive: true });
+      addEventListener('touchend', (e) => {
+        if (py == null) return;
+        const dy = (e.changedTouches[0]?.clientY || 0) - py; py = null;
+        if (dy < 140) return;
+        const now = Date.now(); pulls = pulls.filter((t) => now - t < 4000); pulls.push(now);
+        if (pulls.length >= 3) { pulls = []; document.body.classList.add('eg-reboot'); tear(4); setTimeout(() => document.body.classList.remove('eg-reboot'), 1300); }
+      }, { passive: true });
+      // sideways and back
+      let turned = 0;
+      const so = screen.orientation;
+      const onTurn = () => {
+        const land = so ? /landscape/.test(so.type) : Math.abs(window.orientation || 0) === 90;
+        if (land) turned = Date.now();
+        else if (turned && Date.now() - turned < 2000) { turned = 0; document.body.classList.add('eg-roll'); setTimeout(() => document.body.classList.remove('eg-roll'), 1100); }
+      };
+      so && so.addEventListener ? so.addEventListener('change', onTurn) : addEventListener('orientationchange', onTurn);
+    }
+    if (standalone) {
+      const day = new Date().toDateString();
+      let seen = null; try { seen = localStorage.getItem('egBoot'); localStorage.setItem('egBoot', day); } catch {}
+      if (seen !== day) {
+        const boot = document.createElement('div');
+        boot.className = 'eg-boot'; boot.setAttribute('aria-hidden', 'true');
+        const lines = ['VIDEO//STUDIO OS v3.1', 'LINKING NEURAL RENDER CORE ......... OK', 'LOADING DIRECTOR ........................ OK', 'CALIBRATING LOOKS ...................... OK', new Date().getHours() < 4 ? 'NETRUNNER MODE ...................... ON' : 'WELCOME BACK, CREATOR'];
+        boot.innerHTML = lines.map((l, i) => `<div style="--d:${i * 160}ms">${l}</div>`).join('');
+        const end = () => { boot.classList.add('out'); setTimeout(() => boot.remove(), 300); };
+        boot.addEventListener('click', end);
+        document.body.append(boot); setTimeout(end, 1500);
+      }
+    }
+
     // night owls: after midnight the status light (desktop) says NETRUNNER ONLINE and the phone orb glows magenta
     const hr = new Date().getHours();
     if (hr < 4) { window.__eggNight = true; document.body.classList.add('eg-night'); }
@@ -304,7 +375,7 @@
   if (S) {
     document.getElementById('sbHelp').onclick = () => S.openInfo('help');
     // theme bar under the title on the pages that make videos
-    // the Look picker only where it shapes the video: Single clip (inside the form) and Story (under the title)
+    // the Look picker only where it shapes the video: inside the form on Single clip and Story
     if (S.mountThemeBar && ['/', '/story'].includes(here)) {
       const host = document.getElementById('lookHost');
       host ? S.mountThemeBar(host, { inline: true }) : S.mountThemeBar(wrap && wrap.querySelector('.pagehead'));
@@ -313,7 +384,7 @@
     if (wrap) {
       const ft = document.createElement('footer');
       ft.className = 'site-foot';
-      ft.innerHTML = ['help', 'about', 'privacy', 'refunds'].map((k) => `<button type="button" data-k="${k}">${S.INFO[k][0]}</button>`).join('<span aria-hidden="true">·</span>') +
+      ft.innerHTML = '<a href="/guide">How it works</a><span aria-hidden="true">·</span>' + ['help', 'about', 'privacy', 'refunds'].map((k) => `<button type="button" data-k="${k}">${S.INFO[k][0]}</button>`).join('<span aria-hidden="true">·</span>') +
         '<span class="sf-note">Single-user studio · charges go to your own OpenRouter key</span>';
       ft.addEventListener('click', (e) => { const b = e.target.closest('button[data-k]'); if (b) S.openInfo(b.dataset.k); });
       wrap.append(ft);

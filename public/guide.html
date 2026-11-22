@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;800&family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" media="print" onload="this.media='all'">
+<title>How it works</title>
+<style>
+  :root{--bg:#0b0d12;--panel:#12151c;--line:#232836;--text:#eceef4;--mute:#8a92a6;--acc:#7c5cff}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 Inter,system-ui,Segoe UI,sans-serif;min-height:100vh}
+  .wrap{max-width:780px;margin:0 auto;padding:22px 18px 60px}
+  .toc{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
+  .toc a{font-size:13px;padding:6px 12px;border:1px solid var(--line);color:var(--text);text-decoration:none}
+  details.g{background:var(--panel);border:1px solid var(--line);margin-bottom:10px;scroll-margin-top:16px}
+  details.g summary{cursor:pointer;padding:14px 16px;font-weight:700;display:flex;align-items:center;gap:8px;list-style:none}
+  details.g summary::-webkit-details-marker{display:none}
+  details.g summary::after{content:"+";margin-left:auto;color:var(--mute);font-size:18px;transition:transform .2s}
+  details.g[open] summary::after{transform:rotate(45deg)}
+  details.g .body{padding:0 16px 14px;color:#c9cede}
+  details.g ul{margin:6px 0;padding-left:20px}
+  details.g li{margin:4px 0}
+</style>
+<link rel="stylesheet" href="/app.css">
+<script src="/studio.js"></script>
+<script src="/icons.js"></script>
+</head>
+<body data-title="How it works" data-sub="The details behind each tool, in one place.">
+<div class="wrap">
+  <nav class="toc" aria-label="Sections">
+    <a href="#clip">Single clip</a><a href="#story">Story</a><a href="#looks">Looks</a><a href="#shorts">Shorts</a><a href="#influencers">Influencers</a><a href="#ugc">UGC</a><a href="#poses">Poses &amp; motion</a><a href="#scripts">Scripts</a><a href="#costs">Costs</a>
+  </nav>
+
+  <details class="g" id="clip"><summary><svg class=ic aria-hidden=true><use href=#i-clapper></use></svg> Single clip and the Director</summary><div class="body">
+    <ul>
+      <li><b>Auto</b> lets the Director pick the model, length, resolution, sound, and whether to draw a picture first or enhance after, for the best quality within your budget.</li>
+      <li>You always see its plan, its reasons and the exact price before anything is charged.</li>
+      <li><b>I'll choose</b> lets you pick a model yourself. The cost shown is an estimate from the model's price per second.</li>
+      <li><b>Add background music</b> under a finished clip mixes in copyright-free music made on your server. It dips under any voices.</li>
+    </ul></div></details>
+
+  <details class="g" id="story"><summary><svg class=ic aria-hidden=true><use href=#i-film></use></svg> Story mode</summary><div class="body">
+    <ul>
+      <li>Paste a story and the AI plans scenes, keeps characters consistent, voices it and stitches one video.</li>
+      <li><b>Auto (Recommended)</b>: the Director picks a model for each scene: the best ones for faces and key moments, cheaper ones elsewhere, within your total budget.</li>
+      <li><b>Keep characters consistent</b> draws one character sheet and starts each scene from a picture made from it (about $0.02 per scene).</li>
+      <li>Clips are made silent so the sound matches across scenes; narration and music are added when stitching.</li>
+      <li>Clips from different models can look slightly different.</li>
+    </ul></div></details>
+
+  <details class="g" id="looks"><summary><svg class=ic aria-hidden=true><use href=#i-image></use></svg> Looks and character</summary><div class="body">
+    <ul>
+      <li>Swipe the Look cards (Real, Disney, Pixar, Anime, Brain rot, None). The one in the middle is used.</li>
+      <li>The look and your character description are added word for word to every clip on Single clip and Story, so a series stays consistent.</li>
+      <li><b>Enhance character</b> turns a rough idea into one exact description.</li>
+    </ul></div></details>
+
+  <details class="g" id="shorts"><summary><svg class=ic aria-hidden=true><use href=#i-scissors></use></svg> Shorts maker</summary><div class="body">
+    <ul>
+      <li>The AI watches the whole video (long ones in 10-minute parts, then compares the best candidates) and cuts the strongest moment tight.</li>
+      <li><b>Story voiceover</b>: a 1–2 s flash of the best moment with a hook line ("Wait till you see what happens"), then the story from the start. The video's own sound fades down whenever the narrator speaks.</li>
+      <li><b>Music</b>: copyright-free tracks made on your server (Cinematic, Upbeat, Suspense, Chill, Epic, Funny). Auto picks the mood. It dips under speech.</li>
+      <li><b>Jump cuts</b> only happen when it picks more than one piece; a short single-shot video gets zooms only. Zooms are skipped with "Clean" editing.</li>
+      <li>Direct links (.mp4, .mov, Dropbox, Google Drive) are fetched straight away. Page links (YouTube, X…) go through a downloader, which YouTube sometimes blocks; upload the file instead.</li>
+      <li>Only use footage you have the rights to. Reposting other people's videos usually gets a Content ID claim or strike.</li>
+    </ul></div></details>
+
+  <details class="g" id="influencers"><summary><svg class=ic aria-hidden=true><use href=#i-user></use></svg> Influencers</summary><div class="body">
+    <ul>
+      <li>Pictures first, video second: a picture costs 1–6 cents, so you lock the look cheaply before paying for video.</li>
+      <li>Video models block photos of real people. <b>Make influencer from my photo</b> creates a new AI character with your hair, skin tone and vibe: Realistic (Grok, Veo and most models) or 3D, Disney-like, Ghibli-like, Anime (every model, Seedance too).</li>
+      <li>Seedance also blocks realistic AI faces: pick a stylized look and press <b>Test with Seedance</b> on the card.</li>
+      <li>The description, seed and picture are saved exactly and reused in every video, so the character stays the same.</li>
+    </ul></div></details>
+
+  <details class="g" id="ugc"><summary><svg class=ic aria-hidden=true><use href=#i-video></use></svg> UGC review</summary><div class="body">
+    <ul>
+      <li><b>Start frame</b> combines the influencer and your product photo into one picture of them holding your exact product. The video starts from it, so the product matches.</li>
+    </ul></div></details>
+
+  <details class="g" id="poses"><summary><svg class=ic aria-hidden=true><use href=#i-target></use></svg> Poses and copy motion</summary><div class="body">
+    <ul>
+      <li>Each pose becomes its own short vertical clip you can drop into TikTok or CapCut.</li>
+      <li>Copy motion needs the video model to read your clip from a public address. Sharing starts a temporary tunnel that exposes only the clips you upload there, each behind a long random address. Pasting a public link doesn't need it.</li>
+    </ul></div></details>
+
+  <details class="g" id="scripts"><summary><svg class=ic aria-hidden=true><use href=#i-pen></use></svg> Scripts</summary><div class="body">
+    <ul>
+      <li>A chat with a suspense writer for original stories (not reaction content): hook, timed beats with what we see, twist, title ideas.</li>
+      <li><b>Use in Story mode</b> sends just the spoken lines to Story. About 1–2 cents a reply.</li>
+    </ul></div></details>
+
+  <details class="g" id="costs"><summary><svg class=ic aria-hidden=true><use href=#i-wallet></use></svg> Costs</summary><div class="body">
+    <ul>
+      <li>Everything is charged to your own OpenRouter (or fal) credit; the app never charges you itself.</li>
+      <li>Cost shown on each page is an estimate. Paid steps ask you to confirm first, and History shows what each video actually cost.</li>
+      <li>Music, sound effects and Enhance run on your server and cost nothing.</li>
+    </ul></div></details>
+</div>
+<script>
+// open the section named in the link (#shorts etc.)
+const open = () => { const d = location.hash && document.querySelector(location.hash); if (d && d.tagName === 'DETAILS') { d.open = true; d.scrollIntoView({ block: 'start' }); } };
+addEventListener('hashchange', open); open();
+</script>
+<script src="/app.js"></script>
+</body>
+</html>

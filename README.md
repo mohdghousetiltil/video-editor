@@ -83,7 +83,7 @@ Options → "Search only this part": give a From / To time (12:30, 1:02:03) and 
 
 ## Themes, storyboard and Enhance
 
-- **Look and character** (section 3 on Single clip and a bar under the title on Story; UGC, Poses, Copy motion and Shorts never use it): pick one look, **Real, Disney, Pixar, Anime or Brain rot** (or None), and optionally describe the main character. ✨ **Enhance character** turns a rough idea into one exact description (face, hair, outfit, colours). The server adds the look and the character, word for word, to every clip and storyboard picture (`lib/themes.js`, `PUT /api/themes/active`). The prompt describes each look in plain words, since video models refuse brand names. On Story, ✨ **Enhance characters** does the same for the character & setting bible.
+- **Look and character** (section 3 on Single clip and a Look box inside the Script panel on Story; UGC, Poses, Copy motion and Shorts never use it): pick one look, **Real, Disney, Pixar, Anime or Brain rot** (or None), and optionally describe the main character. ✨ **Enhance character** turns a rough idea into one exact description (face, hair, outfit, colours). The server adds the look and the character, word for word, to every clip and storyboard picture (`lib/themes.js`, `PUT /api/themes/active`). The prompt describes each look in plain words, since video models refuse brand names. On Story, ✨ **Enhance characters** does the same for the character & setting bible.
 - **Quality booster** (on by default): adds "sharp focus, natural motion, stable anatomy" and an Avoid line (warping, extra fingers, garbled text…) plus your own negative prompt. Single clip shows the seed used, can lock it and can reuse it.
 - **Storyboard (Story → Picture first)**: one still per scene (`/api/still`, about $0.02 each, in the theme, from the character sheet or the saved influencer), shown side by side before any video is paid for. Redraw or swap any scene with your own AI-made picture. Each scene is then animated from its picture and, with **Connect scenes**, ends on the next scene's picture on models that support an end frame.
 - **Enhance** (after a clip, Story video or Short, and in History): free, on your server with ffmpeg. Upscale to 720p or 1080p, sharpen, denoise, and optionally smooth motion (frame interpolation, which also smooths the slowed and held clips of Story budget mode).
@@ -102,3 +102,18 @@ Reliability: if the brain's reply is broken or names a model that doesn't exist,
 ## Credit tracking
 
 The spend tracker shows OpenRouter's month total and credit, plus fal.ai's credit left (read live from fal) and its month spend (from the app's log, or fal's own figure if `FAL_ADMIN_KEY`, an admin-scoped key, is set). The monthly cap counts **all providers**.
+
+## Scripts (More → Scripts)
+A chat with a suspense writer (uses the Director's brain model, about 1–2 cents a reply). It writes original stories, not reaction content, using the craft of thriller books, films and real creator hooks: a cold open, an open loop, a ticking clock and a twist that loops back to the first line. Each script comes as a hook, then timed beats with spoken lines and visuals, then the twist and title ideas. Choose length (30/60/90 s) and format (narrated, POV, dialogue). Buttons under each reply: **Use in Story mode** (sends only the spoken lines to Story), Copy, Make it scarier, Different twist. The chat is kept in your browser.
+
+## Influencers from your own photo
+Video models refuse photos of real people, so **Make influencer from my photo** turns an uploaded photo into a new AI character that keeps the hair, skin tone, eyes and outfit vibe: Realistic (an original AI person inspired by the photo, for Grok, Veo and most models), or 3D animated, 2D Disney-like, Ghibli-like or Anime (fully redrawn, accepted by Seedance too). Head-and-shoulders, front-facing, plain background, 9:16, ready to animate in UGC.
+
+## App feel, music and guide (latest)
+- **Phones:** no pinch or double-tap zoom, the nav and icons act like buttons (no text selection or copy callout on long press), soft page fades and press feedback. **More** opens the pages on a circle in the middle of the screen.
+- **Look:** swipe the cards; the one in the middle is used (tap a card or use the arrows on desktop).
+- **Music:** a new **Cinematic** mood for Shorts. Under any finished clip, **Add background music** mixes in a generated, copyright-free track that dips under voices (free, the picture isn't re-encoded). The moods live in `lib/music.js`.
+- **Story:** Auto (Director) is now the first and default quality.
+- **Scripts:** replies are typed out (tap to show all) in the app's font.
+- **Less text:** pages show just the cost and short hints; the details are on **How it works** (`/guide`, linked in the footer and Help).
+- **Easter eggs on touch screens:** 2-finger tap (RGB split), 3-finger tap (nav hack), hold the page title (hologram), pull down hard at the top 3 times (system reboot), turn the phone sideways and back (barrel roll), and a once-a-day boot screen in the iPhone home-screen app.

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -131,7 +131,7 @@
     <div>
       <div class="panel">
         <h2>Your clips</h2>
-        <div id="pResults" class="results"><div class="meta">Pick an influencer and poses, then generate. Each pose becomes its own short vertical clip you can drop into TikTok / CapCut.</div></div>
+        <div id="pResults" class="results"><div class="meta">Pick an influencer and poses, then generate. One short clip per pose.</div></div>
         <div class="row" style="margin-top:14px"><button class="btn hidden" id="pStitch" type="button"><svg class=ic aria-hidden=true><use href=#i-film></use></svg> Join all into one reel</button></div>
         <div id="pReel" style="margin-top:12px"></div>
       </div>
@@ -186,7 +186,7 @@
         <h2>Secure link (needed to send your uploaded video to the provider)</h2>
         <div class="link">
           <div><span class="dotp" id="tDot"></span><b id="tTxt">Off</b></div>
-          <div class="meta" style="margin:6px 0 10px">The video provider can only read videos from a public HTTPS address. This starts a temporary Cloudflare tunnel that exposes <b>only the clips you upload here</b>, each behind a long random address, and nothing else on this computer. Stop it any time. Pasting a public link above doesn't need this.</div>
+          <div class="meta" style="margin:6px 0 10px">Shares <b>only the clips you upload here</b> through a temporary private link so the video model can read them. Stop it any time.</div>
           <div class="row"><button class="btn" id="tStart" type="button">Start secure link</button><button class="btn" id="tStop" type="button">Stop</button></div>
         </div>
         <div class="cost"><span class="meta">Estimated cost</span><b id="mCost">-</b></div>
@@ -309,9 +309,9 @@ function fillDur(sel,model,want,max){
   sel.value=String(ds.reduce((b,n)=>Math.abs(n-want)<Math.abs(b-want)?n:b,ds[0]));
 }
 function cost(){
-  if($('pModel').value===S.AUTO){ $('pCost').innerHTML='<svg class=ic aria-hidden=true><use href=#i-brain></use></svg> Director decides'; $('pCostLbl').textContent=`${sel.size} poses · plan and total shown before paying`; return 0; }
+  if($('pModel').value===S.AUTO){ $('pCost').innerHTML='<svg class=ic aria-hidden=true><use href=#i-brain></use></svg> shown before paying'; $('pCostLbl').textContent='Cost'; return 0; }
   const n=sel.size, d=+$('pDur').value||0, p=(PP[$('pModel').value]||{})[$('pRes').value]||0;
-  const extra=needsLook()&&!lookFrame?0.07:0; $('pCost').textContent=n&&d?`≈ $${(n*d*p+extra).toFixed(2)} for ${n} × ${d} s`:'-'; $('pCostLbl').textContent=`Estimated total (${n} poses × ${d} s)`;
+  const extra=needsLook()&&!lookFrame?0.07:0; $('pCost').textContent=n&&d?`≈ $${(n*d*p+extra).toFixed(2)}`:'-'; $('pCostLbl').textContent='Cost';
   return n*d*p+extra;
 }
 ['pModel','pDur','pRes'].forEach(i=>$(i).addEventListener('change',cost));
@@ -411,10 +411,10 @@ function autoPrompt(){
     : `@Image1 is the permanent character identity reference (${d}). @Video1 is the motion reference. Generate a vertical 9:16 video of the exact character from @Image1 performing the same movements, body positions, timing and rhythm shown in @Video1, as closely as possible. Preserve the character's face, hairstyle, skin tone, proportions, clothing and art style from @Image1. Do not adopt the identity of the person in @Video1. Natural anatomy, stable clothing, smooth realistic motion, full-body framing.`;
 }
 function mcost(){
-  if(method!=='flux'&&$('mModel').value===S.AUTO){ $('mCost').innerHTML='<svg class=ic aria-hidden=true><use href=#i-brain></use></svg> Director decides (models that can copy a video)'; return 0; }
+  if(method!=='flux'&&$('mModel').value===S.AUTO){ $('mCost').innerHTML='<svg class=ic aria-hidden=true><use href=#i-brain></use></svg> shown before paying'; return 0; }
   const dur=driver?driver.duration:(+$('mDur').value||8);
-  if(method==='flux') $('mCost').textContent='≈ $'+(0.03*dur).toFixed(2)+' ('+Math.round(dur)+'s)';
-  else { const x=MM[$('mModel').value]; if(x){ const c=S.costLine(x,{res:$('mRes').value,dur:$('mDur').value,audio:false}); $('mCost').textContent=c.text; return c.total; }
+  if(method==='flux') $('mCost').textContent='≈ $'+(0.03*dur).toFixed(2);
+  else { const x=MM[$('mModel').value]; if(x){ const c=S.costLine(x,{res:$('mRes').value,dur:$('mDur').value,audio:false}); $('mCost').textContent='≈ '+S.money(c.total); return c.total; }
     const s=+$('mDur').value||0, p=$('mModel').value.startsWith('alibaba')?0.11:$('mModel').value.endsWith('fast')?0.03:0.05; $('mCost').textContent='≈ $'+(s*p*($('mRes').value==='720p'?2.1:1)).toFixed(2); }
   return method==='flux'?0.03*dur:0;
 }

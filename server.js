@@ -139,7 +139,7 @@ const UNLOCKED = !!PROXY_KEY || !PUBLIC_URL_RAW() || process.env.ALLOW_OPEN === 
 function PUBLIC_URL_RAW() { return (process.env.PUBLIC_URL || "").trim(); }
 if (!UNLOCKED) console.error("PROXY_KEY is not set but PUBLIC_URL is: the API is locked. Set PROXY_KEY (same value as in Cloudflare).");
 // Paid endpoints are refused once the monthly cap (Settings) is reached.
-const PAID = /^\/api\/(generate|plan|cast|keyframe|tts|stitch|lookframe|startframe|describe|portraits|caption|enhance|still|director|shorts(\/upload)?|shorts\/\w+\/retry|influencers\/[\w-]+\/check)$/;
+const PAID = /^\/api\/(generate|plan|cast|keyframe|tts|stitch|lookframe|startframe|describe|portraits|caption|enhance|still|director|scripts|shorts(\/upload)?|shorts\/\w+\/retry|influencers\/[\w-]+\/check)$/;
 
 const MODELS = modelsLib.VIDEO; // capabilities per model; lib/models.js
 // ---- Motion page: share uploaded driving clips with the video provider (it needs a public HTTPS link) ----
@@ -542,9 +542,23 @@ const server = http.createServer(async (req, res) => {
       const model = IMAGE_MODELS.includes(b.model) ? b.model : IMAGE_MODELS[0];
       const lead = { photo: "Realistic smartphone selfie portrait photo of ", studio: "Professional studio portrait photograph of ", cartoon3d: "High-quality 3D animated character render in a Pixar-like style of ", anime: "Anime style illustration portrait of ", stylized: "Semi-realistic digital painting portrait, clearly an illustration and not a photograph, of " }[b.style] || "Realistic smartphone selfie portrait photo of ";
       const prompt = `${lead}${desc}. Head and shoulders, looking at the camera, front-facing, relaxed expression with a slight smile, soft natural light, clean simple background${(b.style || "photo") === "photo" ? ", natural skin texture and pores, no beauty filter" : ""}. Vertical 9:16 framing.`;
+      // from your photo: a NEW character in the chosen style that keeps your look (video models refuse real people's photos)
+      const REF_STYLE = {
+        real: "a photorealistic AI influencer, a new original person who is clearly inspired by the photo: same hair colour and style, skin tone, eye colour, age range, outfit vibe and overall look, but an idealised, polished, AI-generated face, not a copy of the real person. Natural skin texture, soft flattering light",
+        pixar: "a high-end 3D animated feature-film character: stylised proportions, big expressive eyes, soft subsurface skin, rich detailed textures, keeping the photo's hair colour and style, skin tone, eye colour, outfit colours and accessories",
+        disney: "a classic hand-drawn 2D animated fairy-tale character: clean expressive linework, big eyes, painterly backdrop, keeping the photo's hair colour and style, skin tone, eye colour, outfit colours and accessories",
+        ghibli: "a soft hand-painted Japanese animated-film character: gentle watercolour shading, simple warm features, pastel painted background, keeping the photo's hair colour and style, skin tone, eye colour, outfit colours and accessories",
+        anime: "a modern anime character: cel shading, crisp line art, expressive eyes, vivid colours, keeping the photo's hair colour and style, skin tone, eye colour, outfit colours and accessories",
+      };
+      const refStyle = REF_STYLE[b.style] || REF_STYLE.real;
+      const redraw = b.style && b.style !== "real"
+        ? "Completely redraw the character from scratch as a fully stylised illustration with simplified, cartoon proportions: it must NOT look like a filtered or traced photo. Use a new pose and a new plain background; do not keep the photo's framing. "
+        : "Do not copy the photo: a new pose, new framing and a new clean background. ";
+      const refPrompt = `Image 1 is a reference photo of a person, used only for their look. Create ${refStyle}. ${redraw}${String(b.desc || "").trim() ? "Extra details: " + desc + ". " : ""}` +
+        "Made to be animated by an AI video model: one person only, head and shoulders, front-facing and looking straight into the camera, eyes open, both hands relaxed and out of frame or clearly visible, neutral friendly expression with a slight smile, even soft lighting, plain uncluttered background, sharp focus, no text, logos or watermark. Vertical 9:16 framing.";
       const n = Math.max(1, Math.min(4, Number(b.count) || 4));
       const call = async (k) => {
-        const r = await orFetch(`${API}/images`, { method: "POST", headers: orHeaders(), body: JSON.stringify({ model, prompt: ref ? "Image 1 is a reference photo. Make a new, polished influencer portrait of the same character: keep the face shape, hair, skin tone, eye colour and overall look recognisable, improve lighting, framing and detail. " + prompt : prompt, n: k, aspect_ratio: "9:16",
+        const r = await orFetch(`${API}/images`, { method: "POST", headers: orHeaders(), body: JSON.stringify({ model, prompt: ref ? refPrompt : prompt, n: k, aspect_ratio: "9:16",
           ...(ref ? { input_references: [{ type: "image_url", image_url: { url: ref } }] } : {}) }) }, { safe: false });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error?.message || "Image generation failed (" + r.status + ")");
@@ -558,6 +572,39 @@ const server = http.createServer(async (req, res) => {
         logSpend("Influencers", cost, model);
         return send(res, 200, { images, cost });
       } catch (e) { return send(res, 502, { error: e.message }); }
+    }
+
+    // ---- Scripts: a chat with a suspense writer (craft from thriller novels, films and real viral hooks) ----
+    if (req.method === "POST" && url.pathname === "/api/scripts") {
+      if (!KEY) return send(res, 500, { error: "OPENROUTER_API_KEY missing." });
+      const b = await readBody(req);
+      const msgs = (Array.isArray(b.messages) ? b.messages : []).filter((m) => m && ["user", "assistant"].includes(m.role) && typeof m.content === "string")
+        .slice(-16).map((m) => ({ role: m.role, content: m.content.slice(0, 6000) }));
+      if (!msgs.length || msgs[msgs.length - 1].role !== "user") return send(res, 400, { error: "Write a message first." });
+      const secs = [15, 30, 45, 60, 90].includes(Number(b.length)) ? Number(b.length) : 60;
+      const fmt = { narrated: "a narrated story (one narrator voice, told like a gripping true story)", dialogue: "a short scene with dialogue between characters plus brief action lines", pov: "a first-person POV story told straight to camera" }[b.format] || "a narrated story (one narrator voice, told like a gripping true story)";
+      const model = settings.get().directorModel || "google/gemini-3.5-flash";
+      const sys = [
+        "You are a world-class suspense writer for short vertical videos, the kind of writer who has studied thriller and horror novels, mystery fiction, great film scripts, true-crime storytelling and the hooks of the best-performing human creators.",
+        "You write ORIGINAL stories, never reaction content, never commentary, never 'top 10' lists. Never copy text from existing books, films or creators; use their craft, not their words.",
+        "Your toolkit (use it, don't name it in the script): an in-medias-res cold open; an open loop the viewer needs closed; a specific, concrete, slightly wrong detail; withheld information and dramatic irony (the viewer knows the bomb is under the table); a ticking clock; escalation in threes; a mid-point reversal; a planted object that pays off; a final twist that recontextualises the opening, ideally looping back to the first line.",
+        "Hooks: the first line must stop the scroll within 2 seconds. Use patterns real creators use: a shocking statement, a confession, a forbidden rule ('Never answer the door after 3am. I did.'), a 'this is the last photo of…' moment, a question the viewer can't ignore. Never start with 'Hey guys', 'In this video' or a slow setup.",
+        "Write for the ear: short punchy sentences, present or close past tense, vivid sensory detail, no clichés like 'little did they know' or 'and then everything changed'.",
+        `Default target: ${secs} seconds of speech (about ${Math.round(secs * 2.5)} words), as ${fmt}.`,
+        "When you deliver a script, use exactly this layout in plain text (no markdown tables):",
+        "TITLE: ...\nHOOK (0-2 s): the first spoken line\nSCRIPT:\n[0-3 s] spoken line | VISUAL: what we see\n[3-8 s] spoken line | VISUAL: what we see\n... (one beat per 3-6 seconds, to the end)\nTWIST: one line on why the ending lands\nTITLE IDEAS: 3 short alternative titles",
+        "If the user asks for ideas, give 5 one-line premises with a hook each instead of a full script. If they ask for changes, rewrite the whole script with the changes. If the request is unclear, make a bold choice instead of asking questions.",
+        "Keep it suitable for YouTube and TikTok: suspense and dread are fine, no graphic gore or sexual content.",
+      ].join("\n");
+      try {
+        const r = await orFetch(`${API}/chat/completions`, { method: "POST", headers: orHeaders(), signal: AbortSignal.timeout(90000),
+          body: JSON.stringify({ model, max_tokens: 4000, temperature: 0.9, reasoning: { effort: "low" }, messages: [{ role: "system", content: sys }, ...msgs] }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) return send(res, r.status, { error: j.error?.message || "The writer failed, try again." });
+        logSpend("Scripts", j.usage?.cost, model);
+        const out = (j.choices?.[0]?.message?.content || "").trim();
+        return out ? send(res, 200, { reply: out, cost: j.usage?.cost || 0, model }) : send(res, 502, { error: "The writer returned nothing, try again." });
+      } catch (e) { return send(res, 502, { error: e.name === "TimeoutError" ? "The writer took too long, try again." : e.message }); }
     }
 
     // ---- Influencer library (saved on disk in ./data so every page can use it) ----

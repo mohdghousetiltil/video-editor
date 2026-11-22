@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -60,6 +60,10 @@
   .err{color:var(--err);margin-top:8px;font-size:13px}
   .empty{color:var(--mute);padding:40px;text-align:center;border:1px dashed var(--line);border-radius:16px}
   .note{color:var(--mute);font-size:12px;margin-top:10px}
+  .enh-box{border:1px solid var(--line);background:var(--panel2);border-radius:12px;padding:12px;margin:-4px 0 12px;display:flex;flex-direction:column;gap:10px}
+  .enh-head{display:flex;align-items:center;gap:6px;font-size:13px}
+  .enh-box .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .enh-box .chip{background:var(--panel);border:1px solid var(--line);color:var(--text);padding:7px 12px;font:inherit;font-size:13px}
   .gen{border:1px solid var(--line);background:var(--panel2);border-radius:12px;padding:12px;margin-bottom:12px}
   .gen select{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:7px;font:inherit;width:100%}
   .cands{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
@@ -78,8 +82,12 @@
     <div class="panel" id="formPanel">
       <h2 id="formTitle">Add influencer</h2>
       <label class="drop" id="drop" style="cursor:pointer"><span id="dropText">No picture yet.<br><small>Generate pictures below (recommended), or click / drop an AI-made character image to upload it.</small></span><input type="file" id="upFile" accept="image/jpeg,image/png,image/webp" class="hidden" aria-label="Upload a character image"></label>
-      <div class="row" style="margin:-4px 0 10px"><button class="btn" id="enhPic" type="button" disabled><svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> Enhance from my photo</button><span class="meta" style="font-size:12px">Upload a photo, then get polished influencer pictures that look like it (style below).</span></div>
-      <p class="meta" style="margin:-6px 0 12px">Upload only AI-generated characters. <b>Photos of real people are blocked</b> by the video models, so they won't animate.</p>
+      <div class="enh-box" id="enhBox">
+        <div class="enh-head"><svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> <b>Have a real photo?</b> Turn it into a video-ready influencer</div>
+        <div class="chips" id="enhStyles" role="radiogroup" aria-label="Turn my photo into"></div>
+        <div class="row"><button class="btn primary" id="enhPic" type="button" disabled><svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> Make influencer from my photo</button><span class="meta" id="enhNote" style="font-size:12px">Upload a photo above first.</span></div>
+      </div>
+      <p class="meta" style="margin:-6px 0 12px">Video models block real photos, so this makes a new AI character with your look.</p>
       <label>Name<input type="text" id="name" placeholder="e.g. Maya"></label>
       <label>Description (reused word-for-word in prompts)
         <textarea id="desc" placeholder="A friendly woman in her mid-20s with warm light-brown skin, shoulder-length wavy dark brown hair, small gold hoop earrings, cream knit sweater."></textarea></label>
@@ -93,7 +101,7 @@
         </div>
         <select id="gModel" style="margin-bottom:8px" aria-label="Picture model"><option value="qwen/qwen-image-3">Qwen Image 3 (~$0.03/pic, measured)</option><option value="x-ai/grok-imagine-image-2.0">Grok Imagine Image 2.0 (~$0.06/pic, measured)</option><option value="bytedance-seed/seedream-5-0-lite">Seedream 5.0 Lite (price not checked)</option><option value="google/gemini-3.1-flash-image">Gemini 3.1 Flash Image (price not checked)</option></select>
         <button class="btn" id="gen" type="button" style="width:100%"><svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> Generate pictures</button>
-        <div id="gMsg" class="meta" style="margin-top:6px">Pictures first, video second: a picture costs 1–6 cents, so you lock the look cheaply before paying for video. Pick one, Save, then press <b><svg class=ic aria-hidden=true><use href=#i-clapper></use></svg> Animate</b> on the card.</div>
+        <div id="gMsg" class="meta" style="margin-top:6px">Pick one, Save, then press <b><svg class=ic aria-hidden=true><use href=#i-clapper></use></svg> Animate</b> on the card.</div>
         <div class="cands" id="cands"></div>
       </div>
       <label>Seed (keeps the look similar between videos)
@@ -103,7 +111,7 @@
         <button class="btn" id="reset" type="button">Clear</button>
       </div>
       <div class="err" id="err"></div>
-      <div class="note">Seedance also blocks realistic AI faces, so for Seedance pick a stylized look, then press <b>Test with Seedance</b> on the card to see if it's accepted. The description, seed and picture are saved exactly and reused in every video, so the character stays the same.</div>
+      <div class="note">For Seedance, pick a stylized look. <a href="/guide#influencers">How it works</a></div>
     </div>
 
     <div>
@@ -145,14 +153,14 @@ function shrink(file,max=768){
 function showPreview(src){
   $('drop').querySelector('img')?.remove();
   if(src){const im=document.createElement('img');im.src=src;$('drop').appendChild(im);}
-  $('enhPic').disabled=!src;
+  $('enhPic').disabled=!src; paintEnh();
 }
 
 async function upload(f){
   if(!f) return; $('err').textContent='';
   if(!/^image\/(jpeg|png|webp)$/.test(f.type)) return $('err').textContent='Use a JPG, PNG or WEBP picture.';
   if(f.size>8*1048576) return $('err').textContent='That picture is over 8 MB.';
-  try{ image=await shrink(f); removeImage=false; showPreview(image); toast('Picture added. Save to keep it. Real people\'s photos will be blocked by the video models.'); }catch(e){ $('err').textContent=e.message; }
+  try{ image=await shrink(f); removeImage=false; showPreview(image); toast('Photo added. Video models block real photos: pick a style and press Make influencer from my photo.'); }catch(e){ $('err').textContent=e.message; }
 }
 $('upFile').onchange=e=>upload(e.target.files[0]);
 ['dragenter','dragover'].forEach(t=>$('drop').addEventListener(t,ev=>{ev.preventDefault();$('drop').classList.add('over')}));
@@ -161,6 +169,16 @@ $('drop').addEventListener('drop',ev=>upload(ev.dataTransfer.files[0]));
 const newSeed=()=>Math.floor(Math.random()*2e9);
 $('dice').onclick=()=>{$('seed').value=newSeed()};
 
+// Make influencer from my photo: which style to turn it into (all made so the video models accept the picture)
+const ENH=[['real','Realistic','camera','Grok, Veo and most models'],['pixar','3D animated','box','every model, Seedance too'],['disney','2D Disney-like','castle','every model, Seedance too'],['ghibli','Ghibli-like','leaf','every model, Seedance too'],['anime','Anime','flower','every model, Seedance too']];
+let enhStyle=(()=>{ try{ return localStorage.getItem('enhStyle')||'real'; }catch{ return 'real'; } })();
+function paintEnh(){
+  $('enhStyles').innerHTML=ENH.map(([id,l,i])=>`<button type="button" class="chip${id===enhStyle?' sel':''}" role="radio" aria-checked="${id===enhStyle}" data-s="${id}">${ic(i)} ${l}</button>`).join('');
+  const has=!!$('drop').querySelector('img'), e=ENH.find(x=>x[0]===enhStyle);
+  $('enhNote').textContent=has?`Works with ${e[3]}.`:'Upload a photo above first.';
+}
+$('enhStyles').onclick=e=>{ const b=e.target.closest('[data-s]'); if(!b) return; enhStyle=b.dataset.s; try{ localStorage.setItem('enhStyle',enhStyle); }catch{} paintEnh(); };
+paintEnh();
 const STYLE_SETS={
   seedance:[['cartoon3d','3D animated character (accepted by Seedance in my test)'],['anime','Anime']],
   grok:[['photo','Realistic selfie photo'],['studio','Studio portrait'],['stylized','Stylized digital painting'],['cartoon3d','3D animated character'],['anime','Anime']],
@@ -181,11 +199,11 @@ $('descPic').onclick=async()=>{
 async function genPics(ref){
   $('err').textContent=''; if(!ref&&!$('desc').value.trim()) return $('err').textContent='Write a description first.';
   const per={'qwen/qwen-image-3':0.03,'x-ai/grok-imagine-image-2.0':0.06}[$('gModel').value]??0.04, n=+$('gCount').value;
-  if(!(await S.confirmSpend({title:ref?`Enhance your photo into ${n} pictures?`:`Generate ${n} pictures?`,total:per*n,rows:[['Model',$('gModel').selectedOptions[0].textContent.split(' (')[0]],['Pictures',n+' × ~'+S.money(per)],['Style',$('gStyle').selectedOptions[0].textContent]]}))) return;
+  if(!(await S.confirmSpend({title:ref?`Enhance your photo into ${n} pictures?`:`Generate ${n} pictures?`,total:per*n,rows:[['Model',$('gModel').selectedOptions[0].textContent.split(' (')[0]],['Pictures',n+' × ~'+S.money(per)],['Style',ref?ENH.find(x=>x[0]===enhStyle)[1]:$('gStyle').selectedOptions[0].textContent]]}))) return;
   const b=ref?$('enhPic'):$('gen'), label=b.innerHTML; b.disabled=true; b.textContent='Generating…'; $('gMsg').textContent='This takes 10-40 seconds…'; $('cands').innerHTML='';
   if(ref) $('cands').scrollIntoView({behavior:'smooth',block:'center'});
   try{
-    const r=await fetch('/api/portraits',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({desc:$('desc').value,style:$('gStyle').value,model:$('gModel').value,count:+$('gCount').value,ref:ref||undefined})});
+    const r=await fetch('/api/portraits',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({desc:$('desc').value,style:ref?enhStyle:$('gStyle').value,model:$('gModel').value,count:+$('gCount').value,ref:ref||undefined})});
     const j=await r.json(); if(!r.ok) throw new Error(j.error||'Failed');
     $('cands').innerHTML=j.images.map((u,i)=>'<img data-i="'+i+'" src="'+u+'">').join('');
     $('cands').querySelectorAll('img').forEach(im=>im.onclick=async()=>{
@@ -293,7 +311,7 @@ $('animGo').onclick=async()=>{
       duration:+$('animDur').value,resolution:$('animRes').value,aspect_ratio:'9:16',generate_audio:false,seed:animP.seed,influencer_id:animP.id,use_frame:true})});
     const j=await r.json(); if(!r.ok) throw new Error(j.error||'Failed');
     const poll=async()=>{ const d=await (await fetch('/api/jobs/'+j.id)).json();
-      if(d.status==='failed'){ clearInterval(animT); $('animStage').innerHTML='<p class="err"><svg class=ic aria-hidden=true><use href=#i-circle-x></use></svg> '+S.escescH(d.error||'failed')+'</p>'; $('animGo').disabled=false; return; }
+      if(d.status==='failed'){ clearInterval(animT); $('animStage').innerHTML='<p class="err"><svg class=ic aria-hidden=true><use href=#i-circle-x></use></svg> '+S.esc(d.error||'failed')+'</p>'; $('animGo').disabled=false; return; }
       if(d.status!=='completed') return $('animStage').innerHTML=S.stageHTML(d);
       clearInterval(animT); $('animGo').disabled=false;
       $('animStage').innerHTML=`<video src="${d.videoUrl}" controls autoplay loop playsinline style="width:100%;max-height:50vh"></video><a class="btn" href="${d.videoUrl}?download=1"><svg class=ic aria-hidden=true><use href=#i-download></use></svg> Download</a>`;
