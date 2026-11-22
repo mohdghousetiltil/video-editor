@@ -65,6 +65,15 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       });
     });
 
+  // length of any media file, audio-only included (probe above needs a video stream)
+  const audioDuration = (file) => new Promise((resolve) => {
+    const p = spawn(FFMPEG, ["-hide_banner", "-i", file]);
+    let e = "";
+    p.stderr.on("data", (d) => (e += d));
+    p.on("error", () => resolve(0));
+    p.on("close", () => { const d = e.match(/Duration: (\d+):(\d+):(\d+\.?\d*)/); resolve(d ? +d[1] * 3600 + +d[2] * 60 + parseFloat(d[3]) : 0); });
+  });
+
   // yt-dlp: works for YouTube, X, Instagram, TikTok, Reddit, Vimeo and ~1800 other sites.
   function download(link, dir, job) {
     const args = [
@@ -681,6 +690,150 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
     }
   }
 
+  // ---------- Pictures -> explainer Short: a vision model studies the pictures and writes the explanation, a narrator
+  // reads it, and every picture gets a slow, smooth push-in with crossfades, captions, music and a thumbnail. No video
+  // model is used, so it costs cents. ----------
+  const PIC_TRANS = ["fade", "smoothleft", "dissolve", "smoothup"];
+  async function askPictures(job, files, opts) {
+    const n = files.length, words = opts.len === "30-60" ? 115 : 60;
+    const prompt = [
+      `You are making a vertical explainer Short from these ${n} pictures (numbered 1 to ${n} in the order given).`,
+      "Look at every picture carefully: read any text, numbers, charts, labels and diagrams, and notice the objects, people, places and details. Work out what they show together, then explain it to a viewer the way a great explainer creator would.",
+      opts.hint ? `The user wants this explained: "${opts.hint}".` : "Decide yourself what is most interesting or useful to explain about them.",
+      `Structure: the first line is a hook that makes people stay; then one clear point per picture, each building on the last; end with a takeaway or payoff. Natural spoken language, short sentences, about ${words} words in total. Never say "this picture", "this image" or "in the photo": talk about the subject itself.`,
+      "Use every picture once, in the order that explains best (skip one only if it is a duplicate).",
+      `Return ONLY JSON: {"title":"","hook":"on-screen hook, max 6 words","thumbnail_text":"max 4 words","description":"","hashtags":["",""],"mood":"one of ${MOODS.join(", ")}","slides":[{"image":1,"narration":""}]}`,
+    ].join("\n");
+    const content = [{ type: "text", text: prompt }, ...files.map((f) => ({ type: "image_url", image_url: { url: `data:image/jpeg;base64,${fs.readFileSync(f).toString("base64")}` } }))];
+    const model = modelNow();
+    const r = await orFetch(`${API}/chat/completions`, {
+      method: "POST", headers: { Authorization: `Bearer ${getKey()}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model, max_tokens: 3000, temperature: 0.5, messages: [{ role: "user", content }] }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.error) throw new Error("Picture analysis failed: " + (j.error?.message || r.status));
+    job.cost = (job.cost || 0) + (j.usage?.cost || 0);
+    const plan = parseJson(j.choices?.[0]?.message?.content);
+    const seen = new Set();
+    plan.slides = (Array.isArray(plan.slides) ? plan.slides : [])
+      .map((s) => ({ image: Math.round(+s.image) - 1, narration: String(s.narration || "").trim() }))
+      .filter((s) => s.image >= 0 && s.image < n && s.narration && !seen.has(s.image) && seen.add(s.image));
+    if (!plan.slides.length) throw new Error("The AI couldn't write an explanation for these pictures. Try again or add a topic.");
+    return plan;
+  }
+
+  async function runPictures(id, opts) {
+    const job = jobs.get(id), dir = dirOf(id);
+    const W = 1080, H = 1920, X = 0.35; // X = crossfade length
+    try {
+      const files = opts.images.map((_, i) => path.join(dir, `pic${i}.jpg`));
+      Object.assign(job, { step: "Looking at your pictures", pct: 8 });
+      const plan = opts.reusePlan && fs.existsSync(path.join(dir, "plan.json")) ? JSON.parse(fs.readFileSync(path.join(dir, "plan.json"), "utf8")) : await askPictures(job, files, opts);
+      fs.writeFileSync(path.join(dir, "plan.json"), JSON.stringify(plan));
+      job.plan = { title: plan.title, hook: plan.hook };
+
+      // 1. narrator: one line per picture (silence trimmed so the lines flow)
+      const v = VOICES.find((x) => x.voice === opts.voice) || VOICES[0];
+      const slides = [];
+      for (let i = 0; i < plan.slides.length; i++) {
+        Object.assign(job, { step: `Voicing ${i + 1}/${plan.slides.length}`, pct: 20 + Math.round((i / plan.slides.length) * 25) });
+        const s = plan.slides[i];
+        fs.writeFileSync(path.join(dir, `vo${i}.mp3`), await tts({ model: v.model, voice: v.voice, text: s.narration }));
+        try { await run(["-y", "-i", `vo${i}.mp3`, "-af", "silenceremove=start_periods=1:start_threshold=-45dB,areverse,silenceremove=start_periods=1:start_threshold=-45dB,areverse", `vt${i}.wav`], dir); } catch {}
+        const vf = fs.existsSync(path.join(dir, `vt${i}.wav`)) ? `vt${i}.wav` : `vo${i}.mp3`;
+        const vd = await audioDuration(path.join(dir, vf));
+        if (!vd) throw new Error(`The narrator's line for picture ${s.image + 1} came back empty. Try again.`);
+        job.ttsCost = (job.ttsCost || 0) + vd * (TTS_RATE[v.model] ?? 0.0005);
+        slides.push({ ...s, voice: vf, vd, D: Math.max(2.5, vd + 0.6) });
+      }
+      let t = 0;
+      slides.forEach((s, k) => { s.start = t; t += s.D - X; });
+      const total = slides.reduce((a, s) => a + s.D, 0) - X * (slides.length - 1);
+
+      // 2. every picture: fitted over a blurred fill of itself, then a slow push-in (or pull-out) for its whole line
+      for (let k = 0; k < slides.length; k++) {
+        const s = slides[k];
+        Object.assign(job, { step: `Animating picture ${k + 1}/${slides.length}`, pct: 45 + Math.round((k / slides.length) * 25) });
+        await run(["-y", "-i", path.basename(files[s.image]), "-filter_complex",
+          `[0:v]scale=${W * 2}:${H * 2}:force_original_aspect_ratio=increase,crop=${W * 2}:${H * 2},boxblur=40:2,eq=brightness=-0.1:saturation=0.8[bg];` +
+          `[0:v]scale=${W * 2 - 120}:${H * 2 - 400}:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,format=yuv420p[o]`,
+          "-map", "[o]", "-frames:v", "1", `slide${k}.png`], dir);
+        const frames = Math.round(s.D * 30), [z0, z1] = k % 2 ? [1.08, 1] : [1, 1.08];
+        await run(["-y", "-loop", "1", "-framerate", "30", "-t", s.D.toFixed(3), "-i", `slide${k}.png`, "-vf",
+          `zoompan=z='${z0}+(${(z1 - z0).toFixed(3)})*on/${Math.max(1, frames - 1)}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=${W}x${H}:fps=30,format=yuv420p`,
+          "-frames:v", String(frames), "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-an", `s${k}.mp4`], dir);
+      }
+
+      // 3. captions: the narration in short chunks, timed to each line; the hook on top for the first seconds
+      const events = [];
+      const hook = String(plan.hook || "").trim();
+      if (hook) events.push({ start: 0, end: Math.min(2.8, total), style: "Hook", text: hook });
+      if (opts.captions !== "off") for (const s of slides) {
+        const w = s.narration.split(/\s+/).filter(Boolean), chunks = [];
+        for (let i = 0; i < w.length; i += 3) chunks.push(w.slice(i, i + 3).join(" "));
+        const chars = chunks.reduce((a, c) => a + c.length + 1, 0);
+        let at = s.start + 0.25;
+        for (const c of chunks) { const d = (s.vd * (c.length + 1)) / chars; events.push({ start: at, end: at + d, style: "Cap", text: c, fx: "{\\fscx80\\fscy80\\t(0,90,\\fscx100\\fscy100)}" }); at += d; }
+      }
+      fs.writeFileSync(path.join(dir, "subs.ass"), assDoc(events, opts.capStyle));
+
+      // 4. sound: the lines at their slide's start, a whoosh into every new picture, all over silence of full length
+      Object.assign(job, { step: "Rendering the Short", pct: 75 });
+      const ms = (x) => Math.round(x * 1000);
+      const lay = slides.map((s) => ({ file: s.voice, at: s.start + 0.25, f: "volume=1.4" }));
+      if (opts.sfx !== false) for (const s of slides.slice(1)) lay.push({ file: await sfxPath("whoosh", dir), at: Math.max(0, s.start - 0.1), f: "volume=0.8" });
+      const vin = ["-f", "lavfi", "-t", total.toFixed(3), "-i", "anullsrc=r=48000:cl=stereo"];
+      lay.forEach((x) => vin.push("-i", x.file));
+      await run(["-y", ...vin, "-filter_complex", lay.map((x, i) => `[${i + 1}:a]aresample=48000,aformat=channel_layouts=stereo,${x.f},adelay=${ms(x.at)}|${ms(x.at)}[l${i}];`).join("") +
+        `[0:a]${lay.map((_, i) => `[l${i}]`).join("")}amix=inputs=${lay.length + 1}:duration=first:normalize=0[a]`, "-map", "[a]", "-c:a", "pcm_s16le", "voice.wav"], dir);
+      const mood = opts.music === "auto" ? (MOODS.includes(plan.mood) ? plan.mood : "chill") : opts.music;
+      const musicFile = mood && mood !== "none" ? await musicPath(mood, dir, total) : null;
+
+      // 5. the video: pictures crossfaded, captions burned in, music ducked under the voice, loudness to -14 LUFS
+      const ins = [];
+      slides.forEach((_, k) => ins.push("-i", `s${k}.mp4`));
+      ins.push("-i", "voice.wav");
+      if (musicFile) ins.push("-stream_loop", "-1", "-t", total.toFixed(3), "-i", musicFile);
+      const n = slides.length, aV = n, aM = n + 1;
+      let g = "", last = "[0:v]";
+      for (let k = 1; k < n; k++) { g += `${last}[${k}:v]xfade=transition=${PIC_TRANS[k % PIC_TRANS.length]}:duration=${X}:offset=${slides[k].start.toFixed(3)}[x${k}];`; last = `[x${k}]`; }
+      g += `${last}fade=t=in:d=0.3,subtitles=subs.ass:fontsdir=${fontsArg(dir)},format=yuv420p[v];`;
+      g += musicFile
+        ? `[${aM}:a]aresample=48000,aformat=channel_layouts=stereo,volume=0.3,afade=t=out:st=${Math.max(0, total - 1.5).toFixed(2)}:d=1.5[mu];[${aV}:a]asplit[sp1][sp2];[mu][sp1]sidechaincompress=threshold=0.02:ratio=12:attack=20:release=450[mud];[sp2][mud]amix=inputs=2:duration=first:normalize=0,loudnorm=I=-14:TP=-1.5:LRA=11[a]`
+        : `[${aV}:a]loudnorm=I=-14:TP=-1.5:LRA=11[a]`;
+      await run(["-y", ...ins, "-filter_complex", g, "-map", "[v]", "-map", "[a]", "-t", total.toFixed(3),
+        "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-profile:v", "high", "-movflags", "+faststart", "short.mp4"], dir);
+
+      // 6. thumbnail: the first picture with big text
+      Object.assign(job, { step: "Making the thumbnail", pct: 92 });
+      const tt = String(plan.thumbnail_text || hook || "").trim();
+      fs.writeFileSync(path.join(dir, "thumb.ass"), assDoc(tt ? [{ start: 0, end: 10, style: "Thumb", text: tt }] : []));
+      await run(["-y", "-i", "slide0.png", "-vf", `scale=${W}:${H},eq=contrast=1.08:saturation=1.2,subtitles=thumb.ass:fontsdir=${fontsArg(dir)}`, "-frames:v", "1", "-q:v", "2", "thumb.jpg"], dir);
+
+      const tags = (Array.isArray(plan.hashtags) ? plan.hashtags : []).map((x) => String(x).replace(/^#/, "").replace(/\s+/g, "")).filter(Boolean);
+      if (!tags.some((x) => x.toLowerCase() === "shorts")) tags.push("shorts");
+      job.cost = (job.cost || 0) + (job.ttsCost || 0);
+      const meta = {
+        id, status: "done", kind: "pictures", createdAt: job.createdAt, source: { title: opts.title || plan.title || "Pictures", pictures: files.length },
+        length: +total.toFixed(1), hook, captions: events.length, voiceover: slides.map((s) => s.narration),
+        title: String(plan.title || "").slice(0, 100), description: String(plan.description || ""), hashtags: tags.slice(0, 8),
+        thumbnailText: tt, cost: +(job.cost || 0).toFixed(4), sound: { music: musicFile ? mood : null, effects: opts.sfx !== false ? n - 1 : 0 },
+        opts: { captions: opts.captions, capStyle: opts.capStyle, music: opts.music, voice: opts.voice, len: opts.len },
+      };
+      saveMeta(id, meta);
+      Object.assign(job, { status: "done", pct: 100, step: "Done" });
+      hist(id, { status: "completed", title: meta.title || "Picture explainer", model: modelNow(), duration: meta.length, cost: meta.cost });
+    } catch (e) {
+      Object.assign(job, { status: "failed", error: e.message.slice(0, 500) });
+      saveMeta(id, { id, status: "failed", kind: "pictures", createdAt: job.createdAt, error: job.error, source: { title: opts.title || "Pictures" } });
+      hist(id, { status: "failed", error: job.error });
+    } finally {
+      logSpend("Shorts", (job.cost || 0) - (job.ttsCost || 0), modelNow(), "short-" + id);
+      for (const f of fs.readdirSync(dir)) if (/^(s\d+\.mp4|slide\d+\.png|vo\d+\.mp3|vt\d+\.wav|voice\.wav|sfx-.*\.wav|music-.*\.m4a)$/.test(f)) fs.rm(path.join(dir, f), { force: true }, () => {});
+      setTimeout(() => jobs.delete(id), 60 * 60 * 1000);
+    }
+  }
+
   const publicView = (id) => {
     const live = jobs.get(id);
     const m = live && live.status !== "done" ? { id, status: live.status, step: live.step, pct: live.pct, error: live.error, source: live.source, plan: live.plan, range: live.range, createdAt: live.createdAt } : readMeta(id);
@@ -746,6 +899,34 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       if (!size) { jobs.delete(id); fs.rm(dirOf(id), { recursive: true, force: true }, () => {}); return send(res, 400, { error: "Empty upload." }), true; }
       const name = decodeURIComponent(req.headers["x-filename"] || "").replace(/\.[a-z0-9]+$/i, "").slice(0, 120);
       start(id, { ...readOpts((k) => url.searchParams.get(k)), file, title: name });
+      return send(res, 200, { id }), true;
+    }
+    // pictures -> explainer Short: JSON {images:[data URLs], hint, voice, len, captions, capStyle, music, sfx}
+    if (req.method === "POST" && url.pathname === "/api/shorts/pictures") {
+      if (!getKey()) return send(res, 500, { error: "OPENROUTER_API_KEY missing." }), true;
+      let b = "";
+      for await (const c of req) { b += c; if (b.length > 40e6) return send(res, 413, { error: "Pictures too large (max about 40 MB together)." }), true; }
+      let body = {};
+      try { body = JSON.parse(b || "{}"); } catch {}
+      const imgs = (Array.isArray(body.images) ? body.images : []).map((u) => String(u).match(/^data:image\/(jpeg|jpg|png|webp);base64,([A-Za-z0-9+/=]+)$/)).filter(Boolean);
+      if (!imgs.length) return send(res, 400, { error: "Add at least one picture." }), true;
+      if (imgs.length > 10) return send(res, 400, { error: "Up to 10 pictures at a time." }), true;
+      const id = newJob(), dir = dirOf(id);
+      // every picture is stored as JPEG (the vision model and ffmpeg both read it)
+      for (let i = 0; i < imgs.length; i++) {
+        const raw = path.join(dir, `in${i}.${imgs[i][1] === "jpg" ? "jpeg" : imgs[i][1]}`);
+        fs.writeFileSync(raw, Buffer.from(imgs[i][2], "base64"));
+        if (/jpe?g$/.test(raw)) fs.renameSync(raw, path.join(dir, `pic${i}.jpg`));
+        else { try { await run(["-y", "-i", path.basename(raw), "-frames:v", "1", "-q:v", "2", `pic${i}.jpg`], dir); } finally { fs.rm(raw, { force: true }, () => {}); } }
+      }
+      const get = (k) => (body[k] == null ? null : String(body[k]));
+      const opts = { ...readOpts(get), images: imgs.map(() => 1), title: String(body.title || "").slice(0, 120) };
+      const q = renderSlot.stats ? renderSlot.stats() : null, ahead = q ? q.waiting + (q.active >= q.slots ? 1 : 0) : 0;
+      const job = jobs.get(id);
+      job.step = ahead ? `Waiting for ${ahead} other video${ahead > 1 ? "s" : ""} to finish rendering` : "Starting";
+      saveMeta(id, { id, status: "running", kind: "pictures", createdAt: job.createdAt, source: { title: opts.title || "Pictures" } });
+      hist(id, { status: "running", title: opts.title || "Picture explainer", t: job.createdAt });
+      renderSlot(() => runPictures(id, opts));
       return send(res, 200, { id }), true;
     }
     if (req.method === "POST" && url.pathname === "/api/shorts/check") {

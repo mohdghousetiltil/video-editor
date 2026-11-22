@@ -66,6 +66,10 @@
   .linkstat{font-size:13px;margin-top:8px;min-height:20px;color:var(--mute)}
   .linkstat.ok{color:var(--ok)}.linkstat.bad{color:var(--err)}
   .hidden{display:none !important}
+  .pics{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:8px;margin-top:10px}
+  .pics .pic{position:relative;aspect-ratio:3/4;background:#000 center/cover no-repeat;border:1px solid var(--line)}
+  .pics .pic span{position:absolute;left:4px;top:4px;font:700 11px/1 var(--font-ui,Inter);background:rgba(0,0,0,.7);color:#fff;padding:3px 5px}
+  .pics .pic button{position:absolute;top:3px;right:3px;width:24px;height:24px;border-radius:50%;border:0;background:rgba(0,0,0,.75);color:#fff;cursor:pointer;line-height:1}
   .range{display:flex;flex-direction:column;gap:6px;grid-column:span 2;min-width:0}
   .range-l{font-size:12px;color:var(--mute);letter-spacing:.06em;text-transform:uppercase;font-weight:600}
   .range-row{display:flex;align-items:flex-end;gap:10px}
@@ -82,13 +86,19 @@
 <script src="/icons.js"></script>
 <script src="/theme.js"></script>
 </head>
-<body data-title="Shorts maker" data-sub="Long video in, ready-to-post Short out.">
+<body data-title="Shorts maker" data-sub="A video or a few pictures in, ready-to-post Short out.">
 <div class="wrap">
   <div class="panel">
-    <h2>1 · Source video</h2>
+    <h2>1 · Source</h2>
     <div class="seg">
-      <button class="btn chip sel" data-src="file"><svg class=ic aria-hidden=true><use href=#i-upload></use></svg> Upload file</button>
-      <button class="btn chip" data-src="link"><svg class=ic aria-hidden=true><use href=#i-link></use></svg> Paste link</button>
+      <button class="btn chip sel" data-src="file"><svg class=ic aria-hidden=true><use href=#i-upload></use></svg> Upload</button>
+      <button class="btn chip" data-src="link"><svg class=ic aria-hidden=true><use href=#i-link></use></svg> Link</button>
+      <button class="btn chip" data-src="pics"><svg class=ic aria-hidden=true><use href=#i-image></use></svg> Pictures</button>
+    </div>
+    <div id="srcPics" class="hidden">
+      <div class="drop" id="picDrop"><b>Drop pictures here or click to choose</b>Up to 10 · AI studies them and makes an explainer video</div>
+      <input type="file" id="picFile" accept="image/*" multiple class="hidden">
+      <div class="pics" id="picList"></div>
     </div>
     <div id="srcFile">
       <div class="drop" id="drop"><b id="dropName">Drop a video here or click to choose</b>MP4, MOV, WEBM · up to 500 MB</div>
@@ -234,6 +244,7 @@ function estimate() {
   return { voice, analysis, total: voice + analysis, v, speech };
 }
 function preflight() {
+  if (typeof mode !== 'undefined' && mode === 'pics') { $('estCost').textContent = '≈ ' + S.money(picCost(), 3); return; }
   const e = estimate(), [lo, hi] = target(), d = srcInfo && srcInfo.duration;
   $('estCost').textContent = '≈ ' + S.money(e.total, 3);
   const eleven = /eleven/.test(e.v.model || '');
@@ -299,14 +310,68 @@ function checkRange() {
 }
 ['from', 'to'].forEach((k) => $(k).addEventListener('input', checkRange));
 const fmt = (s) => { s = Math.round(s); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
-let mode = 'file', file = null, pollT = null;
+var mode = 'file'; let file = null, pollT = null; // var: preflight() may run before this line
 
 document.querySelectorAll('[data-src]').forEach((b) => b.onclick = () => {
   mode = b.dataset.src;
   document.querySelectorAll('[data-src]').forEach((x) => x.classList.toggle('sel', x === b));
   $('srcFile').classList.toggle('hidden', mode !== 'file');
   $('srcLink').classList.toggle('hidden', mode !== 'link');
+  $('srcPics').classList.toggle('hidden', mode !== 'pics');
+  // pictures are always narrated, and the video-only choices don't apply
+  $('narration').closest('label').classList.toggle('hidden', mode === 'pics');
+  document.querySelector('.more-opts').classList.toggle('hidden', mode === 'pics');
+  $('hint').placeholder = mode === 'pics' ? 'What should it explain? e.g. how this engine works' : 'e.g. the funniest moment, the car chase, the reveal';
+  if (mode === 'pics') { $('preflightWrap').hidden = true; $('fitBox').hidden = true; $('estCost').textContent = '≈ ' + S.money(picCost(), 3); } else preflight();
 });
+
+// ---------- pictures -> explainer: up to 10, shrunk in the browser before upload ----------
+let pics = []; // [{name, url (preview), data (jpeg data URL)}]
+const picCost = () => 0.004 + pics.length * 0.0015 + (estimate().v.perSec || 0.00003) * ($('len').value === '30-60' ? 45 : 25);
+function shrinkPic(f, max = 1600) {
+  return new Promise((res, rej) => {
+    const u = URL.createObjectURL(f), im = new Image();
+    im.onload = () => { const k = Math.min(1, max / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(u); res(c.toDataURL('image/jpeg', 0.88)); };
+    im.onerror = () => { URL.revokeObjectURL(u); rej(new Error(f.name + ' is not a picture this browser can read.')); };
+    im.src = u;
+  });
+}
+async function addPics(list) {
+  $('err').textContent = '';
+  for (const f of [...list].filter((x) => /^image\//.test(x.type))) {
+    if (pics.length >= 10) { $('err').textContent = 'Up to 10 pictures at a time.'; break; }
+    try { const data = await shrinkPic(f); pics.push({ name: f.name, data }); } catch (e) { $('err').textContent = e.message; }
+  }
+  renderPics();
+}
+function renderPics() {
+  $('picList').innerHTML = pics.map((p, i) => `<div class="pic" style="background-image:url('${p.data}')"><span>${i + 1}</span><button type="button" data-rm="${i}" aria-label="Remove picture ${i + 1}">×</button></div>`).join('');
+  $('picDrop').querySelector('b').textContent = pics.length ? `${pics.length} picture${pics.length > 1 ? 's' : ''} · add more` : 'Drop pictures here or click to choose';
+  $('estCost').textContent = '≈ ' + S.money(picCost(), 3);
+}
+$('picList').onclick = (e) => { const i = e.target.dataset.rm; if (i != null) { pics.splice(+i, 1); renderPics(); } };
+$('picDrop').onclick = () => $('picFile').click();
+$('picFile').onchange = (e) => { addPics(e.target.files); e.target.value = ''; };
+$('picDrop').ondragover = (e) => { e.preventDefault(); $('picDrop').classList.add('over'); };
+$('picDrop').ondragleave = () => $('picDrop').classList.remove('over');
+$('picDrop').ondrop = (e) => { e.preventDefault(); $('picDrop').classList.remove('over'); addPics(e.dataTransfer.files); };
+async function goPictures() {
+  if (!pics.length) return fail('Add at least one picture.');
+  const ok = await S.confirmSpend({ title: 'Make an explainer from your pictures?', total: picCost(), rows: [
+    ['Pictures', String(pics.length)], ['Length', $('len').value.replace('-', '–') + ' s'], ['AI', 'studies the pictures and writes the explanation'],
+    ['Voice', ($('voice').selectedOptions[0]?.textContent || '')]], note: 'Animation, captions, music and rendering run on your server and cost nothing.' });
+  if (!ok) return;
+  $('go').disabled = true; showProg('Uploading pictures…', 3);
+  try {
+    const music = $('music').value === 'upload' ? (musicId || 'none') : $('music').value;
+    const r = await fetch('/api/shorts/pictures', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+      images: pics.map((p) => p.data), hint: $('hint').value.trim(), len: $('len').value, voice: $('voice').value, music,
+      captions: $('captions').value, capStyle: $('capStyle').value, sfx: $('sfx').checked ? '1' : '0', title: $('hint').value.trim().slice(0, 80) }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || 'Request failed (' + r.status + ')');
+    location.hash = j.id; track(j.id);
+  } catch (e) { fail(e.message); }
+}
 const pick = (f) => { if (!f) return; file = f; $('dropName').textContent = f.name + ' · ' + (f.size / 1048576).toFixed(1) + ' MB'; readLocal(f); };
 $('drop').onclick = () => $('file').click();
 $('file').onchange = (e) => pick(e.target.files[0]);
@@ -343,6 +408,7 @@ const fail = (msg) => { $('err').textContent = msg; $('go').disabled = false; $(
 
 $('go').onclick = async () => {
   $('err').textContent = ''; $('outPanel').classList.add('hidden');
+  if (mode === 'pics') return goPictures();
   const len = $('len').value, hint = $('hint').value.trim();
   const rg = checkRange();
   if (!rg) return fail('Fix the time range first (or leave it empty).');
@@ -439,14 +505,15 @@ function showResult(j) {
     getText: () => [$('oTitle').value.trim(), $('oDesc').value.trim()].filter(Boolean).join('\n\n'),
   });
   $('oInfo').innerHTML = [
-    j.source ? `From ${esc(j.source.title || 'your video')} (${fmt(j.source.duration)}) · ${fmt(j.start)}–${fmt(j.end)} → ${Math.round(j.length || j.end - j.start)} s Short` : '',
+    j.kind === 'pictures' ? `<svg class=ic aria-hidden=true><use href=#i-image></use></svg> Explainer from ${j.source?.pictures || ''} pictures → ${Math.round(j.length || 0)} s Short` :
+    j.source && j.source.duration ? `From ${esc(j.source.title || 'your video')} (${fmt(j.source.duration)}) · ${fmt(j.start)}–${fmt(j.end)} → ${Math.round(j.length || j.end - j.start)} s Short` : '',
     j.range ? `Searched only ${fmt(j.range[0])}–${fmt(j.range[1])}, as you asked` : '',
     j.segments && j.segments.length > 1 ? `Edited from ${j.segments.length} pieces: ` + j.segments.map((s) => fmt(s.start) + '–' + fmt(s.end)).join(', ') : '',
     j.candidates ? `Compared the ${j.candidates} best moments found across the whole video` : '',
     j.voiceover && j.voiceover.length ? '<svg class=ic aria-hidden=true><use href=#i-mic></use></svg> Voiceover: “' + j.voiceover.map(esc).join(' … ') + '”' : '',
     j.teaser ? '<svg class=ic aria-hidden=true><use href=#i-zap></use></svg> Opens with a ' + j.teaser + ' s flash of the best moment' : '',
     j.sound && (j.sound.music || j.sound.effects) ? '<svg class=ic aria-hidden=true><use href=#i-music></use></svg> ' + [j.sound.music ? 'Music: ' + esc(j.sound.music) + ' (generated, copyright-free)' : '', j.sound.effects ? j.sound.effects + ' sound effects' : ''].filter(Boolean).join(' · ') : '',
-    j.framing === 'crop' ? 'Smart crop' : 'Full frame on blurred background',
+    j.kind === 'pictures' ? '' : j.framing === 'crop' ? 'Smart crop' : 'Full frame on blurred background',
     j.opts && j.opts.captions === 'off' ? 'Captions off' + (j.hookBurned ? ' · hook text burned in' : '') : j.captions ? j.captions + ' caption lines' + (j.hookBurned ? ' + hook text' : '') : j.hookBurned ? 'Hook text burned in (no speech to caption)' : 'No captions (no speech found)',
     j.edit ? (j.edit.cuts > 1 ? `${j.edit.cuts} jump-cut pieces` : 'One piece, no jump cuts') + (j.edit.zoom > 1 ? ` · zoom ${j.edit.zoom}×` : ' · no zoom') : '',
     j.cost ? 'AI cost ≈ $' + j.cost.toFixed(3) : '',

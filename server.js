@@ -146,7 +146,7 @@ const UNLOCKED = !!PROXY_KEY || !PUBLIC_URL_RAW() || process.env.ALLOW_OPEN === 
 function PUBLIC_URL_RAW() { return (process.env.PUBLIC_URL || "").trim(); }
 if (!UNLOCKED) console.error("PROXY_KEY is not set but PUBLIC_URL is: the API is locked. Set PROXY_KEY (same value as in Cloudflare).");
 // Paid endpoints are refused once the monthly cap (Settings) is reached.
-const PAID = /^\/api\/(generate|plan|cast|keyframe|tts|stitch|lookframe|startframe|describe|portraits|caption|enhance|still|director|scripts|shorts(\/upload)?|shorts\/\w+\/retry|influencers\/[\w-]+\/check)$/;
+const PAID = /^\/api\/(generate|plan|cast|keyframe|tts|stitch|lookframe|startframe|describe|portraits|caption|enhance|still|director|scripts|shorts(\/upload|\/pictures)?|shorts\/\w+\/retry|influencers\/[\w-]+\/check)$/;
 
 const MODELS = modelsLib.VIDEO; // capabilities per model; lib/models.js
 // ---- Motion page: share uploaded driving clips with the video provider (it needs a public HTTPS link) ----
