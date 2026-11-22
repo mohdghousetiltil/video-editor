@@ -409,3 +409,14 @@ test("looks keep a steady camera and every clip gets the motion rule", () => {
   assert.match(MOTION_RULE, /one fixed angle/); assert.match(MOTION_RULE, /background/);
   assert.match(require("fs").readFileSync(require("path").join(__dirname, "..", "server.js"), "utf8"), /letterboxing\." \+\s*\/\/[^\n]*\n\s*MOTION_RULE;/);
 });
+
+test("story sound design: known ambiences and effects, nothing to mix without them", async () => {
+  const { AMBIENCES, EFFECTS, mixStory, SFX, AMBIENCE } = require("../lib/sound");
+  assert.ok(AMBIENCES.includes("night") && AMBIENCES.includes("rain") && EFFECTS.includes("impact") && EFFECTS.includes("riser"));
+  // every source has a fixed length, so ffmpeg 5.1 always finishes (an endless source hung the stitch before)
+  for (const k of AMBIENCES) for (const src of AMBIENCE[k](10)) if (/src=/.test(src)) assert.match(src, /d=10/, k);
+  for (const k of EFFECTS) assert.match(SFX[k][0], /d=[\d.]+/, k);
+  let called = false;
+  assert.strictEqual(await mixStory(async () => { called = true; }, ".", { input: "a.mp4", output: "b.mp4", total: 10, music: "none", ambience: "none", cues: [] }), false);
+  assert.strictEqual(called, false);
+});

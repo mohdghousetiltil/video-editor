@@ -3,6 +3,8 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const { mixStory, AMBIENCES, EFFECTS } = require("../lib/sound");
+const { MOODS } = require("../lib/music");
 
 // How a scene fits its narration (vd = clip seconds, ad = narration seconds). Nothing is ever cut off: the voice is
 // sped up a touch first, then the clip slowed a little, and only then does the last frame hold. D = scene length.
@@ -60,16 +62,23 @@ module.exports = function storyRoutes(ctx) {
       const b = await readBody(req);
       if (!b.script || !b.script.trim()) return send(res, 400, { error: "Paste a script first." }), true;
       const total = Number(b.total) || 30, model = settings.get().textModel;
-      const sys = "You are a video director planning a short video for an AI text-to-video model. Split the user's script into scenes. " +
-        `Total length about ${total} seconds; each scene 3 to 5 seconds (integers; short shots look better on Reels and Shorts and hide the drift of faces and hands that long AI clips show; use several shots for one narration beat) and the seconds must add up to about ${total}. ` +
-        "Set continues:true on a scene only when it directly continues the previous scene in the same place with the same characters and uninterrupted action (so it can start from the previous scene's last frame); set continues:false for the first scene and for any cut to a new location or time. Mark scenes as key:true ONLY for the roughly 30% that matter most visually (the hook, the big reveal, the twist, the emotional peak); the rest are key:false filler/transition scenes. " +
-        "Write a 'bible': for EACH recurring character one sentence with name, age, build, face, hair, and exact clothing with colors, plus one sentence for the main setting, so every scene stays consistent. " +
-        "Each scene prompt must be self-contained, one vivid present-tense sentence or two, describing only visible action and mood (one fixed camera angle per scene: no zooms, pans or angle changes unless the story needs one; only the characters move, the background stays still), naming characters by their bible appearance. No on-screen text. For every scene also write \"narration\": the voiceover a calm narrator speaks during that scene, natural spoken language, at most 2.3 words per second of the scene length, so the narration of all scenes reads as one continuous story (use an empty string only for a deliberately silent scene). " +
-        `Aspect ratio ${b.aspect || "9:16"}. ` + (b.style ? "Visual style: " + b.style + " " : "") +
-        'Reply with ONLY valid JSON, no markdown: {"bible":"...","scenes":[{"title":"...","prompt":"...","seconds":6,"key":true,"continues":false,"narration":"..."}]}';
+      const sys = [
+        "You are a feature-film director and cinematographer planning a short narrated film for an AI text-to-video model. Plan it shot by shot so it looks and feels like a real movie scene, not a slideshow.",
+        `LENGTH: about ${total} seconds in total; each scene 3 to 5 seconds (integers; short shots look better on Reels and Shorts and hide the drift of faces and hands that long AI clips show; use several shots for one narration beat). The seconds must add up to about ${total}.`,
+        "VISUAL THEME: first decide one look for the whole film that fits the story's mood: colour palette (2-3 named colours), lighting (time of day, light sources, contrast), era and texture. Every scene uses it, so the film feels like one piece.",
+        "BIBLE: write a 'bible' with, for EACH recurring character, one sentence with name, age, build, face, hair and exact clothing with colours; one sentence for the main setting; and one sentence starting 'Look:' with the visual theme. It is added to every scene so they stay consistent.",
+        "SHOTS: plan coverage like a film editor: open with an establishing wide shot, move to medium shots for action, close-ups for emotion and reveals, and insert shots (an object, a hand, a screen) for clues. Vary the shot size from cut to cut; never two identical framings in a row. Compose with intent: rule of thirds, depth (foreground, subject, background), motivated light.",
+        "CAMERA AND MOTION: the camera is locked off at one fixed angle in each shot (no zooms, pans, angle changes or shake unless one slow, motivated move is essential to the story's single biggest moment). Movement is smooth, slow and physically natural: breathing, a turn of the head, a hand reaching, a door opening. Only the characters (and the one object they interact with) move; the background stays still. No one talks on screen: the narrator tells the story, characters do not speak or mouth words.",
+        "SCENE PROMPT: self-contained, two or three vivid present-tense sentences in this order: shot size and lens feel (e.g. 'Close-up, 50mm'), the subject named by their bible appearance and the one clear action, the setting, the lighting and colours of the look, the mood. No on-screen text, no camera jargon beyond the shot size.",
+        "CONTINUITY: continues:true only when a scene directly continues the previous one in the same place with the same characters and uninterrupted action (it starts from the previous scene's last frame); continues:false for the first scene and any cut to a new place or time. key:true ONLY for the roughly 30% that matter most visually (hook, reveal, twist, emotional peak); the rest key:false.",
+        "NARRATION: for every scene write \"narration\", what a calm narrator says during it, natural spoken language, at most 2.3 words per second of the scene length, so all the lines read as one continuous story (empty string only for a deliberately silent beat).",
+        `SOUND: pick "music" for the whole film from ${MOODS.join(", ")} or none, and "ambience" (the place sound under everything) from ${AMBIENCES.join(", ")} or none. For each scene pick "sfx", a sound effect on its cut, from ${EFFECTS.join(", ")} or none: use effects sparingly (about one scene in three), on reveals, shocks and transitions; riser builds into the scene, impact lands on it.`,
+        `Aspect ratio ${b.aspect || "9:16"}.` + (b.style ? " Visual style: " + b.style : ""),
+        'Reply with ONLY valid JSON, no markdown: {"bible":"...","sound":{"music":"suspense","ambience":"night"},"scenes":[{"title":"...","prompt":"...","seconds":4,"key":true,"continues":false,"narration":"...","sfx":"none"}]}',
+      ].join("\n");
       const r = await orFetch(`${API}/chat/completions`, {
         method: "POST", headers: orHeaders(),
-        body: JSON.stringify({ model, max_tokens: 4000, reasoning: { enabled: false }, messages: [{ role: "system", content: sys }, { role: "user", content: b.script.trim() }] }),
+        body: JSON.stringify({ model, max_tokens: 7000, reasoning: { enabled: false }, messages: [{ role: "system", content: sys }, { role: "user", content: b.script.trim() }] }),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) return send(res, r.status, { error: j.error?.message || "Planning failed" }), true;
@@ -78,6 +87,10 @@ module.exports = function storyRoutes(ctx) {
       try {
         const plan = JSON.parse(txt.slice(txt.indexOf("{"), txt.lastIndexOf("}") + 1));
         if (!Array.isArray(plan.scenes) || !plan.scenes.length) throw new Error("no scenes");
+        // only sounds this server can make
+        const s = plan.sound || {};
+        plan.sound = { music: MOODS.includes(s.music) ? s.music : "none", ambience: AMBIENCES.includes(s.ambience) ? s.ambience : "none" };
+        plan.scenes.forEach((sc) => { sc.sfx = EFFECTS.includes(sc.sfx) ? sc.sfx : "none"; });
         return send(res, 200, plan), true;
       } catch {
         return send(res, 502, { error: "Planner returned invalid JSON. Try again." }), true;
@@ -206,7 +219,8 @@ module.exports = function storyRoutes(ctx) {
         const [W, H] = b.aspect === "16:9" ? [1280, 720] : b.aspect === "1:1" ? [720, 720] : [720, 1280];
         const vf = `scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,format=yuv420p`;
         const enc = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-ar", "44100", "-ac", "2"];
-        let list = "";
+        let list = "", t = 0;
+        const starts = []; // where each scene starts in the final video (for sound effects on the cuts)
         for (let i = 0; i < ids.length; i++) {
           const line = nar ? String(nar.lines[i] || "").trim() : "";
           step(`Downloading clip ${i + 1}/${ids.length}`);
@@ -246,14 +260,14 @@ module.exports = function storyRoutes(ctx) {
             // every pad has a fixed length (an endless apad never stops on the server's older ffmpeg 5.1) and so does
             // the output (-t)
             const voice = `[1:a]${plan.tempo > 1.001 ? `atempo=${plan.tempo.toFixed(3)},` : ""}apad=whole_dur=${ds},atrim=0:${ds}`;
-            const clipA = `[0:a]${plan.slow > 1.001 ? `atempo=${(1 / plan.slow).toFixed(3)},` : ""}volume=0.25,apad=whole_dur=${ds},atrim=0:${ds}`;
-            const fc = audio
-              ? `${v};${clipA}[a0];${voice}[a1];[a0][a1]amix=inputs=2:duration=longest:dropout_transition=0[a]`
-              : `${v};${voice}[a]`;
+            // the clip's own sound is dropped under narration: video models often add talking of their own, which
+            // came through as a second voice. Ambience, music and effects are laid back in by mixStory below.
+            const fc = `${v};${voice}[a]`;
             args = ["-y", "-i", `raw${i}.mp4`, "-i", `nar${i}.mp3`, "-filter_complex", fc, "-map", "[v]", "-map", "[a]", "-t", ds, ...enc, `n${i}.mp4`];
           } else {
+            // a scene without narration keeps its own sound (quieter when the story is narrated)
             args = audio
-              ? ["-y", "-i", `raw${i}.mp4`, "-vf", vf, ...enc, `n${i}.mp4`]
+              ? ["-y", "-i", `raw${i}.mp4`, "-vf", vf, ...(nar ? ["-af", "volume=0.6"] : []), ...enc, `n${i}.mp4`]
               : await (async () => { // silent clip: add a silent track exactly as long as the clip
                 const vd = await mediaDuration(path.join(dir, `raw${i}.mp4`));
                 return ["-y", "-i", `raw${i}.mp4`, "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-vf", vf, ...(vd ? ["-t", vd.toFixed(3)] : ["-shortest"]), ...enc, `n${i}.mp4`];
@@ -261,6 +275,7 @@ module.exports = function storyRoutes(ctx) {
           }
           await run(args, dir);
           list += `file 'n${i}.mp4'\n`;
+          starts.push(t); t += (await mediaDuration(path.join(dir, `n${i}.mp4`))) || 0;
         }
         step("Joining clips");
         fs.writeFileSync(path.join(dir, "list.txt"), list);
@@ -270,6 +285,17 @@ module.exports = function storyRoutes(ctx) {
           const total = await mediaDuration(path.join(dir, "joined.mp4"));
           await run(["-y", "-i", "joined.mp4", "-filter_complex", glitchFilter("[0:v]", "[v]", W, H, total, total), "-map", "[v]", "-map", "0:a", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "copy", "-movflags", "+faststart", "final.mp4"], dir);
         } else await run(["-y", "-f", "concat", "-safe", "0", "-i", "list.txt", "-c", "copy", "-movflags", "+faststart", "final.mp4"], dir);
+        // sound design: music + ambience under the whole story (dipping when the narrator speaks), effects on cuts
+        const snd = b.sound && typeof b.sound === "object" ? b.sound : null;
+        if (snd) {
+          step("Adding music and sound");
+          const cues = (Array.isArray(snd.sfx) ? snd.sfx : []).map((fx, i) => ({ fx: String(fx || ""), t: starts[i] })).filter((c) => c.fx && c.fx !== "none" && c.t != null);
+          const total = await mediaDuration(path.join(dir, "final.mp4"));
+          try {
+            if (await mixStory(run, dir, { input: "final.mp4", output: "mixed.mp4", total, music: snd.music, ambience: snd.ambience, cues, hasVoice: !!nar }))
+              fs.renameSync(path.join(dir, "mixed.mp4"), path.join(dir, "final.mp4"));
+          } catch (e) { st.warnings.push("Music and sound could not be added (" + e.message.slice(0, 120) + "). The video has the narration only."); }
+        }
         // keep only what's needed to replay / re-stitch
         for (const f of fs.readdirSync(dir)) if (/^(n\d+\.mp4|joined\.mp4)$/.test(f)) fs.rm(path.join(dir, f), { force: true }, () => {});
         st.status = "completed"; st.step = "Done"; saveStatus(sid, st);

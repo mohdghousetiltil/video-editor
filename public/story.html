@@ -153,6 +153,11 @@
       </div>
       <audio id="ttsAudio" controls class="hidden" style="width:100%;margin-top:10px"></audio>
       <div class="meta" id="ttsMsg" style="margin-top:6px"></div>
+      <div class="grid" style="margin:10px 0 0">
+        <label>Music<select id="sndMusic"><option value="auto">Director's pick</option><option value="suspense">Suspense</option><option value="cinematic">Cinematic</option><option value="epic">Epic</option><option value="chill">Chill</option><option value="upbeat">Upbeat</option><option value="funny">Funny</option><option value="none">None</option></select></label>
+        <label>Ambience<select id="sndAmb"><option value="auto">Director's pick</option><option value="night">Night</option><option value="rain">Rain</option><option value="wind">Wind</option><option value="room">Quiet room</option><option value="city">City</option><option value="ocean">Ocean</option><option value="fire">Fire</option><option value="drone">Dark drone</option><option value="none">None</option></select></label>
+        <label style="flex-direction:row;align-items:center;gap:8px;align-self:end;color:var(--text);font-size:14px"><input type="checkbox" id="sndFx" checked style="width:auto"> Sound effects</label>
+      </div>
     </div>
     <label style="flex-direction:row;align-items:center;gap:8px;margin-top:12px"><input type="checkbox" id="glitch" style="width:auto"> <svg class=ic aria-hidden=true><use href=#i-zap></use></svg> Neon glitch effect (free)</label>
     <label style="flex-direction:row;align-items:center;gap:8px;margin-top:12px"><input type="checkbox" id="chain" checked style="width:auto"> Chain flagged scenes (more consistent, slower)</label>
@@ -374,7 +379,8 @@ async function planScenes(){
       script:$('script').value,total:+$('total').value,aspect:$('aspect').value,style:lookText()})});
     const j=await r.json(); if(!r.ok) throw new Error(j.error||'Planning failed');
     $('bible').value=j.bible||'';
-    scenes=j.scenes.map(s=>({title:s.title,prompt:s.prompt,seconds:Math.round(s.seconds)||6,key:!!s.key,continues:!!s.continues,narration:s.narration||'',model:s.key?$('good').value:$('cheap').value}));
+    projSound=j.sound||null;
+    scenes=j.scenes.map(s=>({title:s.title,prompt:s.prompt,seconds:Math.round(s.seconds)||6,key:!!s.key,continues:!!s.continues,narration:s.narration||'',sfx:s.sfx||'none',model:s.key?$('good').value:$('cheap').value}));
     applyBudget();
     if($('preset').value==='auto') await directScenes();
     jobs=[]; runP=[]; projFinal=null; projCast=null; showCast(); projId='p'+Date.now().toString(36); $('outPanel').classList.add('hidden');
@@ -478,7 +484,8 @@ async function run(i){
       if(pf) $('r'+i).innerHTML=`<img class="kf" src="${s.still.url}" alt="Scene ${i+1} picture">`;
       else if(s._frame&&!prev) $('r'+i).innerHTML=`<img class="kf" src="${s._frame}" alt="First frame">`;
       const r=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-        model:s.model,prompt:(bible?bible+' ':'')+s.prompt,duration:dur(s),
+        // narrated stories: nobody talks on screen, so the clip never brings a second voice
+        model:s.model,prompt:(bible?bible+' ':'')+s.prompt+($('narOn').checked?' No one speaks: no dialogue, no talking, no voices; only natural ambient sound.':''),duration:dur(s),
         resolution:resOf(s),aspect_ratio:$('aspect').value,generate_audio:false,frame_from_job:prev,seed:storySeed(),title:'Scene '+(i+1)+': '+(s.title||''),
         ...(pf?{still_id:s.still.id,last_still_id:endStill}:s._frame&&!prev?{frame_image:s._frame,frame_note:'Started from the locked character frame.'}:{})})});
       const j=await r.json(); if(!r.ok) throw new Error(j.error||'failed');
@@ -575,9 +582,14 @@ function showFinal(url,{warnings=[],costLine='',ids=null}={}){
   S.mountEnhance&&S.mountEnhance($('final'),{src:url});
   mountShare($('final'),{url,name:'story.mp4',prompt:$('script').value});
 }
+// music, ambience and effects for the stitch: the Director's picks from the plan unless you chose your own
+function soundPlan(){
+  const pick=(sel,key,dflt)=>{ const v=$(sel).value; return v==='auto'?(projSound&&projSound[key])||dflt:v; };
+  return {music:pick('sndMusic','music','cinematic'),ambience:pick('sndAmb','ambience','none'),sfx:$('sndFx').checked?scenes.map(s=>s.sfx||'none'):[]};
+}
 async function stitch(ids){
   $('final').textContent='Stitching…';
-  const r=await fetch('/api/stitch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids,title:($('script').value.trim().replace(/\s+/g,' ').slice(0,80))||'Story',aspect:$('aspect').value,extend:$('budget').checked,look:$('glitch').checked?'glitch':'clean',narration:$('narOn').checked?{model:$('ttsModel').value,voice:$('ttsVoice').value,instructions:$('ttsTone').value||undefined,lines:scenes.map(s=>s.narration||'')}:undefined})});
+  const r=await fetch('/api/stitch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids,title:($('script').value.trim().replace(/\s+/g,' ').slice(0,80))||'Story',aspect:$('aspect').value,extend:$('budget').checked,look:$('glitch').checked?'glitch':'clean',sound:soundPlan(),narration:$('narOn').checked?{model:$('ttsModel').value,voice:$('ttsVoice').value,instructions:$('ttsTone').value||undefined,lines:scenes.map(s=>s.narration||'')}:undefined})});
   const j=await r.json(); if(!r.ok){ $('final').textContent=j.error; $('gen').disabled=false; return; }
   const t=setInterval(async()=>{
     let d=null; try{ d=await (await fetch('/api/stitch/'+j.id)).json(); }catch{ return; } // a network blip: just ask again
@@ -665,8 +677,8 @@ $('bibleEnh').onclick=async()=>{
 };
 
 /* ---------------- history (saved on the server, so every device sees it) ---------------- */
-const HKEY='storyHistory', FIELDS=['script','total','aspect','res','style','cheap','good','bible','ttsModel','ttsVoice','ttsTone','budgetAmt','preset','quickLen','quickLook','castInf'];
-let projId=null, projFinal=null, HIST=[];
+const HKEY='storyHistory', FIELDS=['script','total','aspect','res','style','cheap','good','bible','ttsModel','ttsVoice','ttsTone','budgetAmt','preset','quickLen','quickLook','castInf','sndMusic','sndAmb'];
+let projId=null, projFinal=null, HIST=[], projSound=null;
 const hget=()=>HIST;
 // scene first-frames are big pictures: they stay in memory only (made again if needed)
 const slim=(p)=>({...p,scenes:p.scenes.map(({_frame,...x})=>x)});
@@ -675,8 +687,8 @@ let saveT=null;
 function save(){ clearTimeout(saveT); saveT=setTimeout(saveNow,300); }
 function saveNow(){
   if(!projId||!scenes.length) return;
-  const f={}; FIELDS.forEach(k=>f[k]=$(k).value); f.narOn=$('narOn').checked; f.chain=$('chain').checked; f.budget=$('budget').checked; f.glitch=$('glitch').checked; f.lock=$('lock').checked;
-  const p={id:projId,ts:Date.now(),title:($('script').value.trim().replace(/\s+/g,' ').slice(0,48))||'Untitled story',fields:f,scenes,
+  const f={}; FIELDS.forEach(k=>f[k]=$(k).value); f.narOn=$('narOn').checked; f.chain=$('chain').checked; f.budget=$('budget').checked; f.glitch=$('glitch').checked; f.lock=$('lock').checked; f.sndFx=$('sndFx').checked;
+  const p={id:projId,ts:Date.now(),title:($('script').value.trim().replace(/\s+/g,' ').slice(0,48))||'Untitled story',fields:f,scenes,sound:projSound,
     jobs:jobs.map(j=>j?{id:j.id,done:!!j.done,failed:!!j.failed,skipped:!!j.skipped}:null),final:projFinal,cast:projCast};
   HIST=[p,...HIST.filter(x=>x.id!==projId)]; putStory(p); renderHist();
 }
@@ -708,7 +720,8 @@ function renderHist(){
 }
 function restore(id){
   const p=hget().find(x=>x.id===id); if(!p) return;
-  ['script','total','aspect','res','style','cheap','good','bible','ttsModel','preset','quickLen','quickLook','castInf'].forEach(k=>{ if(p.fields[k]!==undefined) $(k).value=p.fields[k]; });
+  ['script','total','aspect','res','style','cheap','good','bible','ttsModel','preset','quickLen','quickLook','castInf','sndMusic','sndAmb'].forEach(k=>{ if(p.fields[k]!==undefined) $(k).value=p.fields[k]; });
+  projSound=p.sound||null; $('sndFx').checked=p.fields.sndFx!==false;
   $('lock').checked=p.fields.lock!==undefined?!!p.fields.lock:false; projCast=p.cast||null; showCast(); presetNote();
   fillVoices(); $('ttsVoice').value=p.fields.ttsVoice; $('ttsTone').value=p.fields.ttsTone||'';
   $('narOn').checked=p.fields.narOn!==false; $('narGrid').style.opacity=$('narOn').checked?1:.4; $('chain').checked=p.fields.chain!==false; $('budget').checked=!!p.fields.budget; $('glitch').checked=!!p.fields.glitch; if(p.fields.budgetAmt) $('budgetAmt').value=p.fields.budgetAmt;
