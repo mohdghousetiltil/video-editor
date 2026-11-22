@@ -202,10 +202,10 @@
 
   // ---------- templates: a starting point instead of a blank box ----------
   S.TEMPLATES = [
-    { id: 'passport', name: 'Passport photo story', pages: ['story', 'clip'], prompt: 'A traveller rushes into a small photo studio the night before a flight, sits for a passport photo, blinks at the flash, gets the photo strip and laughs at it, then runs out to catch a taxi. Warm evening light, handheld feel.' },
+    { id: 'passport', name: 'Passport photo story', pages: ['clip'], prompt: 'A traveller rushes into a small photo studio the night before a flight, sits for a passport photo, blinks at the flash, gets the photo strip and laughs at it, then runs out to catch a taxi. Warm evening light, handheld feel.' },
     { id: 'unboxing', name: 'Product unboxing', pages: ['clip', 'ugc'], prompt: 'Close-up of hands opening a sleek matte box on a wooden desk, lifting the product out slowly, turning it in soft window light, then a satisfied smile at the camera. Clean, bright, smartphone-style footage.' },
     { id: 'poses', name: 'Influencer pose pack', pages: ['clip'], prompt: 'A confident creator in a sunny street does three quick poses for the camera: a hand-on-hip look over the shoulder, a laugh while fixing sunglasses, and a slow spin. Golden hour, shallow depth of field.' },
-    { id: 'beforeafter', name: 'Before and after', pages: ['clip', 'story'], prompt: 'A messy cluttered room transforms into a clean bright minimalist space: the camera pushes in slowly as items disappear and the light warms up. One continuous shot, satisfying reveal at the end.' },
+    { id: 'beforeafter', name: 'Before and after', pages: ['clip'], prompt: 'A messy cluttered room transforms into a clean bright minimalist space: the camera pushes in slowly as items disappear and the light warms up. One continuous shot, satisfying reveal at the end.' },
     { id: 'testimonial', name: 'Testimonial', pages: ['ugc', 'clip'], prompt: 'A friendly person sits on a sofa holding the product, looks into the phone camera and says how it fixed their problem in one week, nodding and smiling. Natural daylight, authentic selfie video.' },
   ];
   S.templatePicker = (el, page, onPick) => {

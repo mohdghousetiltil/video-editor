@@ -79,7 +79,6 @@
   </div>
   <div class="panel">
     <h2>1 · Script</h2>
-    <div id="tplBox"></div>
     <textarea id="script" aria-label="Story script" placeholder="Paste your full script / story here…"></textarea>
     <div class="quick">
       <label>Quality<select id="preset">
@@ -747,7 +746,6 @@ try{ if(!localStorage.getItem('storyAutoV1')){ localStorage.setItem('storyAutoV1
 S.persistForm('story',['script','preset','quickLen','quickLook','castInf','lock','budgetAmt','autoBudget']);
 // a script sent from the Scripts page (Use in Story mode)
 try{ const inc=sessionStorage.getItem('scriptToStory'); if(inc){ sessionStorage.removeItem('scriptToStory'); $('script').value=inc; $('script').dispatchEvent(new Event('input')); toast('Script added from Scripts. Pick a look and press Make my video.'); } }catch{}
-S.templatePicker($('tplBox'),'story',t=>{ $('script').value=t.prompt; $('script').dispatchEvent(new Event('input')); });
 S.presetChips($('fmtPresets'),p=>{
   $('quickLen').value=String(p.len); $('aspect').value=p.aspect; if($('preset').value==='budget'||$('preset').value==='custom') $('preset').value='balanced';
   ['quickLen','preset'].forEach(id=>{ $(id).dispatchEvent(new Event('change')); });

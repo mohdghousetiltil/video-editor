@@ -152,6 +152,15 @@ document.addEventListener('copy',e=>{
   const sel=String(getSelection()||''); if(!sel||!e.clipboardData) return;
   e.clipboardData.setData('text/plain',plain(sel)); e.preventDefault();
 });
+// copy that works everywhere: the clipboard API first, then a hidden text box (iPhone home-screen app, in-app browsers)
+async function copyText(text){
+  try{ if(navigator.clipboard&&window.isSecureContext){ await navigator.clipboard.writeText(text); return true; } }catch{}
+  const ta=document.createElement('textarea');
+  ta.value=text; ta.setAttribute('readonly',''); ta.style.cssText='position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;font-size:16px';
+  document.body.appendChild(ta); ta.focus(); ta.select(); ta.setSelectionRange(0,text.length);
+  let ok=false; try{ ok=document.execCommand('copy'); }catch{}
+  ta.remove(); return ok;
+}
 const save=()=>{ try{ localStorage.setItem('scriptsChat',JSON.stringify(msgs.slice(-30))); }catch{} };
 // only the spoken lines go to Story mode (drops the TITLE / VISUAL / TWIST labels)
 function spoken(t){
@@ -212,7 +221,14 @@ $('clear').onclick=()=>{ if(msgs.length&&!confirm('Start a new chat? This one wi
 $('chat').onclick=async e=>{
   const b=e.target.closest('button'); if(!b) return;
   if(b.dataset.story){ try{ sessionStorage.setItem('scriptToStory',spoken(msgs[b.dataset.story].content)); }catch{} location.href='/story'; }
-  else if(b.dataset.copy){ try{ await navigator.clipboard.writeText(plain(msgs[b.dataset.copy].content)); b.innerHTML=ic('check')+' Copied'; }catch{ b.textContent='Copy failed'; } }
+  else if(b.dataset.copy){
+    const ok=await copyText(plain(msgs[b.dataset.copy].content));
+    if(ok) b.innerHTML=ic('check')+' Copied';
+    else { // last resort: select the reply so the phone's own Copy works
+      const t=b.closest('.msg').querySelector('.txt'), r=document.createRange(); r.selectNodeContents(t);
+      const s=getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent='Selected, tap Copy';
+    }
+  }
   else if(b.dataset.more) send('Rewrite it scarier: more dread, a tighter ticking clock, and a nastier final twist.');
   else if(b.dataset.twist) send('Keep the setup, but give it a completely different, more surprising twist ending.');
 };
