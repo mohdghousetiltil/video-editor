@@ -54,7 +54,11 @@ const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
 const SMALL = !!(process.env.PUBLIC_URL || "").trim();
 const ffSlot = createLimiter(Math.max(1, Number(process.env.FFMPEG_SLOTS) || (SMALL ? 1 : 2)));
 const FF_THREADS = process.env.FFMPEG_THREADS != null && process.env.FFMPEG_THREADS !== "" ? Math.max(0, Number(process.env.FFMPEG_THREADS) || 0) : SMALL ? 2 : 0;
-const renderSlot = createLimiter(Math.max(1, Number(process.env.RENDER_JOBS) || (process.env.PUBLIC_URL ? 1 : 2)));
+// a whole job (Short, Story stitch, Enhance) gets 20 minutes before its slot is given to the next one in line
+const renderSlot = createLimiter(Math.max(1, Number(process.env.RENDER_JOBS) || (process.env.PUBLIC_URL ? 1 : 2)),
+  { timeoutMs: (Number(process.env.RENDER_TIMEOUT_MIN) || 20) * 60000, label: "Rendering" });
+// one ffmpeg step may run 10 minutes at most; a hung one is killed instead of holding its slot forever
+const FF_TIMEOUT = (Number(process.env.FFMPEG_TIMEOUT_MIN) || 10) * 60000;
 const run = (args, cwd) => ffSlot(() =>
   new Promise((resolve, reject) => {
     // -nostats: no "frame= … speed=" progress lines, so a failure shows ffmpeg's real error instead of them.
@@ -63,11 +67,14 @@ const run = (args, cwd) => ffSlot(() =>
     const th = FF_THREADS ? ["-filter_threads", String(FF_THREADS), "-filter_complex_threads", String(FF_THREADS)] : [];
     const out = FF_THREADS ? [...args.slice(0, -1), "-threads", String(FF_THREADS), args[args.length - 1]] : args;
     const p = spawn(FFMPEG, ["-hide_banner", "-nostats", ...th, ...out], { cwd });
-    let err = "";
+    let err = "", timedOut = false;
+    const kill = setTimeout(() => { timedOut = true; try { p.kill("SIGKILL"); } catch {} }, FF_TIMEOUT);
     p.stderr.on("data", (d) => { err += d; if (err.length > 200000) err = err.slice(-100000); });
-    p.on("error", (e) => reject(new Error("ffmpeg not found. Install it or set FFMPEG_PATH in .env (" + e.message + ")")));
+    p.on("error", (e) => { clearTimeout(kill); reject(new Error("ffmpeg not found. Install it or set FFMPEG_PATH in .env (" + e.message + ")")); });
     p.on("close", (code, signal) => {
+      clearTimeout(kill);
       if (code === 0) return resolve(err);
+      if (timedOut) return reject(new Error(`A video render step got stuck for ${Math.round(FF_TIMEOUT / 60000)} minutes and was stopped. Try again.`));
       if (signal || code === 137 || code === -9) // stopped from outside: on a server that's almost always the memory limit
         return reject(new Error(`The video renderer was stopped by the server (${signal || "code " + code}), most likely because it ran out of memory. Try a shorter clip, "Clean" editing, or give the server more memory.`));
       const lines = err.split(/\r?\n/).filter((l) => l.trim() && !/^\s*(frame=|size=|Press \[q\]|Stream mapping|  Stream #|Input #|Output #|  Metadata|  Duration|\s{4})/.test(l));
@@ -159,7 +166,9 @@ function ensureVideo(id) {
   if (!p) {
     p = (async () => {
       const ext = providers.isExternal(id) && jobs.get(id)?.videoUrl;
-      const r = ext ? await fetch(ext) : await orFetch(`${API}/videos/${id}/content?index=0`, { headers: { Authorization: `Bearer ${KEY}` } });
+      // 2 minutes at most: a stalled download must not hold a render slot forever
+      const signal = AbortSignal.timeout(120000);
+      const r = ext ? await fetch(ext, { signal }) : await orFetch(`${API}/videos/${id}/content?index=0`, { headers: { Authorization: `Bearer ${KEY}` }, signal });
       if (!r.ok) { const t = await r.text().catch(() => ""); throw Object.assign(new Error(t.slice(0, 300) || "video not available"), { status: r.status }); }
       const tmp = f + "." + process.pid + ".part";
       fs.writeFileSync(tmp, Buffer.from(await r.arrayBuffer()));

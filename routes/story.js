@@ -174,7 +174,8 @@ module.exports = function storyRoutes(ctx) {
       const ids = Array.isArray(b.ids) ? b.ids : [];
       if (!ids.length || !ids.every((i) => /^[\w-]+$/.test(i))) return send(res, 400, { error: "Bad job ids." }), true;
       const sid = crypto.randomBytes(6).toString("hex");
-      const st = { status: "running", step: "Waiting for a free render slot…", warnings: [], createdAt: Date.now() };
+      const q = renderSlot.stats ? renderSlot.stats() : null, ahead = q ? q.waiting + (q.active >= q.slots ? 1 : 0) : 0;
+      const st = { status: "running", step: ahead ? `Waiting for ${ahead} other video${ahead > 1 ? "s" : ""} to finish rendering…` : "Starting…", warnings: [], createdAt: Date.now() };
       const nar = b.narration && Array.isArray(b.narration.lines) && b.narration.model ? b.narration : null;
       // budget mode: clips shorter than their narration are slowed down (up to 1.5x) and then hold their last
       // frame, instead of cutting the narration off
@@ -247,6 +248,8 @@ module.exports = function storyRoutes(ctx) {
     }
     if (req.method === "GET" && (m = url.pathname.match(/^\/api\/stitch\/([a-f0-9]{12})$/))) {
       const st = readStatus(m[1]);
+      // "running" on disk but not in memory: the server restarted mid-stitch, so it will never finish on its own
+      if (st && st.status === "running" && !stitches.has(m[1])) return send(res, 200, { ...st, status: "interrupted", step: "The server restarted", url: null }), true;
       return (st ? send(res, 200, { ...st, url: st.status === "completed" ? `/api/final/${m[1]}` : null }) : send(res, 404, { error: "Unknown stitch" })), true;
     }
     if ((req.method === "GET" || req.method === "HEAD") && (m = url.pathname.match(/^\/api\/final\/(\w+)$/))) {

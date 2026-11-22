@@ -631,11 +631,6 @@ html{scroll-behavior:smooth}
 .radial a:focus-visible .ro{box-shadow:0 0 0 2px var(--acc),0 0 22px 0 rgba(0,229,255,.7)}
 .look-card:focus-visible .lc-ic{border-radius:50%;box-shadow:0 0 0 1px var(--n)}
 
-/* ---------- prompt boxes: bigger, easy to read, and they grow with the text ---------- */
-textarea{line-height:1.6;max-height:65vh;field-sizing:content}
-#script,#prompt,#mPrompt,#pdesc,#desc,#animPrompt,#bible{min-height:180px !important;font-size:16.5px}
-#notes,#input,[data-f="prompt"]{min-height:120px !important}
-@media(max-width:900px){#script,#prompt,#mPrompt{min-height:220px !important}}
 /* Story: recent / older video cards: title on its own line, small buttons under it on a phone */
 .hgrid .item{display:flex;align-items:center;gap:8px}
 .hgrid .item .t b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -651,3 +646,7 @@ textarea{line-height:1.6;max-height:65vh;field-sizing:content}
 .cb-x{all:unset;cursor:pointer;color:var(--mute);width:28px;height:28px;display:grid;place-items:center}
 .cb-x:hover{color:var(--text)}
 @media(max-width:600px){.cont-bar{flex-wrap:wrap;gap:10px}.cont-bar .cb-t{order:1;flex:1 1 calc(100% - 44px)}.cont-bar .cb-x{order:2;align-self:flex-start}.cont-bar .btn{order:3;flex:1 1 100%;justify-content:center}}
+/* ---------- prompt boxes: a comfortable fixed size; longer text scrolls inside (drag the corner to resize) ---------- */
+textarea{line-height:1.55;resize:vertical;overflow-y:auto}
+#script,#prompt,#mPrompt,#pdesc,#desc,#animPrompt,#bible{height:150px;min-height:110px !important}
+#notes,#input,[data-f="prompt"]{height:110px;min-height:80px !important}

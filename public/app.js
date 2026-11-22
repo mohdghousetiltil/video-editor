@@ -18,15 +18,6 @@
   document.addEventListener('touchmove', (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
   document.addEventListener('contextmenu', (e) => { if (e.target.closest && e.target.closest('.sb,.tabbar,.radial,.btn,button,.chip,svg,.look-card')) e.preventDefault(); });
   document.addEventListener('dragstart', (e) => { if (e.target.closest && e.target.closest('.sb,.tabbar,.radial,svg')) e.preventDefault(); });
-  // text boxes grow with their text (browsers without CSS field-sizing, e.g. Safari): never smaller than their min-height
-  if (!(window.CSS && CSS.supports('field-sizing', 'content'))) {
-    const grow = (t) => { if (!t || t.tagName !== 'TEXTAREA' || !t.offsetParent) return; t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight + 2, innerHeight * 0.65) + 'px'; };
-    document.addEventListener('input', (e) => grow(e.target));
-    // also after pages fill boxes from code (templates, saved forms, Enhance)
-    const growAll = () => document.querySelectorAll('textarea').forEach(grow);
-    addEventListener('load', growAll); setTimeout(growAll, 1500);
-    document.addEventListener('focusin', (e) => grow(e.target));
-  }
 
   const items = [
     ['/', 'Single clip', ICON.clip, 'One prompt, one video'],

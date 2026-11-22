@@ -369,3 +369,17 @@ test("director: page limits decide which models can be used", () => {
   assert.deepEqual(ids({ page: "motion", aspect: "9:16" }), []); // nothing here can copy a reference video
   assert.ok(D.needs("Close-up of her face").closeup && D.needs("a girl dances").faces && !D.needs("a skyline").faces);
 });
+
+test("render queue: a stuck job gives its slot back after the time limit", async () => {
+  const { createLimiter } = require("../lib/queue");
+  const limit = createLimiter(1, { timeoutMs: 60, label: "Rendering" });
+  const stuck = limit(() => new Promise(() => {})); // never finishes
+  const order = [];
+  const nextJob = limit(async () => { order.push("next ran"); return 42; });
+  await assert.rejects(stuck, /took longer than/);
+  assert.equal(await nextJob, 42);
+  assert.deepEqual(order, ["next ran"]);
+  assert.deepEqual(limit.stats(), { active: 0, waiting: 0, slots: 1 });
+  // normal jobs still finish and pass their result through
+  assert.equal(await createLimiter(2)(async () => "ok"), "ok");
+});

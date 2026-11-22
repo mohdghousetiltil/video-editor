@@ -695,7 +695,8 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
   }
   const start = (id, opts) => {
     const job = jobs.get(id);
-    job.step = "Waiting for a free render slot"; // another Short or Story is rendering
+    const q = renderSlot.stats ? renderSlot.stats() : null, ahead = q ? q.waiting + (q.active >= q.slots ? 1 : 0) : 0;
+    job.step = ahead ? `Waiting for ${ahead} other video${ahead > 1 ? "s" : ""} to finish rendering` : "Starting"; // another Short or Story is rendering
     saveMeta(id, { id, status: "running", createdAt: job.createdAt, source: { title: opts.title || "", link: opts.link || null } });
     hist(id, { status: "running", title: opts.title || opts.link || "Short", t: job.createdAt, ...(opts.link ? { retry: { endpoint: "/api/shorts", body: { ...opts, url: opts.link, link: undefined, file: undefined } } } : {}) });
     renderSlot(() => runShort(id, opts));
