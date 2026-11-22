@@ -53,6 +53,10 @@
       <li>Paste a story and the AI plans scenes, keeps characters consistent, voices it and stitches one video.</li>
       <li><b>Auto (Recommended)</b>: the Director picks a model for each scene: the best ones for faces and key moments, cheaper ones elsewhere, within your total budget.</li>
       <li><b>Keep characters consistent</b> draws one character sheet and starts each scene from a picture made from it (about $0.02 per scene).</li>
+      <li><b>Picture first</b> draws every scene as a still (about $0.02 each) so you can swap any that look off before paying for video.</li>
+      <li><b>Connect scenes</b> ends each clip on the next scene's picture (on models with end-frame support: Veo, Seedance, Wan, Gemini), so cuts flow smoothly.</li>
+      <li><b>Budget mode</b> uses the cheapest model (Grok Imagine 1.5 Lite, 480p, $0.02/s) and trims scenes to fit; the narration carries the story.</li>
+      <li><b>Chain scenes</b> starts flagged scenes from the previous scene's last frame: more consistent, but those scenes run one after another.</li>
       <li>Clips are made silent so the sound matches across scenes; narration and music are added when stitching.</li>
       <li>Clips from different models can look slightly different.</li>
     </ul></div></details>
@@ -85,11 +89,16 @@
   <details class="g" id="ugc"><summary><svg class=ic aria-hidden=true><use href=#i-video></use></svg> UGC review</summary><div class="body">
     <ul>
       <li><b>Start frame</b> combines the influencer and your product photo into one picture of them holding your exact product. The video starts from it, so the product matches.</li>
+      <li>Tips: a clear, front-facing influencer in good light, and a sharp product photo on a plain background. Generated text on packaging can warp, so check before using in ads.</li>
+      <li>Without the start frame, the influencer's saved picture is the first frame; the product photo can't be sent then, so describe the product.</li>
     </ul></div></details>
 
   <details class="g" id="poses"><summary><svg class=ic aria-hidden=true><use href=#i-target></use></svg> Poses and copy motion</summary><div class="body">
     <ul>
       <li>Each pose becomes its own short vertical clip you can drop into TikTok or CapCut.</li>
+      <li>Clips start from the influencer's saved picture, so face, outfit and room stay the same. Stay on 480p while testing.</li>
+      <li><b>Reference video</b> (Wan 3.0 / Seedance) makes a new video following your clip's motion; Wan accepts realistic faces, Seedance only stylized ones. <b>FLUX Video Edit</b> swaps the person in your video: cheapest, but the face is only similar and it needs a description.</li>
+      <li>Only direct MP4 links work; YouTube, TikTok and Instagram page links don't, so save the clip and upload it. Motion copying is never frame-perfect.</li>
       <li>Copy motion needs the video model to read your clip from a public address. Sharing starts a temporary tunnel that exposes only the clips you upload there, each behind a long random address. Pasting a public link doesn't need it.</li>
     </ul></div></details>
 
@@ -103,6 +112,8 @@
     <ul>
       <li>Everything is charged to your own OpenRouter (or fal) credit; the app never charges you itself.</li>
       <li>Cost shown on each page is an estimate. Paid steps ask you to confirm first, and History shows what each video actually cost.</li>
+      <li>When the monthly cap is reached, paid steps are refused until next month or until you raise it. For a hard limit on OpenRouter too, set a monthly limit on your key at openrouter.ai/settings/keys.</li>
+      <li>Cached clips, stitch folders and frames are cleared on a schedule (Settings). Download anything you want to keep.</li>
       <li>Music, sound effects and Enhance run on your server and cost nothing.</li>
     </ul></div></details>
 </div>

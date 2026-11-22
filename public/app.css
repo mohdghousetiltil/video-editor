@@ -630,3 +630,14 @@ html{scroll-behavior:smooth}
 .radial a:focus-visible,.look-card:focus-visible{outline:none !important;box-shadow:none !important}
 .radial a:focus-visible .ro{box-shadow:0 0 0 2px var(--acc),0 0 22px 0 rgba(0,229,255,.7)}
 .look-card:focus-visible .lc-ic{border-radius:50%;box-shadow:0 0 0 1px var(--n)}
+
+/* ---------- prompt boxes: bigger, easy to read, and they grow with the text ---------- */
+textarea{line-height:1.6;max-height:65vh;field-sizing:content}
+#script,#prompt,#mPrompt,#pdesc,#desc,#animPrompt,#bible{min-height:180px !important;font-size:16.5px}
+#notes,#input,[data-f="prompt"]{min-height:120px !important}
+@media(max-width:900px){#script,#prompt,#mPrompt{min-height:220px !important}}
+/* Story: recent / older video cards: title on its own line, small buttons under it on a phone */
+.hgrid .item{display:flex;align-items:center;gap:8px}
+.hgrid .item .t b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hgrid .item .t .s{font-size:12.5px;color:var(--mute)}
+@media(max-width:700px){.hgrid .item .t{flex:1 1 100% !important;min-width:0}.hgrid .item .btn{padding:7px 12px;font-size:13px}}

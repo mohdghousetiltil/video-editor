@@ -68,7 +68,7 @@
 <script src="/icons.js"></script>
 <script src="/theme.js"></script>
 </head>
-<body data-title="UGC review studio" data-sub="Create a realistic influencer review of your product, using a saved AI influencer.">
+<body data-title="UGC review studio" data-sub="Your influencer reviews your product.">
 <div class="wrap">
   <div class="layout">
     <div>
@@ -82,7 +82,7 @@
         </div>
         <div id="picRow" style="display:none;align-items:center;gap:12px;margin-bottom:12px;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--panel2)">
           <img id="infPic" style="width:64px;height:86px;object-fit:cover;border-radius:8px">
-          <label style="flex-direction:row;align-items:center;gap:8px;color:var(--text);font-size:13px"><input type="checkbox" id="usePic" checked style="width:auto"> Use this influencer's saved picture as the first frame, so the face stays the same. (The product photo can't be sent in this mode, so describe the product below.)</label>
+          <label style="flex-direction:row;align-items:center;gap:8px;color:var(--text);font-size:13px"><input type="checkbox" id="usePic" checked style="width:auto"> Start from the influencer's picture (describe the product below)</label>
         </div>
         <div id="sfBox" style="display:none;margin-bottom:12px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--panel2)">
           <div class="meta" style="margin-bottom:8px;color:var(--text)"><b><svg class=ic aria-hidden=true><use href=#i-image></use></svg> Start frame</b>: the influencer holding your exact product, so the video matches it.</div>
@@ -146,10 +146,7 @@
         <div class="meta" id="note" style="margin-top:8px"></div>
       </div>
       <div class="panel meta">
-        <b>Tips</b><br>
-        • Influencer: clear, front-facing, good light, face fully visible.<br>
-        • Product: sharp photo on a plain background, label readable.<br>
-        • Generated text on packaging can warp. Check the result before using it in ads.
+        Tip: a sharp product photo on a plain background works best.
       </div>
     </div>
   </div>

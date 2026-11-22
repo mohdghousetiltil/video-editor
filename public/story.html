@@ -70,12 +70,12 @@
 <script src="/icons.js"></script>
 <script src="/theme.js"></script>
 </head>
-<body data-title="Story mode" data-sub="Paste a story and press one button: AI plans the scenes, keeps your characters looking the same in every shot, voices it and stitches one video. Open Advanced to fine-tune anything.">
+<body data-title="Story mode" data-sub="Paste a story, get one finished video.">
 <div class="wrap">
   <div class="panel hidden" id="histPanel">
-    <h2>History (continue where you left off)</h2>
+    <h2>Recent stories</h2>
     <div id="hist" class="hgrid"></div>
-    <div id="diskWrap" class="hidden" style="margin-top:14px"><div class="meta" style="margin-bottom:8px">Earlier finished videos found on this computer (made before history existed, so their scenes can't be edited, but you can play or download them):</div>
+    <div id="diskWrap" class="hidden" style="margin-top:14px"><div class="meta" style="margin-bottom:8px">Older videos</div>
     <div id="disk" class="hgrid"></div></div>
   </div>
   <div class="panel">
@@ -98,7 +98,7 @@
     <div class="warnbox" id="budgetWarn" hidden></div>
     <label id="autoBudgetRow" hidden style="max-width:260px"><svg class=ic aria-hidden=true><use href=#i-brain></use></svg> Director budget for the whole story ($)<input id="autoBudget" inputmode="decimal" value="2.00"></label>
     <div class="dir-note" id="dirNote" hidden aria-live="polite"></div>
-    <label class="lockrow"><input type="checkbox" id="lock" checked> <span><svg class=ic aria-hidden=true><use href=#i-lock></use></svg> <b>Keep characters consistent</b>: AI draws one character sheet, then starts every scene from a picture made from it, so faces, hair and clothes stay the same across the video. Adds about $0.02 per scene.</span></label>
+    <label class="lockrow"><input type="checkbox" id="lock" checked> <span><svg class=ic aria-hidden=true><use href=#i-lock></use></svg> <b>Keep characters consistent</b> <span class="meta">(+$0.02 a scene)</span></span></label>
     <div class="meta" id="presetNote" style="margin:8px 0 12px"></div>
     <div class="actions" style="display:flex;gap:10px;flex-wrap:wrap">
       <button class="btn primary" id="auto" type="button"><svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> Make my video</button>
@@ -108,7 +108,7 @@
     <details id="adv" style="margin-top:14px"><summary>Advanced settings</summary>
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel2);margin:12px 0 0">
       <label style="flex-direction:row;align-items:center;gap:10px;color:var(--text);font-size:14px;cursor:pointer;flex:1;min-width:240px">
-        <input type="checkbox" id="budget" style="width:auto"> <span><svg class=ic aria-hidden=true><use href=#i-wallet></use></svg> <b>Budget mode</b>: every scene is a real AI video clip on the cheapest small model (Grok Imagine 1.5 Lite, 480p, $0.02 per second). Scene lengths are trimmed to fit your budget, and the narration carries the story.</span>
+        <input type="checkbox" id="budget" style="width:auto"> <span><svg class=ic aria-hidden=true><use href=#i-wallet></use></svg> <b>Budget mode</b>: cheapest model, scenes trimmed to fit</span>
       </label>
       <label style="width:130px">Budget ($)<input id="budgetAmt" type="text" inputmode="decimal" pattern="[0-9]*[.]?[0-9]{0,2}" value="0.15" aria-describedby="budgetWarn"></label>
     </div>
@@ -140,8 +140,8 @@
     <div id="castBox" class="castbox hidden"><img id="castImg" alt="Character sheet"><div><b><svg class=ic aria-hidden=true><use href=#i-lock></use></svg> Character sheet</b> <span class="meta" id="castCost"></span><p class="meta">Every scene starts from a picture drawn from this sheet. Edited the bible? Redraw it.</p><button class="btn" id="castRedo" type="button"><svg class=ic aria-hidden=true><use href=#i-rotate></use></svg> Redraw sheet</button></div></div>
     <div style="margin-top:14px;padding:12px;border:1px solid var(--line2);background:var(--panel2)">
       <h2 style="margin-bottom:8px"><svg class=ic aria-hidden=true><use href=#i-image></use></svg> Storyboard</h2>
-      <label style="flex-direction:row;align-items:center;gap:8px;color:var(--text);font-size:14px"><input type="checkbox" id="pictureFirst" checked style="width:auto"> <span><b>Picture first</b>: draw every scene as a still (about $0.02 each), check them side by side, swap any that look off, then animate each scene from its picture. Faces and colours stay the same.</span></label>
-      <label style="flex-direction:row;align-items:center;gap:8px;color:var(--text);font-size:14px;margin-top:6px"><input type="checkbox" id="connect" checked style="width:auto"> <span><b>Connect scenes</b>: each clip ends on the next scene's picture (on models with end-frame support: Veo, Seedance, Wan, Gemini), so cuts flow smoothly.</span></label>
+      <label style="flex-direction:row;align-items:center;gap:8px;color:var(--text);font-size:14px"><input type="checkbox" id="pictureFirst" checked style="width:auto"> <span><b>Picture first</b>: check each scene as a picture before animating <span class="meta">(+$0.02 each)</span></span></label>
+      <label style="flex-direction:row;align-items:center;gap:8px;color:var(--text);font-size:14px;margin-top:6px"><input type="checkbox" id="connect" checked style="width:auto"> <span><b>Connect scenes</b>: smooth cuts between scenes</span></label>
       <div class="row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px"><button class="btn" id="drawBoard" type="button"><svg class=ic aria-hidden=true><use href=#i-image></use></svg> Draw storyboard</button><span class="meta" id="boardMsg" aria-live="polite"></span></div>
       <div class="sboard" id="board"></div>
     </div>
@@ -156,8 +156,8 @@
       <audio id="ttsAudio" controls class="hidden" style="width:100%;margin-top:10px"></audio>
       <div class="meta" id="ttsMsg" style="margin-top:6px"></div>
     </div>
-    <label style="flex-direction:row;align-items:center;gap:8px;margin-top:12px"><input type="checkbox" id="glitch" style="width:auto"> <svg class=ic aria-hidden=true><use href=#i-zap></use></svg> Neon glitch look on the final video (horizontal tearing bursts, RGB split, scanlines). Free, added when stitching.</label>
-    <label style="flex-direction:row;align-items:center;gap:8px;margin-top:12px"><input type="checkbox" id="chain" checked style="width:auto"> Chain scenes: start flagged scenes from the previous scene's last frame (keeps characters consistent, but those scenes run one after another so it takes longer)</label>
+    <label style="flex-direction:row;align-items:center;gap:8px;margin-top:12px"><input type="checkbox" id="glitch" style="width:auto"> <svg class=ic aria-hidden=true><use href=#i-zap></use></svg> Neon glitch effect (free)</label>
+    <label style="flex-direction:row;align-items:center;gap:8px;margin-top:12px"><input type="checkbox" id="chain" checked style="width:auto"> Chain flagged scenes (more consistent, slower)</label>
     <div id="scenes" style="margin-top:12px"></div>
     <div class="meta hidden" id="budgetNote" style="margin:12px 0;padding:10px 12px;border:1px solid var(--line);border-radius:10px"></div>
     <div class="sum" style="background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px 14px"><span style="font-weight:600">Estimated cost <span class="meta" id="secs"></span></span><b id="total$" style="font-size:22px">—</b></div>
@@ -325,13 +325,13 @@ function applyPreset(){
 function presetNote(){
   const p=PRESETS[$('preset').value], secs=+$('quickLen').value||30;
   $('autoBudgetRow').hidden=$('preset').value!=='auto';
-  if($('preset').value==='auto'){ $('budgetWarn').hidden=true; $('presetNote').innerHTML=`<svg class=ic aria-hidden=true><use href=#i-brain></use></svg> The Director picks a model for each scene, up to ${S.money(parseFloat($('autoBudget').value)||2)} in total. You see the plan before paying.`; return; }
-  if(!p){ $('presetNote').textContent='Custom: your Advanced settings are used as they are.'; return; }
+  if($('preset').value==='auto'){ $('budgetWarn').hidden=true; $('presetNote').innerHTML=`<svg class=ic aria-hidden=true><use href=#i-brain></use></svg> Up to ${S.money(parseFloat($('autoBudget').value)||2)} in total.`; return; }
+  if(!p){ $('presetNote').textContent=''; return; }
   const n=Math.max(2,Math.round(secs/6)), keys=Math.max(1,Math.round(n*.3));
   const est=p.budget?+$('budgetAmt').value||0.15:
     ((PRICE[p.good]?.[p.res]||0)*secs*keys/n+(PRICE[p.cheap]?.[p.res]||0)*secs*(n-keys)/n);
   const lock=$('lock').checked&&!p.budget?LOCK_SHEET+n*LOCK_SCENE:0; // in budget mode the lock is paid out of the budget
-  $('presetNote').textContent=`About ${n} scenes · total ≈ $${(est+lock).toFixed(2)} for ${secs} s`+(p.budget?' (fixed budget)':'')+' · you confirm the exact total before anything is charged.';
+  $('presetNote').textContent=`About ${n} scenes · total ≈ $${(est+lock).toFixed(2)} for ${secs} s`+(p.budget?' (fixed budget)':'')+'';
   // Budget mode, said up front: how many seconds of real video the budget buys for this length
   const rate=PRICE[BUDGET_VIDEO]['480p'], lockB=$('lock').checked?LOCK_SHEET+n*LOCK_SCENE:0, real=Math.max(n,Math.floor((budgetAmt()-BUDGET_RESERVE-lockB)/rate));
   $('budgetWarn').hidden=!p.budget;
@@ -648,8 +648,8 @@ function saveNow(){
   HIST=[p,...HIST.filter(x=>x.id!==projId)]; putStory(p); renderHist();
 }
 function renderHist(){
-  const h=hget(); $('histPanel').classList.remove('hidden');
-  if(!h.length) $('hist').innerHTML='<div class="meta">No saved stories yet. Plan a story below and it will appear here automatically.</div>'; else
+  const h=hget(); $('histPanel').classList.toggle('hidden',!h.length&&!diskList.length); $('hist').hidden=!h.length;
+  if(h.length)
   $('hist').innerHTML=h.map(p=>{
     const n=p.scenes.length, d=(p.jobs||[]).filter(j=>j&&j.done&&!j.failed).length;
     const st=p.final?'<svg class=ic aria-hidden=true><use href=#i-circle-check></use></svg> finished':d?d+'/'+n+' scenes done':n+' scenes planned';
@@ -680,7 +680,7 @@ document.querySelector('.wrap').addEventListener('input',save);
 document.querySelector('.wrap').addEventListener('change',save);
 let diskList=[];
 function renderDisk(){
-  $('diskWrap').classList.toggle('hidden',!diskList.length);
+  $('diskWrap').classList.toggle('hidden',!diskList.length); $('diskWrap').style.marginTop=hget().length?'14px':'0';
   $('disk').innerHTML=diskList.map(f=>`<div class="item" data-u="${f.url}" style="cursor:default"><span class="t" style="flex:1"><b>${new Date(f.ts).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</b><br><span class="s">${f.clips} scenes${f.narrated?' · narrated':''} · ${(f.size/1048576).toFixed(1)} MB</span></span><button class="btn" data-a="play" type="button">▶ Play</button><a class="btn" href="${f.url}?download=1" style="text-decoration:none"><svg class=ic aria-hidden=true><use href=#i-download></use></svg></a></div>`).join('');
   $('disk').querySelectorAll('.item').forEach(el=>el.querySelector('[data-a=play]').onclick=()=>{
     $('outPanel').classList.remove('hidden'); $('final').innerHTML=`<video controls autoplay loop playsinline src="${el.dataset.u}"></video><a class="btn" href="${el.dataset.u}?download=1" style="text-decoration:none;display:inline-block"><svg class=ic aria-hidden=true><use href=#i-download></use></svg> Download MP4</a>`; mountShare($('final'),{url:el.dataset.u,name:'story.mp4',prompt:$('script').value});

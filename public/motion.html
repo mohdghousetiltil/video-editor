@@ -80,7 +80,7 @@
 <script src="/icons.js"></script>
 <script src="/theme.js"></script>
 </head>
-<body data-title="Poses &amp; motion" data-sub="Make your influencer strike poses for TikTok edits, or copy the motion from any video.">
+<body data-title="Poses &amp; motion" data-sub="Poses for TikTok, or copy any motion.">
 <div class="wrap">
   <div class="tabs">
     <button class="tab on" id="tabPose" type="button"><svg class=ic aria-hidden=true><use href=#i-camera></use></svg> Pose pack</button>
@@ -135,7 +135,7 @@
         <div class="row" style="margin-top:14px"><button class="btn hidden" id="pStitch" type="button"><svg class=ic aria-hidden=true><use href=#i-film></use></svg> Join all into one reel</button></div>
         <div id="pReel" style="margin-top:12px"></div>
       </div>
-      <div class="panel meta"><b>How it works</b><br>Each clip starts from your influencer's saved picture, so the face, outfit and room stay the same in every pose. Clips are about 4 seconds, ready to trim and add sounds in TikTok. Tip: stay on 480p while testing poses.</div>
+      <div class="panel meta">About 4 s per pose. <a href="/guide#poses">How it works</a></div>
     </div>
   </div>
 
@@ -147,7 +147,7 @@
         <label class="drop" id="drv"><span id="drvTxt"><svg class=ic aria-hidden=true><use href=#i-video></use></svg> Click or drop a video<br><small>first 15 seconds are used, audio is removed</small></span><input type="file" accept="video/*"></label>
         <video class="pv hidden" id="drvPv" controls muted loop playsinline></video>
         <div class="meta" id="drvInfo"></div>
-        <label style="margin-top:10px">…or paste a direct link to an MP4 file (YouTube, TikTok and Instagram page links do not work: save the clip and upload it above)<input type="text" id="drvUrl" placeholder="https://example.com/clip.mp4 (a direct MP4 file, not a YouTube page)"></label>
+        <label style="margin-top:10px">…or paste a direct MP4 link<input type="text" id="drvUrl" placeholder="https://example.com/clip.mp4 (a direct MP4 file, not a YouTube page)"></label>
 
         <h2 style="margin-top:6px">2 · Influencer</h2>
         <div class="who"><img id="mImg" alt=""><label style="margin:0;flex:1">Saved influencer<select id="mInf"></select></label></div>
@@ -164,13 +164,13 @@
 
         <h2>4 · Method</h2>
         <div class="methods">
-          <div class="m sel" data-m="seedance"><b>Reference video (Wan 3.0 / Seedance)</b><span>Makes a new video that follows the motion of your clip, with the influencer picture as the identity reference. Wan 3.0 accepts realistic faces; Seedance only accepts stylized ones.</span></div>
-          <div class="m" data-m="flux"><b>FLUX Video Edit</b><span>Edits your video: replaces the person using the influencer's description. Keeps the background, camera and motion. Cheapest, but the face is only similar.</span></div>
+          <div class="m sel" data-m="seedance"><b>Reference video (Wan 3.0 / Seedance)</b><span>Follows your clip's motion with your influencer.</span></div>
+          <div class="m" data-m="flux"><b>FLUX Video Edit</b><span>Swaps the person in your video. Cheapest; face only similar.</span></div>
         </div>
-        <div class="link hidden" id="seedWarn" style="border-color:rgba(255,107,107,.5)"><b style="color:var(--err)"><svg class=ic aria-hidden=true><use href=#i-x></use></svg> Seedance blocks this influencer's picture.</b><div class="meta" style="margin-top:6px">It reads the picture as a real person. The picture will be dropped and the video made from the motion video and your text only. For an exact character, make a 3D animated or anime influencer on the Influencers page and run <b>Test with Seedance</b> on it.</div></div>
+        <div class="link hidden" id="seedWarn" style="border-color:rgba(255,107,107,.5)"><b style="color:var(--err)"><svg class=ic aria-hidden=true><use href=#i-x></use></svg> Seedance blocks this influencer's picture.</b><div class="meta" style="margin-top:6px">The video will use your text only. Use a 3D or anime influencer instead.</div></div>
         <div class="link hidden" id="descWarn" style="border-color:rgba(251,191,36,.5)">
           <b style="color:var(--warn)"><svg class=ic aria-hidden=true><use href=#i-alert></use></svg> This influencer has no description.</b>
-          <div class="meta" style="margin:6px 0 10px">Text-based swapping needs words to describe the new person. Without one the video comes back unchanged and you still pay.</div>
+          <div class="meta" style="margin:6px 0 10px">Add a description, or the video comes back unchanged.</div>
           <button class="btn" id="descBtn" type="button"><svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> Describe from picture</button> <span class="meta" id="descMsg"></span>
         </div>
         <div class="grid" id="seedOpts">
@@ -199,7 +199,7 @@
         <div class="meta" id="mNote" style="margin-top:8px"></div>
         <div class="row" id="mActions" style="margin-top:10px"></div>
       </div>
-      <div class="panel meta"><b>Heads up</b><br>Neither method promises frame-accurate motion copying. Providers may reject videos or pictures of real people. Only use footage you have the rights to.</div>
+      <div class="panel meta">Use only footage you have the rights to.</div>
     </div>
   </div>
 </div>
