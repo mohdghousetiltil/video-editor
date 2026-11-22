@@ -18,7 +18,7 @@ const { createHistory } = require("./lib/history");
 const providers = require("./lib/providers");
 const director = require("./lib/director");
 const directorCache = new Map(); // same request within 10 minutes = same plan
-const { createThemes, themeText, qualityText, NEGATIVE } = require("./lib/themes");
+const { createThemes, themeText, qualityText, NEGATIVE, MOTION_RULE } = require("./lib/themes");
 
 // Tiny .env loader (first, so every setting below can come from .env)
 try {
@@ -333,7 +333,9 @@ const server = http.createServer(async (req, res) => {
       // e.g. three small panels next to one big one inside a 9:16 frame. Ask for one full-frame shot every time.
       const ar = String(b.aspect_ratio || "");
       const frameRule = " Framing: one single continuous full-frame shot" + (ar ? ` composed for ${ar}${ar === "9:16" ? " vertical" : ""}` : "") +
-        ". No split screen, no comic panels, no collage, no grid, no picture-in-picture, no borders or letterboxing.";
+        ". No split screen, no comic panels, no collage, no grid, no picture-in-picture, no borders or letterboxing." +
+        // stop random camera moves and a busy background: one fixed angle, and only the characters move
+        MOTION_RULE;
       // The chosen look (Real, Disney, Pixar, Anime, Brain rot) and the character description go into every prompt.
       // A page can pass theme_id to use a look once, or no_theme to skip both (e.g. copying a real video's motion).
       const st = settings.get();
@@ -731,7 +733,7 @@ const server = http.createServer(async (req, res) => {
         : "Clip length: " + b.duration + " seconds. ";
       const sys = "You rewrite rough ideas into prompts for an AI text-to-video model. " +
         (auto ? "" : "Output ONLY the final prompt, no preamble or quotes. ") +
-        "Write one vivid paragraph in present tense: subject and consistent appearance (hair, clothes, colors), setting, lighting, concrete visible action in time order that fits the clip length, camera shot and movement, mood. " +
+        "Write one vivid paragraph in present tense: subject and consistent appearance (hair, clothes, colors), setting, lighting, concrete visible action in time order that fits the clip length, camera shot (one fixed angle, no camera movement unless the idea asks for it), mood. Only the main and supporting characters move; the background stays still unless the idea says otherwise. " +
         "Describe only what can be seen and heard in one continuous shot, following any timed beats given at the end; no abstract story, no on-screen text unless essential. " +
         "Never describe split screens, comic panels, multiple frames or a storyboard: the whole frame shows one scene. " +
         "End with a short 'Sound:' line (ambience, effects, any short spoken line in quotes). Keep under " + (Number(b.max_words) || 140) + " words. " +

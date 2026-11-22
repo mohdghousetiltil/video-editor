@@ -383,3 +383,29 @@ test("render queue: a stuck job gives its slot back after the time limit", async
   // normal jobs still finish and pass their result through
   assert.equal(await createLimiter(2)(async () => "ok"), "ok");
 });
+
+test("story narration always fits its scene: speed-up, then slow-down, then hold", () => {
+  const { fitScene } = require("../routes/story");
+  const near = (a, b) => assert.ok(Math.abs(a - b) < 0.01, `${a} != ${b}`);
+  // fits already: the scene is just the clip
+  assert.deepStrictEqual(fitScene(5, 3, false), { D: 5, tempo: 1, slow: 1, hold: 0 });
+  // a bit long: light speed-up and slow-down, no hold, whole line heard
+  let p = fitScene(4.04, 4.5, false);
+  assert.ok(p.tempo <= 1.12 && p.hold === 0); near(p.D, 4.5 / p.tempo + 0.35);
+  // twice as long: capped speed-up / slow-down, the rest held, scene as long as the line
+  p = fitScene(4.04, 8, false);
+  near(p.tempo, 1.12); near(p.slow, 1.3); assert.ok(p.hold > 0); near(p.D, 8 / 1.12 + 0.35); near(p.D, 4.04 * p.slow + p.hold);
+  // budget mode slows more and speeds the voice less
+  p = fitScene(4.04, 8, true);
+  near(p.tempo, 1.08); near(p.slow, 1.5);
+  // no narration / unknown clip length
+  assert.strictEqual(fitScene(5, 0, false).D, 5);
+  near(fitScene(0, 6, false).D, 6.35);
+});
+
+test("looks keep a steady camera and every clip gets the motion rule", () => {
+  const { LOOKS, MOTION_RULE } = require("../lib/themes");
+  for (const l of LOOKS) assert.doesNotMatch(l.camera, /zoom|pan|push-in|sweeping|handheld|dynamic/i, l.id);
+  assert.match(MOTION_RULE, /one fixed angle/); assert.match(MOTION_RULE, /background/);
+  assert.match(require("fs").readFileSync(require("path").join(__dirname, "..", "server.js"), "utf8"), /letterboxing\." \+\s*\/\/[^\n]*\n\s*MOTION_RULE;/);
+});

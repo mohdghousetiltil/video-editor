@@ -175,7 +175,8 @@ function pickInf(){
   startFrameData=null;
   const hasPic=!!(p&&p.image); $('picRow').style.display=hasPic?'flex':'none'; if(hasPic) $('infPic').src=p.image; updFrame();
 }
-function frameMode(){const p=infs.find(x=>x.id===$('persona').value);return mode()==='persona'&&!!(p&&p.image)&&$('usePic').checked?p:null}
+// a saved influencer's picture is the start frame when ticked, or always when they have no description
+function frameMode(){const p=infs.find(x=>x.id===$('persona').value);return mode()==='persona'&&!!(p&&p.image)&&($('usePic').checked||!$('pdesc').value.trim())?p:null}
 let startFrameData=null;
 function showSF(){
   const fm=frameMode();
@@ -340,7 +341,13 @@ async function poll(id){
 $('go').onclick=async()=>{
   $('err').textContent=''; $('actions').innerHTML='';
   const persona=mode()==='persona';
-  if(persona&&!$('pdesc').value.trim()) return $('err').textContent='Describe your AI influencer first.';
+  // a chosen saved influencer is enough: with no description, their picture is used as the start frame
+  const chosen=persona&&infs.find(x=>x.id===$('persona').value);
+  if(persona&&!$('pdesc').value.trim()){
+    if(!chosen) return $('err').textContent='Pick a saved influencer or describe one.';
+    if(!chosen.image) return $('err').textContent='This influencer has no picture or description yet. Add one on the Influencers page.';
+    if(!$('usePic').checked){ $('usePic').checked=true; updFrame(); }
+  }
   const fm=frameMode();
   if(fm&&!startFrameData&&!$('plook').value.trim()) return $('err').textContent='Describe what the product looks like (or click Create start frame to use your product photo).';
   if(!fm&&(!imgs.d2||(!persona&&!imgs.d1))) return $('err').textContent=persona?'Add the product photo.':'Add both photos (influencer and product).';

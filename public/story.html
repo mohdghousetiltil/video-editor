@@ -254,9 +254,10 @@ const TTS={
 function nwText(s){
   const words=(s.narration||'').trim().split(/\s+/).filter(Boolean).length, d=dur(s), max=Math.round(d*2.5);
   if(!words) return '<svg class=ic aria-hidden=true><use href=#i-volume-x></use></svg> silent scene';
-  const speech=+(words/2.5).toFixed(1);
-  if(words<=max*1.05) return '';
-  return '<svg class=ic aria-hidden=true><use href=#i-alert></use></svg> Narration too long for '+d+' s'+(!$('budget').checked&&speech>d*1.35?': shorten it':'');
+  // a long line is never cut off any more (the voice speeds up a touch and the clip stretches to fit), so only a
+  // line far too long for its clip gets a quiet note
+  if(words<=max*1.6) return '';
+  return '<svg class=ic aria-hidden=true><use href=#i-alert></use></svg> Long line: the clip will hold at the end';
 }
 function narCost(){ if(!$('narOn').checked) return 0; const p=TTS[$('ttsModel').value]?.perSec||0; return scenes.reduce((a,s)=>a+((s.narration||'').trim()?dur(s)*p:0),0); }
 // a length the scene's model really accepts (e.g. Veo only 4, 6 or 8 s)

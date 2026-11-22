@@ -4,6 +4,21 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
+// How a scene fits its narration (vd = clip seconds, ad = narration seconds). Nothing is ever cut off: the voice is
+// sped up a touch first, then the clip slowed a little, and only then does the last frame hold. D = scene length.
+const BREATH = 0.35; // pause after each line so scenes don't run into each other
+function fitScene(vd, ad, budget) {
+  if (!ad) return { D: vd || 1, tempo: 1, slow: 1, hold: 0 };
+  if (!vd) return { D: ad + BREATH, tempo: 1, slow: 1, hold: 0 };
+  const need = ad + BREATH;
+  if (need <= vd) return { D: vd, tempo: 1, slow: 1, hold: 0 };
+  const tempo = Math.min(budget ? 1.08 : 1.12, need / vd); // a light speed-up still sounds natural
+  const needT = ad / tempo + BREATH;
+  const slow = Math.max(1, Math.min(budget ? 1.5 : 1.3, needT / vd));
+  const hold = Math.max(0, needT - vd * slow);
+  return { D: Math.max(vd, needT), tempo, slow, hold };
+}
+
 module.exports = function storyRoutes(ctx) {
   const { STORE, DATA, API, getKey, orFetch, orHeaders, send, readBody, run, tts, spend, settings, serveMp4, mediaDuration, hasAudio, glitchFilter, renderSlot } = ctx;
   const WORK = path.join(STORE, "work");
@@ -49,7 +64,7 @@ module.exports = function storyRoutes(ctx) {
         `Total length about ${total} seconds; each scene 3 to 5 seconds (integers; short shots look better on Reels and Shorts and hide the drift of faces and hands that long AI clips show; use several shots for one narration beat) and the seconds must add up to about ${total}. ` +
         "Set continues:true on a scene only when it directly continues the previous scene in the same place with the same characters and uninterrupted action (so it can start from the previous scene's last frame); set continues:false for the first scene and for any cut to a new location or time. Mark scenes as key:true ONLY for the roughly 30% that matter most visually (the hook, the big reveal, the twist, the emotional peak); the rest are key:false filler/transition scenes. " +
         "Write a 'bible': for EACH recurring character one sentence with name, age, build, face, hair, and exact clothing with colors, plus one sentence for the main setting, so every scene stays consistent. " +
-        "Each scene prompt must be self-contained, one vivid present-tense sentence or two, describing only visible action, camera and mood, naming characters by their bible appearance. No on-screen text. For every scene also write \"narration\": the voiceover a calm narrator speaks during that scene, natural spoken language, at most 2.3 words per second of the scene length, so the narration of all scenes reads as one continuous story (use an empty string only for a deliberately silent scene). " +
+        "Each scene prompt must be self-contained, one vivid present-tense sentence or two, describing only visible action and mood (one fixed camera angle per scene: no zooms, pans or angle changes unless the story needs one; only the characters move, the background stays still), naming characters by their bible appearance. No on-screen text. For every scene also write \"narration\": the voiceover a calm narrator speaks during that scene, natural spoken language, at most 2.3 words per second of the scene length, so the narration of all scenes reads as one continuous story (use an empty string only for a deliberately silent scene). " +
         `Aspect ratio ${b.aspect || "9:16"}. ` + (b.style ? "Visual style: " + b.style + " " : "") +
         'Reply with ONLY valid JSON, no markdown: {"bible":"...","scenes":[{"title":"...","prompt":"...","seconds":6,"key":true,"continues":false,"narration":"..."}]}';
       const r = await orFetch(`${API}/chat/completions`, {
@@ -206,26 +221,36 @@ module.exports = function storyRoutes(ctx) {
           if (line) {
             step(`Voicing scene ${i + 1}/${ids.length}`);
             fs.writeFileSync(path.join(dir, `nar${i}.mp3`), await tts({ model: nar.model, voice: nar.voice, text: line, instructions: nar.instructions }));
+            // the voice service adds silence before and after a line; trimmed, the lines flow from scene to scene
+            try {
+              await run(["-y", "-i", `nar${i}.mp3`, "-af", "silenceremove=start_periods=1:start_threshold=-45dB,areverse,silenceremove=start_periods=1:start_threshold=-45dB,areverse,adelay=60|60", "-c:a", "libmp3lame", "-q:a", "2", `nart${i}.mp3`], dir);
+              if (await mediaDuration(path.join(dir, `nart${i}.mp3`)) > 0.3) fs.renameSync(path.join(dir, `nart${i}.mp3`), path.join(dir, `nar${i}.mp3`));
+            } catch {}
             const vd = await mediaDuration(path.join(dir, `raw${i}.mp4`)), ad = await mediaDuration(path.join(dir, `nar${i}.mp3`));
-            if (extend) {
-              const D = Math.max(vd, ad + 0.4), slow = vd ? Math.max(1, Math.min(1.5, D / vd)) : 1;
-              const v = `[0:v]setpts=${slow.toFixed(3)}*PTS,${vf},tpad=stop_mode=clone:stop_duration=${Math.max(0, D - vd * slow + 0.1).toFixed(3)}[v]`;
-              // padding always has a fixed length: an endless apad never stops on the server's older ffmpeg
-              const pd = `apad=whole_dur=${D.toFixed(3)}`;
-              const fc = audio ? `${v};[0:a]volume=0.25,${pd}[a0];[1:a]${pd}[a1];[a0][a1]amix=inputs=2:duration=longest:dropout_transition=0[a]` : `${v};[1:a]${pd}[a]`;
-              args = ["-y", "-i", `raw${i}.mp4`, "-i", `nar${i}.mp3`, "-filter_complex", fc, "-map", "[v]", "-map", "[a]", "-t", D.toFixed(3), ...enc, `n${i}.mp4`];
-            } else {
-              const tempo = vd && ad ? Math.max(1, Math.min(1.35, (ad / vd) * 0.98)) : 1;
-              if (vd && ad / tempo > vd + 0.2) st.warnings.push(`Scene ${i + 1}: narration is longer than the clip and was cut off. Shorten the text.`);
-              // the scene lasts exactly as long as its clip: narration padded / trimmed to that length and an explicit
-              // -t. "apad + -shortest" alone never ended on the server's ffmpeg 5.1 and hung the whole stitch.
-              const len = vd ? ["-t", vd.toFixed(3)] : ["-shortest"];
-              const a1 = `[1:a]atempo=${tempo.toFixed(3)},${vd ? `apad=whole_dur=${vd.toFixed(3)},atrim=0:${vd.toFixed(3)}` : "apad"}[a1]`;
-              const fc = audio
-                ? `[0:v]${vf}[v];[0:a]volume=0.25[a0];${a1};[a0][a1]amix=inputs=2:duration=first:dropout_transition=0[a]`
-                : `[0:v]${vf}[v];${a1.replace("[a1]", "[a]")}`;
-              args = ["-y", "-i", `raw${i}.mp4`, "-i", `nar${i}.mp3`, "-filter_complex", fc, "-map", "[v]", "-map", "[a]", ...len, ...enc, `n${i}.mp4`];
+            // The whole line is always heard: the scene is made long enough for it, never cut off. In order:
+            // 1. the voice is sped up a touch (at most 1.12x, still sounds natural),
+            // 2. the clip is slowed a little (at most 1.3x, 1.5x in budget mode),
+            // 3. only then does the last frame hold for the rest.
+            // Plus a short breath after the line so scenes don't run into each other.
+            const plan = fitScene(vd, ad, extend);
+            const D = plan.D, ds = D.toFixed(3);
+            let v = "[0:v]";
+            if (plan.slow > 1.001) v += `setpts=${plan.slow.toFixed(3)}*PTS,`;
+            v += vf;
+            if (plan.hold > 0.01) { // the last frame holds with a slow push-in, so it never looks frozen
+              const t0 = (vd * plan.slow).toFixed(3), hd = Math.max(0.5, plan.hold).toFixed(3);
+              v += `,tpad=stop_mode=clone:stop_duration=${(plan.hold + 0.1).toFixed(3)}` +
+                `,zoompan=z='if(gt(it,${t0}),1+0.06*min(1,(it-${t0})/${hd}),1)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=${W}x${H}:fps=24`;
             }
+            v += "[v]";
+            // every pad has a fixed length (an endless apad never stops on the server's older ffmpeg 5.1) and so does
+            // the output (-t)
+            const voice = `[1:a]${plan.tempo > 1.001 ? `atempo=${plan.tempo.toFixed(3)},` : ""}apad=whole_dur=${ds},atrim=0:${ds}`;
+            const clipA = `[0:a]${plan.slow > 1.001 ? `atempo=${(1 / plan.slow).toFixed(3)},` : ""}volume=0.25,apad=whole_dur=${ds},atrim=0:${ds}`;
+            const fc = audio
+              ? `${v};${clipA}[a0];${voice}[a1];[a0][a1]amix=inputs=2:duration=longest:dropout_transition=0[a]`
+              : `${v};${voice}[a]`;
+            args = ["-y", "-i", `raw${i}.mp4`, "-i", `nar${i}.mp3`, "-filter_complex", fc, "-map", "[v]", "-map", "[a]", "-t", ds, ...enc, `n${i}.mp4`];
           } else {
             args = audio
               ? ["-y", "-i", `raw${i}.mp4`, "-vf", vf, ...enc, `n${i}.mp4`]
@@ -295,3 +320,5 @@ module.exports = function storyRoutes(ctx) {
     return false;
   } };
 };
+
+module.exports.fitScene = fitScene;
