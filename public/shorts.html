@@ -77,6 +77,7 @@
 </style>
 <link rel="stylesheet" href="/app.css">
 <script src="/studio.js"></script>
+<script src="/icons.js"></script>
 <script src="/theme.js"></script>
 </head>
 <body data-title="Shorts maker" data-sub="Give it any long video (or just the part you want). AI watches it all, picks and edits the best 15–60 seconds, reframes to 9:16, adds captions and an optional narrator, and writes the title, description, hashtags and thumbnail.">
@@ -84,8 +85,8 @@
   <div class="panel">
     <h2>1 · Source video</h2>
     <div class="seg">
-      <button class="btn chip sel" data-src="file">⬆ Upload file</button>
-      <button class="btn chip" data-src="link">🔗 Paste link</button>
+      <button class="btn chip sel" data-src="file"><svg class=ic aria-hidden=true><use href=#i-upload></use></svg> Upload file</button>
+      <button class="btn chip" data-src="link"><svg class=ic aria-hidden=true><use href=#i-link></use></svg> Paste link</button>
     </div>
     <div id="srcFile">
       <div class="drop" id="drop"><b id="dropName">Drop a video here or click to choose</b>MP4, MOV, WEBM · up to 500 MB (100 MB through the hosted site)</div>
@@ -101,10 +102,28 @@
 
   <div class="panel">
     <h2>2 · Options</h2>
-    <div class="chips" id="presets" aria-label="Presets"></div>
     <div class="grid">
       <label>Short length<select id="len"><option value="15-30">15–30 seconds</option><option value="30-60">30–60 seconds</option></select></label>
       <label>What should it focus on? (optional)<input id="hint" maxlength="300" placeholder="e.g. the funniest moment, the car chase, the reveal"></label>
+      <label>Voiceover<select id="narration">
+        <option value="story">Story: hook + "it happened like this" (recommended)</option>
+        <option value="auto">Commentary only where nobody talks</option>
+        <option value="intro">Hook line only</option>
+        <option value="off">No voiceover (captions only)</option>
+      </select></label>
+      <label id="voiceWrap">Narrator voice<select id="voice"><option value="am_michael">Michael (US male, Kokoro)</option></select></label>
+      <label>Music (made by the app, copyright-free)<select id="music">
+        <option value="auto">Auto: fits the video's mood</option>
+        <option value="upbeat">Upbeat</option><option value="suspense">Suspense</option><option value="chill">Chill</option><option value="epic">Epic</option><option value="funny">Funny</option>
+        <option value="none">None</option><option value="upload">Upload my own track…</option>
+      </select></label>
+      <label style="flex-direction:row;align-items:center;gap:8px;color:var(--text)"><input type="checkbox" id="sfx" checked style="width:auto"> Sound effects (boom on the hook, whoosh on cuts)</label>
+    </div>
+    <p class="meta" style="margin:4px 0 12px">The AI watches your video, opens with a 1–2 s flash of the best moment and a hook line ("Wait till you see what happens"), then tells it like a story. The video's own sound fades down whenever the narrator speaks.</p>
+    <details class="more-opts">
+      <summary>More options</summary>
+      <div class="chips" id="presets" aria-label="Presets"></div>
+      <div class="grid">
       <div class="range">
         <span class="range-l">Search only this part (optional)</span>
         <div class="range-row">
@@ -116,19 +135,12 @@
       </div>
       <label>Editing<select id="edit"><option value="dynamic">Jump cuts + punch-in zooms</option><option value="clean">Clean (cuts only, no zooms)</option></select></label>
       <label>Look<select id="look"><option value="clean">Clean</option><option value="glitch">Neon glitch (tearing, RGB split, scanlines)</option></select></label>
-      <label>AI voiceover<select id="narration">
-        <option value="auto">Auto: narrate if the clip has little talking</option>
-        <option value="intro">Hook line only (first 3 s)</option>
-        <option value="full">Full narration</option>
-        <option value="off">Off</option>
-      </select></label>
-      <label id="voiceWrap">Narrator voice<select id="voice"><option value="am_michael">Michael (US male, Kokoro)</option></select></label>
-      <label>Original sound<select id="orig"><option value="keep">Keep (dipped under the narrator)</option><option value="low">Low (25%)</option><option value="mute">Mute</option></select></label>
+      <label>Original sound<select id="orig"><option value="keep">Keep (fades down under the narrator)</option><option value="low">Low (25%)</option><option value="mute">Mute</option></select></label>
       <label>Captions<select id="captions"><option value="on">On</option><option value="off">Off (hook text only)</option></select></label>
       <label>Caption style<select id="capStyle"><option value="bold">Bold: white, black outline</option><option value="box">Box: white on black</option><option value="minimal">Minimal: small, thin outline</option></select></label>
-      <label>Music<select id="music"><option value="none">None</option><option value="pad">Soft ambient pad (generated, free)</option><option value="upload">Upload a track…</option></select></label>
       <label style="flex-direction:row;align-items:center;gap:8px;color:var(--text)"><input type="checkbox" id="safe" checked style="width:auto"> Crop safety: gentle zoom (max 1.12×), keeps a margin around the subject</label>
-    </div>
+      </div>
+    </details>
     <input type="file" id="musicFile" accept="audio/*" class="hidden">
     <div class="meta" id="musicNote"></div>
     <div class="warnbox" id="fitBox" hidden></div>
@@ -142,7 +154,7 @@
     </div>
     <div class="note" style="margin:0 0 12px">AI watches the whole video (long ones in 10-minute parts, then compares the best candidates) and cuts the strongest moment tight. <b>Jump cuts</b> only happen when it picks more than one piece; a short single-shot source gets zooms only. <b>Zooms</b> are skipped with "Clean" editing.</div>
     <div class="cost" style="display:flex;justify-content:space-between;padding:10px 12px;border:1px solid var(--line2);margin:0 0 12px"><span class="meta">Estimated cost</span><b id="estCost" style="color:var(--warn)">—</b></div>
-    <button class="btn primary" id="go">✂ Make Short</button>
+    <button class="btn primary" id="go"><svg class=ic aria-hidden=true><use href=#i-scissors></use></svg> Make Short</button>
     <div class="err" id="err"></div>
   </div>
 
@@ -163,8 +175,8 @@
         <div class="row"><label>Description + hashtags<textarea id="oDesc"></textarea></label><button class="btn" data-copy="oDesc">Copy</button></div>
         <div class="tags" id="oTags"></div>
         <div class="actions">
-          <a class="btn primary" id="dlVid">⬇ Video</a>
-          <a class="btn" id="dlThumb">⬇ Thumbnail</a>
+          <a class="btn primary" id="dlVid"><svg class=ic aria-hidden=true><use href=#i-download></use></svg> Video</a>
+          <a class="btn" id="dlThumb"><svg class=ic aria-hidden=true><use href=#i-download></use></svg> Thumbnail</a>
         </div>
         <div class="meta" id="oInfo"></div>
       </div>
@@ -180,10 +192,10 @@
 <script>
 const $ = (id) => document.getElementById(id), S = window.studio;
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const OPT = ['len', 'hint', 'edit', 'look', 'narration', 'voice', 'orig', 'captions', 'capStyle', 'safe'];
-try { const o = JSON.parse(localStorage.getItem('shortsOpts') || '{}'); OPT.forEach((k) => { if (o[k] != null && k !== 'hint') $(k).dataset.want = o[k]; }); } catch {}
+const OPT = ['len', 'hint', 'edit', 'look', 'narration', 'voice', 'orig', 'captions', 'capStyle', 'safe', 'sfx'];
+try { const o = JSON.parse(localStorage.getItem('shortsOpts2') || '{}'); OPT.forEach((k) => { if (o[k] != null && k !== 'hint') $(k).dataset.want = o[k]; }); } catch {}
 const val = (k) => ($(k).type === 'checkbox' ? ($(k).checked ? '1' : '0') : $(k).value);
-const saveOpts = () => { try { localStorage.setItem('shortsOpts', JSON.stringify(Object.fromEntries(OPT.map((k) => [k, val(k)])))); } catch {} };
+const saveOpts = () => { try { localStorage.setItem('shortsOpts2', JSON.stringify(Object.fromEntries(OPT.map((k) => [k, val(k)])))); } catch {} };
 const syncVoice = () => $('voiceWrap').style.opacity = $('narration').value === 'off' ? .4 : 1;
 OPT.forEach((k) => {
   if ($(k).dataset.want && k !== 'voice') { if ($(k).type === 'checkbox') $(k).checked = $(k).dataset.want === '1'; else $(k).value = $(k).dataset.want; }
@@ -213,7 +225,7 @@ const target = () => ($('len').value === '30-60' ? [30, 60] : [15, 30]);
 function estimate() {
   const v = VOICES.find((x) => x.voice === $('voice').value) || { perSec: 0.00003, label: '' };
   const [lo, hi] = target(), len = srcInfo && srcInfo.duration && srcInfo.duration < lo ? srcInfo.duration : (lo + hi) / 2;
-  const nar = $('narration').value, speech = nar === 'off' ? 0 : nar === 'intro' ? 3 : nar === 'full' ? len * 0.6 : len * 0.3;
+  const nar = $('narration').value, speech = nar === 'off' ? 0 : nar === 'intro' ? 3 : nar === 'story' ? len * 0.5 : len * 0.3;
   const voice = speech * v.perSec;
   // watching: about the same per minute of source, from your past Shorts when there are some
   const mins = srcInfo && srcInfo.duration ? srcInfo.duration / 60 : 5;
@@ -225,10 +237,10 @@ function preflight() {
   $('estCost').textContent = '≈ ' + S.money(e.total, 3) + ' (AI watching ≈ ' + S.money(e.analysis, 3) + (e.voice ? ' + voice ≈ ' + S.money(e.voice, 4) : '') + ')';
   const eleven = /eleven/.test(e.v.model || '');
   $('voiceWarn').hidden = !(eleven && $('narration').value !== 'off');
-  if (eleven) $('voiceWarn').innerHTML = `💸 <b>ElevenLabs</b> costs about ${S.money(e.v.perSec * 60, 3)} a minute of speech, about 15× Kokoro. Still small for one Short (≈ ${S.money(e.voice, 3)} here), but it adds up.`;
+  if (eleven) $('voiceWarn').innerHTML = `<svg class=ic aria-hidden=true><use href=#i-banknote></use></svg> <b>ElevenLabs</b> costs about ${S.money(e.v.perSec * 60, 3)} a minute of speech, about 15× Kokoro. Still small for one Short (≈ ${S.money(e.voice, 3)} here), but it adds up.`;
   const short = d && d < lo;
   $('fitBox').hidden = !short;
-  if (short) $('fitBox').innerHTML = `⚠ <b>The source is only ${Math.round(d)} s</b>, shorter than a ${lo}–${hi} s Short. Choose what to do:<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:8px">` +
+  if (short) $('fitBox').innerHTML = `<svg class=ic aria-hidden=true><use href=#i-alert></use></svg> <b>The source is only ${Math.round(d)} s</b>, shorter than a ${lo}–${hi} s Short. Choose what to do:<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:8px">` +
     [['short', `Make an ${Math.min(8, Math.floor(d))}–${Math.min(15, Math.floor(d))} s Short`], ['loop', `Loop it to ${lo} s`], ['pad', `Hold the last frame to ${lo} s`]]
       .map(([k, l]) => `<label style="flex-direction:row;gap:6px;align-items:center;color:var(--text)"><input type="radio" name="fit" value="${k}" ${(S.formValue('shorts', 'fit') || 'short') === k ? 'checked' : ''} style="width:auto"> ${l}</label>`).join('') + '</div>';
   $('fitBox').querySelectorAll('input[name=fit]').forEach((r) => (r.onchange = () => S.saveField('shorts', 'fit', r.value)));
@@ -253,27 +265,19 @@ function readLocal(f) {
 }
 // music: the generated pad, or an uploaded track
 let musicId = null;
-$('music').addEventListener('change', () => { if ($('music').value === 'upload') $('musicFile').click(); else $('musicNote').textContent = $('music').value === 'pad' ? 'A soft generated chord bed, mixed quietly under everything.' : ''; });
+$('music').addEventListener('change', () => { if ($('music').value === 'upload') $('musicFile').click(); else $('musicNote').textContent = ''; });
 $('musicFile').onchange = async (e) => {
-  const f = e.target.files[0]; if (!f) { $('music').value = 'none'; return; }
+  const f = e.target.files[0]; if (!f) { $('music').value = 'auto'; return; }
   $('musicNote').textContent = 'Uploading ' + f.name + '…';
   try {
     const r = await fetch('/api/shorts/music', { method: 'POST', headers: { 'x-filename': encodeURIComponent(f.name) }, body: f });
     const j = await r.json(); if (!r.ok) throw new Error(j.error);
-    musicId = j.id; $('musicNote').textContent = '🎵 ' + f.name + ' will play quietly under the Short (only use music you have the rights to).';
-  } catch (err) { musicId = null; $('music').value = 'none'; $('musicNote').textContent = '❌ ' + err.message; }
+    musicId = j.id; $('musicNote').innerHTML = '<svg class=ic aria-hidden=true><use href=#i-music></use></svg> ' + escH(f.name) + ' will play quietly under the Short (only use music you have the rights to).';
+  } catch (err) { musicId = null; $('music').value = 'auto'; $('musicNote').innerHTML = '<svg class=ic aria-hidden=true><use href=#i-circle-x></use></svg> ' + escH(err.message); }
 };
-// a theme picked from the bar brings its caption style, music, voice and look, so every Short in a series matches
-addEventListener('theme-changed', (e) => {
-  const t = e.detail.theme; if (!t || !e.detail.picked) return;
-  if (t.capStyle) $('capStyle').value = t.capStyle; if (t.music) $('music').value = t.music; if (t.look) $('look').value = t.look;
-  if (t.voice && [...$('voice').options].some((o) => o.value === t.voice)) $('voice').value = t.voice;
-  ['capStyle', 'music', 'look', 'voice'].forEach((k) => $(k).dispatchEvent(new Event('change')));
-  toast(t.name + ': captions, music, voice and look set');
-});
 S.presetChips($('presets'), (p) => {
   $('len').value = p.shortsLen; if ([...$('voice').options].some((o) => o.value === p.voice)) $('voice').value = p.voice;
-  if ($('narration').value === 'off') $('narration').value = 'intro';
+  if ($('narration').value === 'off') $('narration').value = 'story';
   ['len', 'voice', 'narration'].forEach((k) => $(k).dispatchEvent(new Event('change')));
   toast(p.label + ': ' + p.shortsLen.replace('-', '–') + ' s, voice ' + ($('voice').selectedOptions[0]?.textContent || ''));
 });
@@ -320,9 +324,9 @@ async function checkLink() {
     const r = await fetch('/api/shorts/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: v }) });
     const j = await r.json();
     if (seq !== linkSeq) return;
-    if (!r.ok || !j.ok) { st.textContent = '✕ ' + (j.error || 'Could not check that link.'); st.className = 'linkstat bad'; return; }
-    if (j.kind === 'direct') { st.textContent = '✓ Direct video file' + (j.name ? ' · ' + j.name : '') + (j.size ? ' · ' + (j.size / 1048576).toFixed(1) + ' MB' : '') + ', ready to process'; st.className = 'linkstat ok'; srcInfo = null; }
-    else { st.textContent = '✓ ' + j.site + ' page' + (j.title ? ': ' + j.title : '') + (j.duration ? ' · ' + fmt(j.duration) : '') + '. The video will be downloaded from it'; st.className = 'linkstat ok'; srcInfo = j.duration ? { duration: j.duration, thumb: j.thumbnail } : null; }
+    if (!r.ok || !j.ok) { st.innerHTML = '<svg class=ic aria-hidden=true><use href=#i-x></use></svg> ' + escH(j.error || 'Could not check that link.'); st.className = 'linkstat bad'; return; }
+    if (j.kind === 'direct') { st.innerHTML = '<svg class=ic aria-hidden=true><use href=#i-check></use></svg> Direct video file' + (j.name ? ' · ' + escH(j.name) : '') + (j.size ? ' · ' + (j.size / 1048576).toFixed(1) + ' MB' : '') + ', ready to process'; st.className = 'linkstat ok'; srcInfo = null; }
+    else { st.innerHTML = '<svg class=ic aria-hidden=true><use href=#i-check></use></svg> ' + escH(j.site) + ' page' + (j.title ? ': ' + escH(j.title) : '') + (j.duration ? ' · ' + fmt(j.duration) : '') + '. The video will be downloaded from it'; st.className = 'linkstat ok'; srcInfo = j.duration ? { duration: j.duration, thumb: j.thumbnail } : null; }
     preflight();
   } catch { if (seq === linkSeq) { st.textContent = ''; st.className = 'linkstat'; } }
 }
@@ -344,7 +348,7 @@ $('go').onclick = async () => {
   const fit = document.querySelector('input[name=fit]:checked')?.value || 'short';
   const music = $('music').value === 'upload' ? (musicId || 'none') : $('music').value;
   const opts = { len, hint, from: rg.from, to: rg.to, edit: $('edit').value, look: $('look').value, narration: $('narration').value, voice: $('voice').value,
-    orig: $('orig').value, captions: $('captions').value, capStyle: $('capStyle').value, music, safe: $('safe').checked ? '1' : '0', fit };
+    orig: $('orig').value, captions: $('captions').value, capStyle: $('capStyle').value, music, safe: $('safe').checked ? '1' : '0', sfx: $('sfx').checked ? '1' : '0', fit };
   if (mode === 'file' && !file) return fail('Choose a video file first.');
   if (mode === 'link' && !/^https?:\/\//.test($('link').value.trim())) return fail('Paste a full link starting with https://');
   const e = estimate();
@@ -397,7 +401,7 @@ function track(id) {
     if (j.status === 'failed') {
       $('err').textContent = j.error || 'Something went wrong.';
       if (j.retryable) {
-        const b = document.createElement('button'); b.type = 'button'; b.className = 'btn'; b.style.marginLeft = '10px'; b.textContent = '🔄 Retry render (reuses the analysis, no new AI cost)';
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'btn'; b.style.marginLeft = '10px'; b.innerHTML = '<svg class=ic aria-hidden=true><use href=#i-refresh></use></svg> Retry render (reuses the analysis, no new AI cost)';
         b.onclick = async () => { const r = await fetch('/api/shorts/' + id + '/retry', { method: 'POST' }); const k = await r.json().catch(() => ({})); if (!r.ok) return toast(k.error || 'Retry failed', 'err'); $('err').textContent = ''; track(id); };
         $('err').append(b);
       }
@@ -438,7 +442,9 @@ function showResult(j) {
     j.range ? `Searched only ${fmt(j.range[0])}–${fmt(j.range[1])}, as you asked` : '',
     j.segments && j.segments.length > 1 ? `Edited from ${j.segments.length} pieces: ` + j.segments.map((s) => fmt(s.start) + '–' + fmt(s.end)).join(', ') : '',
     j.candidates ? `Compared the ${j.candidates} best moments found across the whole video` : '',
-    j.voiceover && j.voiceover.length ? '🎙️ Voiceover: “' + j.voiceover.map(esc).join(' … ') + '”' : '',
+    j.voiceover && j.voiceover.length ? '<svg class=ic aria-hidden=true><use href=#i-mic></use></svg> Voiceover: “' + j.voiceover.map(esc).join(' … ') + '”' : '',
+    j.teaser ? '<svg class=ic aria-hidden=true><use href=#i-zap></use></svg> Opens with a ' + j.teaser + ' s flash of the best moment' : '',
+    j.sound && (j.sound.music || j.sound.effects) ? '<svg class=ic aria-hidden=true><use href=#i-music></use></svg> ' + [j.sound.music ? 'Music: ' + esc(j.sound.music) + ' (generated, copyright-free)' : '', j.sound.effects ? j.sound.effects + ' sound effects' : ''].filter(Boolean).join(' · ') : '',
     j.framing === 'crop' ? 'Smart crop' : 'Full frame on blurred background',
     j.opts && j.opts.captions === 'off' ? 'Captions off' + (j.hookBurned ? ' · hook text burned in' : '') : j.captions ? j.captions + ' caption lines' + (j.hookBurned ? ' + hook text' : '') : j.hookBurned ? 'Hook text burned in (no speech to caption)' : 'No captions (no speech found)',
     j.edit ? (j.edit.cuts > 1 ? `${j.edit.cuts} jump-cut pieces` : 'One piece, no jump cuts') + (j.edit.zoom > 1 ? ` · zoom ${j.edit.zoom}×` : ' · no zoom') : '',

@@ -122,18 +122,16 @@ module.exports = function storyRoutes(ctx) {
       if (!p) return send(res, 400, { error: "Scene prompt is empty." }), true;
       const ar = ["9:16", "16:9", "1:1"].includes(b.aspect_ratio) ? b.aspect_ratio : "9:16";
       const st = settings.get(), model = st.imageModel;
-      const theme = b.no_theme ? null : ctx.themes.get(typeof b.theme_id === "string" ? b.theme_id : st.themeLock ? st.themeId : null);
-      const infId = /^[\w-]+$/.test(b.influencer_id || "") ? b.influencer_id : theme && theme.influencerId;
+      const theme = b.no_theme ? null : ctx.themes.get(typeof b.theme_id === "string" ? b.theme_id : st.themeId);
+      const infId = /^[\w-]+$/.test(b.influencer_id || "") ? b.influencer_id : null;
       const inf = infId && ctx.readInf().find((x) => x.id === infId);
       const refs = [], said = [];
       const cast = castFile(b.cast);
       if (cast) { refs.push(dataUrl(cast)); said.push(`Image ${refs.length} is the character reference sheet: every character looks exactly like on it (face, hair, body, clothes, colours).`); }
       const infImg = inf && ctx.imgFile(inf.id);
       if (infImg && !cast) { refs.push(dataUrl(infImg)); said.push(`Image ${refs.length} is the main character: keep the same face, hair and look.`); }
-      const style = theme && ctx.themes.styleDataUrl(theme.id);
-      if (style) { refs.push(style); said.push(`Image ${refs.length} is the style reference: match its rendering, colours and lighting, not its content.`); }
       const prompt = `${said.join(" ")} Create the opening frame of this scene as one single full-frame film still composed for ${ar}: ${p}` +
-        (inf && inf.desc ? ` Main character, exactly: ${inf.desc}.` : "") + ctx.themeText(theme, inf && inf.desc) +
+        (inf && inf.desc ? ` Main character, exactly: ${inf.desc}.` : "") + ctx.themeText(theme, (inf && inf.desc) || (b.no_theme ? "" : st.character)) +
         (b.style ? ` Visual style: ${String(b.style).slice(0, 300)}` : "") + " Characters at natural size in the scene, no text, no panels, no borders.";
       try {
         const { d, cost } = await imageCall({ model, prompt, n: 1, aspect_ratio: ar, ...(refs.length ? { input_references: refs.map((u) => ({ type: "image_url", image_url: { url: u } })) } : {}) });

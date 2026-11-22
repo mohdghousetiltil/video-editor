@@ -35,6 +35,7 @@
 </style>
 <link rel="stylesheet" href="/app.css">
 <script src="/studio.js"></script>
+<script src="/icons.js"></script>
 <script src="/theme.js"></script>
 </head>
 <body data-title="History" data-sub="Everything you made, across every page: find it by name, date or cost, download it, retry a failed one or delete it.">
@@ -75,14 +76,14 @@ function render(){
   $('rows').innerHTML=items.length?items.map(x=>{
     const done=x.status==='completed', run=/^(pending|in_progress|running|queued)$/.test(x.status);
     return `<div class="row" data-id="${S.esc(x.id)}">
-      <div class="th" style="${done&&x.thumb?`background-image:url('${S.esc(x.thumb)}')`:''}">${done&&x.thumb?'':run?'⏳':x.status==='failed'?'✕':'🎞'}</div>
+      <div class="th" style="${done&&x.thumb?`background-image:url('${S.esc(x.thumb)}')`:''}">${done&&x.thumb?'':run?'<svg class=ic aria-hidden=true><use href=#i-hourglass></use></svg>':x.status==='failed'?'<svg class=ic aria-hidden=true><use href=#i-x></use></svg>':'<svg class=ic aria-hidden=true><use href=#i-film></use></svg>'}</div>
       <div><div class="ti">${S.esc(x.title||x.id)}</div>
         <div class="mt"><span class="st ${S.esc(x.status)}">${S.esc(run?'running':x.status==='completed'?'done':x.status)}</span> · ${KIND[x.kind]||S.esc(x.kind)}${x.model?' · '+S.esc((MODELS[x.model]||{}).name||x.model):''}${x.duration?' · '+x.duration+' s':''}${x.res?' · '+S.esc(x.res):''}${x.cost!=null?' · '+S.money(x.cost,3):''}${x.provider&&x.provider!=='openrouter'?' · via '+S.esc(x.provider):''}</div>
         <div class="mt">${new Date(x.t).toLocaleString([],{dateStyle:'medium',timeStyle:'short'})} · <code>${S.esc(x.id)}</code>${x.error?`<br><span style="color:var(--err)">${S.esc(x.error).slice(0,200)}</span>`:''}</div></div>
       <div class="ac">
-        ${done&&x.url?`<a class="btn" href="${S.esc(x.url)}" target="_blank" rel="noopener">▶ Play</a><a class="btn" href="${S.esc(x.url)}${x.kind==='short'?'?dl=1':'?download=1'}">⬇ Download</a>`:''}
-        ${x.retry&&!run?`<button class="btn" data-r type="button">🔄 Retry</button>`:''}
-        ${!run?`<button class="btn danger" data-d type="button" aria-label="Delete ${S.esc(x.title||x.id)}">✕ Delete</button>`:''}
+        ${done&&x.url?`<a class="btn" href="${S.esc(x.url)}" target="_blank" rel="noopener">▶ Play</a><a class="btn" href="${S.esc(x.url)}${x.kind==='short'?'?dl=1':'?download=1'}"><svg class=ic aria-hidden=true><use href=#i-download></use></svg> Download</a>`:''}
+        ${x.retry&&!run?`<button class="btn" data-r type="button"><svg class=ic aria-hidden=true><use href=#i-refresh></use></svg> Retry</button>`:''}
+        ${!run?`<button class="btn danger" data-d type="button" aria-label="Delete ${S.esc(x.title||x.id)}"><svg class=ic aria-hidden=true><use href=#i-x></use></svg> Delete</button>`:''}
       </div>${done&&x.url?`<div class="enh-host" style="grid-column:1/-1" data-src="${S.esc(x.url)}"></div>`:''}</div>`;}).join(''):'<div class="none">Nothing here yet. Everything you make on any page shows up here.</div>';
 }
 $('rows').addEventListener('click',async e=>{

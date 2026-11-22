@@ -48,6 +48,7 @@
 </style>
 <link rel="stylesheet" href="/app.css">
 <script src="/studio.js"></script>
+<script src="/icons.js"></script>
 <script src="/theme.js"></script>
 </head>
 <body data-title="Settings" data-sub="Which AI models do the work, Muse by Meta, your monthly spending cap and how long files are kept. Saved on the server, so every device uses the same settings.">
@@ -67,7 +68,7 @@
       </button>
     </div>
     <p class="meta" style="margin:12px 0 0">Muse runs through your existing OpenRouter key: no extra account or key needed. Picking models by hand below makes it a custom mix.</p>
-    <div class="row"><button class="btn" id="test" type="button">⚡ Test connection</button><span class="status" id="testOut"></span></div>
+    <div class="row"><button class="btn" id="test" type="button"><svg class=ic aria-hidden=true><use href=#i-zap></use></svg> Test connection</button><span class="status" id="testOut"></span></div>
   </div>
 
   <div class="panel">
@@ -81,11 +82,11 @@
   </div>
 
   <div class="panel">
-    <h2>🧠 Director (Auto)</h2>
+    <h2><svg class=ic aria-hidden=true><use href=#i-brain></use></svg> Director (Auto)</h2>
     <div class="grid">
       <label>Director's brain (reads every model and plans each job)<select id="directorModel"></select></label>
     </div>
-    <p class="meta">Default budget per job when you pick 🧠 Auto. It always aims for the best quality that fits, and you can change the budget on each page.</p>
+    <p class="meta">Default budget per job when you pick <svg class=ic aria-hidden=true><use href=#i-brain></use></svg> Auto. It always aims for the best quality that fits, and you can change the budget on each page.</p>
     <div class="grid">
       <label>Single clip ($)<input data-db="clip" inputmode="decimal"></label>
       <label>Whole story ($)<input data-db="story" inputmode="decimal"></label>
@@ -121,7 +122,7 @@
     <label class="toggle" style="margin-top:10px"><input type="checkbox" id="eggs"> Little easter-egg glitches around the app</label>
     <p class="meta" id="queue" style="margin-top:10px"></p>
   </div>
-  <div class="saved"><span id="saved">✓ Saved</span></div>
+  <div class="saved"><span id="saved"><svg class=ic aria-hidden=true><use href=#i-check></use></svg> Saved</span></div>
 </div>
 <script src="/app.js"></script>
 <script>
@@ -134,7 +135,7 @@ function paint() {
   document.querySelectorAll('[data-db]').forEach((el) => { if (document.activeElement !== el) el.value = (+((S.directorBudget || {})[el.dataset.db] || 0)).toFixed(2); });
   if ($('voice').options.length) $('voice').value = S.voice;
   $('eggs').checked = !!S.eggs;
-  $('capNote').textContent = S.monthlyCap > 0 ? 'Cap: $' + (+S.monthlyCap).toFixed(2) + ' a month. Paid buttons stop once this month reaches it.' : '⚠ No cap: nothing stops paid calls except your OpenRouter credit.';
+  $('capNote').innerHTML = S.monthlyCap > 0 ? 'Cap: $' + (+S.monthlyCap).toFixed(2) + ' a month. Paid buttons stop once this month reaches it.' : '<svg class=ic aria-hidden=true><use href=#i-alert></use></svg> No cap: nothing stops paid calls except your OpenRouter credit.';
   $('confirmUnder').value = String(S.confirmUnder || 0);
 }
 let savedT;
@@ -168,7 +169,7 @@ $('eggs').addEventListener('change', () => save({ eggs: $('eggs').checked }));
 $('confirmUnder').addEventListener('change', () => save({ confirmUnder: +$('confirmUnder').value }));
 fetch('/api/models').then((r) => r.json()).then((j) => {
   const p = j.providers || {}, routed = (j.models || []).filter((m) => m.route !== 'openrouter');
-  $('provList').innerHTML = `<div>✓ OpenRouter</div><div>${p.fal ? '✓' : '○'} fal.ai ${p.fal ? '(key set)' : '(no FAL_KEY)'}</div><div>${p.byteplus ? '✓' : '○'} BytePlus ModelArk ${p.byteplus ? '(key set)' : '(no BYTEPLUS_KEY)'}</div>` +
+  $('provList').innerHTML = `<div><svg class=ic aria-hidden=true><use href=#i-check></use></svg> OpenRouter</div><div>${p.fal ? '<svg class=ic aria-hidden=true><use href=#i-check></use></svg>' : '<svg class=ic aria-hidden=true><use href=#i-circle></use></svg>'} fal.ai ${p.fal ? '(key set)' : '(no FAL_KEY)'}</div><div>${p.byteplus ? '<svg class=ic aria-hidden=true><use href=#i-check></use></svg>' : '<svg class=ic aria-hidden=true><use href=#i-circle></use></svg>'} BytePlus ModelArk ${p.byteplus ? '(key set)' : '(no BYTEPLUS_KEY)'}</div>` +
     (routed.length ? `<div style="margin-top:6px">Routed now: ${routed.map((m) => esc(m.name) + ' → ' + esc(m.route)).join(', ')}</div>` : '');
 }).catch(() => { $('provList').textContent = 'Could not load providers.'; });
 $('test').onclick = async () => {
@@ -176,8 +177,8 @@ $('test').onclick = async () => {
   try {
     const j = await (await fetch('/api/settings/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: $('textModel').value }) })).json();
     out.className = 'status ' + (j.ok ? 'ok' : 'bad');
-    out.textContent = j.ok ? `✓ ${j.model} answered in ${(j.ms / 1000).toFixed(1)} s` + (j.cost ? ` (cost $${j.cost.toFixed(5)})` : '') : `✕ ${j.model}: ${j.error}`;
-  } catch (e) { out.className = 'status bad'; out.textContent = '✕ ' + e.message; }
+    out.innerHTML = j.ok ? `<svg class=ic aria-hidden=true><use href=#i-check></use></svg> ${escH(j.model)} answered in ${(j.ms / 1000).toFixed(1)} s` + (j.cost ? ` (cost $${j.cost.toFixed(5)})` : '') : `<svg class=ic aria-hidden=true><use href=#i-x></use></svg> ${escH(j.model)}: ${escH(j.error)}`;
+  } catch (e) { out.className = 'status bad'; out.innerHTML = '<svg class=ic aria-hidden=true><use href=#i-x></use></svg> ' + escH(e.message); }
   $('test').disabled = false;
 };
 </script>

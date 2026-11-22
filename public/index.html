@@ -84,6 +84,7 @@
 </style>
 <link rel="stylesheet" href="/app.css">
 <script src="/studio.js"></script>
+<script src="/icons.js"></script>
 <script src="/theme.js"></script>
 </head>
 <body data-title="Single clip" data-sub="Turn one prompt into one video, with a live progress bar and cost estimate.">
@@ -93,16 +94,15 @@
       <div class="panel">
         <h2>1 · Script / prompt</h2>
         <label for="script" class="sr-only" style="position:absolute;left:-9999px">Prompt</label>
-        <textarea id="script" maxlength="1000" placeholder="Drop a .txt file here, or type / paste your scene idea…&#10;&#10;Tip: write a rough idea, then press ✨ Enhance."></textarea>
+        <textarea id="script" maxlength="1000" placeholder="Drop a .txt file here, or type / paste your scene idea…&#10;&#10;Tip: write a rough idea, then press Enhance."></textarea>
         <div class="tools">
-          <button class="btn" id="enh" type="button">✨ Enhance prompt</button>
+          <button class="btn" id="enh" type="button"><svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> Enhance prompt</button>
           <span class="count" id="count" aria-live="polite">0 / 1000</span>
         </div>
         <h2>2 · Model</h2>
-        <div class="models" id="models" role="radiogroup" aria-label="Video model"></div>
-        <h2>3 · Style</h2>
-        <div class="meta" id="styleTheme" hidden style="margin-bottom:12px"></div>
-        <div class="chips" id="styles"></div>
+        <div class="models model-pick" id="models" role="radiogroup" aria-label="Video model"></div>
+        <h2>3 · Look</h2>
+        <div id="lookHost"></div>
         <h2>4 · Settings</h2>
         <div class="grid4">
           <label id="durWrap">Duration<select id="duration" aria-describedby="modelNotes"></select></label>
@@ -134,7 +134,7 @@
     <div>
       <div class="panel">
         <h2>Result</h2>
-        <div class="stage" id="stage"><div class="empty"><div class="big">🎞️</div>Your video and progress will show here.</div></div>
+        <div class="stage" id="stage"><div class="empty"><div class="big"><svg class=ic aria-hidden=true><use href=#i-film></use></svg></div>Your video and progress will show here.</div></div>
         <div class="actions" id="actions"></div>
       </div>
       <div class="panel">
@@ -152,55 +152,40 @@
 <script>
 if(location.protocol==='file:'){location.replace('http://localhost:3100/');}
 const $=id=>document.getElementById(id), S=window.studio;
-const STYLES={
-  movie:['🎥 Cinematic','Cinematic live-action movie style, shallow depth of field, dramatic lighting, smooth camera movement, film grain, high production value.'],
-  kids:['🧸 Kids cartoon','Bright colorful 3D animated kids cartoon: cute round characters with big expressive eyes, soft glossy shading, cheerful saturated colors, simple friendly backgrounds, gentle playful motion.'],
-  anime:['🌸 Anime','Japanese anime style, hand-drawn look, vivid colors, expressive eyes, dynamic camera angles, detailed painted backgrounds, cel shading.'],
-  horror:['👻 Horror','Ultra-realistic cinematic horror, dark atmosphere, low-key dramatic lighting, suspenseful slow camera moves, realistic human expressions, no gore.'],
-  pixar:['🎞️ 3D film','High-quality 3D animated feature-film style, expressive characters, warm lighting, rich textures, smooth animation.'],
-  doc:['📹 Realistic','Realistic documentary footage, natural lighting, handheld camera feel, true-to-life colors and detail.'],
-  comic:['✏️ 2D cartoon','Flat 2D hand-drawn animation like a TV cartoon episode, bold outlines, bright simple colors, lively exaggerated motion, one full-frame scene.'],
-  none:['No style','']
-};
 const EXAMPLES=[
-  ['☕ Coffee pour','Slow-motion close-up of hot coffee being poured into a glass mug on a sunny café table, steam curling up, the camera slowly pushes in.'],
-  ['🏄 Surfer dog','A golden retriever rides a small wave on a surfboard at sunset, ears flapping, spray glittering, tracking shot from the water.'],
-  ['🌃 Neon street','A woman in a yellow raincoat walks through a rainy neon-lit Tokyo street at night, reflections on the wet ground, slow dolly shot behind her.'],
+  ['<svg class=ic aria-hidden=true><use href=#i-coffee></use></svg> Coffee pour','Slow-motion close-up of hot coffee being poured into a glass mug on a sunny café table, steam curling up, the camera slowly pushes in.'],
+  ['<svg class=ic aria-hidden=true><use href=#i-waves></use></svg> Surfer dog','A golden retriever rides a small wave on a surfboard at sunset, ears flapping, spray glittering, tracking shot from the water.'],
+  ['<svg class=ic aria-hidden=true><use href=#i-moon></use></svg> Neon street','A woman in a yellow raincoat walks through a rainy neon-lit Tokyo street at night, reflections on the wet ground, slow dolly shot behind her.'],
 ];
-// models shown here: cheapest first inside each tier
-// the few shown by default (as before); every other model is one tap away under "More models"
-const SHOWN=['google/veo-3.1-fast','kwaivgi/kling-v3.0-pro','google/gemini-omni-1.2-flash','google/veo-3.1-lite','x-ai/grok-imagine-video-1.5-lite'];
-let seeds={}, MODELS={}, model=null, style=S.formValue('clip','style')||'movie', timers=[], showAll=false, autoEnhance={};
+let seeds={}, MODELS={}, model=null, timers=[], autoEnhance={};
+const FALLBACK='google/veo-3.1-lite';
 const LIMIT=1000;
 const isAuto=()=>model===S.AUTO;
 // in Auto mode the settings follow a sensible base model until the Director decides
-const m=()=>isAuto()?MODELS['google/veo-3.1-lite']||Object.values(MODELS)[0]:MODELS[model];
+const m=()=>isAuto()?MODELS[FALLBACK]||Object.values(MODELS)[0]:MODELS[model];
 
+// two choices only: Auto (recommended), or one model picked from a dropdown grouped by tier, cheapest first
 function renderModels(){
-  const card=(id)=>{const x=MODELS[id],r=x.res.includes('720p')?'720p':x.res[0];
-    return `<div class="model ${id===model?'sel':''}" data-id="${id}" role="radio" tabindex="0" aria-checked="${id===model}"><b>${S.esc(x.name)}<span class="tier ${x.tier}">${S.tierLabel(x.tier)}</span></b><span>~${S.money(S.rate(x,r,true),2)}/s @${r}${x.route!=='openrouter'?' · via '+x.route:''}</span></div>`;};
-  // every model the app can use: the usual ones first, the rest behind "More models", cheapest first in each tier
   const order={draft:0,regular:1,hero:2};
-  const rest=Object.keys(MODELS).filter(id=>!SHOWN.includes(id)).sort((a,b)=>order[MODELS[a].tier]-order[MODELS[b].tier]||S.rate(MODELS[a],'720p')-S.rate(MODELS[b],'720p'));
-  if(rest.includes(model)) showAll=true;
-  $('models').innerHTML=`<div class="model auto ${isAuto()?'sel':''}" data-id="${S.AUTO}" role="radio" tabindex="0" aria-checked="${isAuto()}"><b>🧠 Auto<span class="tier hero">Director</span></b><span>Picks the best of all ${Object.keys(MODELS).length} models for your budget</span></div>`+
-    SHOWN.filter(id=>MODELS[id]).map(card).join('')+(showAll?rest.map(card).join(''):'')+
-    (rest.length?`<button type="button" class="btn" id="moreModels" style="grid-column:1/-1">${showAll?'Fewer models':'More models ('+rest.length+')'}</button>`:'');
-  if($('moreModels')) $('moreModels').onclick=()=>{showAll=!showAll;renderModels();};
+  const ids=Object.keys(MODELS).sort((a,b)=>order[MODELS[a].tier]-order[MODELS[b].tier]||S.rate(MODELS[a],'720p')-S.rate(MODELS[b],'720p'));
+  const manual=isAuto()?(S.formValue('clip','manualModel')||FALLBACK):model;
+  const opt=id=>{const x=MODELS[id],r=x.res.includes('720p')?'720p':x.res[0];return `<option value="${id}"${id===manual?' selected':''}>${S.esc(x.name)} · ~${S.money(S.rate(x,r,true),2)}/s</option>`;};
+  const groups=['draft','regular','hero'].map(t=>{const g=ids.filter(id=>MODELS[id].tier===t);return g.length?`<optgroup label="${S.tierLabel(t)}">${g.map(opt).join('')}</optgroup>`:'';}).join('');
+  $('models').innerHTML=`<div class="model auto ${isAuto()?'sel':''}" data-id="${S.AUTO}" role="radio" tabindex="0" aria-checked="${isAuto()}"><b><svg class=ic aria-hidden=true><use href=#i-brain></use></svg> Auto<span class="tier hero">Recommended</span></b><span>The Director picks the best model for your budget</span></div>`+
+    `<div class="model pick ${isAuto()?'':'sel'}" data-id="__pick" role="radio" tabindex="0" aria-checked="${!isAuto()}"><b><svg class=ic aria-hidden=true><use href=#i-clapper></use></svg> I'll choose</b><select id="modelSel" aria-label="Video model">${groups}</select></div>`;
+  const sel=$('modelSel');
+  const choose=id=>{model=id;S.saveField('clip','model',model);if(id!==S.AUTO)S.saveField('clip','manualModel',id);applyModel();};
   $('models').querySelectorAll('.model').forEach(el=>{
-    const pick=()=>{model=el.dataset.id;S.saveField('clip','model',model);applyModel();};
-    el.onclick=pick; el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();pick();}};
+    const pick=()=>choose(el.dataset.id===S.AUTO?S.AUTO:sel.value);
+    el.onclick=e=>{if(e.target!==sel)pick();}; el.onkeydown=e=>{if(e.target!==sel&&(e.key==='Enter'||e.key===' ')){e.preventDefault();pick();}};
   });
-}
-function renderStyles(){
-  $('styles').innerHTML=Object.entries(STYLES).map(([k,v])=>`<button type="button" class="chip ${k===style?'sel':''}" data-k="${k}" aria-pressed="${k===style}">${v[0]}</button>`).join('');
-  $('styles').querySelectorAll('.chip').forEach(el=>el.onclick=()=>{style=el.dataset.k;S.saveField('clip','style',style);renderStyles();});
+  sel.onchange=()=>choose(sel.value);
 }
 function fill(sel,opts,def){const cur=sel.dataset.pending||sel.value; delete sel.dataset.pending; sel.innerHTML=opts.map(o=>`<option>${o}</option>`).join(''); sel.value=opts.includes(cur)?cur:def;}
 function applyModel(){
   const x=m(); if(!x) return; renderModels();
   ['durWrap','resWrap'].forEach(id=>$(id).hidden=isAuto()); $('budgetWrap').hidden=!isAuto();
-  if(isAuto()){ $('modelNotes').innerHTML='🧠 The Director chooses model, length, resolution, sound, picture first and Enhance for the best quality within your budget. You see its plan, its reasons and the total before anything is charged.'; updateCost(); return; }
+  if(isAuto()){ $('modelNotes').innerHTML='<svg class=ic aria-hidden=true><use href=#i-brain></use></svg> The Director chooses model, length, resolution, sound, picture first and Enhance for the best quality within your budget. You see its plan, its reasons and the total before anything is charged.'; updateCost(); return; }
   fill($('resolution'),x.res,x.res.includes('720p')?'720p':x.res[0]);
   [...$('resolution').options].forEach(o=>{if(o.value==='1080p') o.textContent='1080p (hero / YouTube only)';});
   fill($('aspect'),x.asp,'9:16');
@@ -213,7 +198,7 @@ function applyModel(){
 }
 function updateCost(){
   const x=m(); if(!x) return;
-  if(isAuto()){ const b=parseFloat($('autoBudget').value)||0; $('cost').textContent=`🧠 best quality within ${S.money(b)}${+$('variations').value>1?' per version':''} · plan and exact total shown before paying`; return; }
+  if(isAuto()){ const b=parseFloat($('autoBudget').value)||0; $('cost').innerHTML=`<svg class=ic aria-hidden=true><use href=#i-brain></use></svg> best quality within ${S.money(b)}${+$('variations').value>1?' per version':''} · plan and exact total shown before paying`; return; }
   const c=S.costLine(x,{res:$('resolution').value,dur:$('duration').value,audio:$('audio').value==='true',n:+$('variations').value});
   $('cost').textContent=c.text;
 }
@@ -244,14 +229,14 @@ S.presetChips($('presets'),p=>{
 async function renderHist(){
   let items=[];
   try{items=(await (await fetch('/api/history?kind=clip&limit=5')).json()).items||[];}catch{}
-  $('hist').innerHTML=items.length?items.map(x=>`<div class="item" data-id="${x.id}" role="button" tabindex="0"><span class="t">${S.esc(x.title||x.id)}</span><span class="s">${x.status==='completed'?'✓':x.status==='failed'?'✗':'…'} ${x.cost!=null?S.money(x.cost)+' · ':''}${new Date(x.t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span></div>`).join(''):'<div class="none">No clips yet. Your finished and running clips show here.</div>';
+  $('hist').innerHTML=items.length?items.map(x=>`<div class="item" data-id="${x.id}" role="button" tabindex="0"><span class="t">${S.esc(x.title||x.id)}</span><span class="s">${x.status==='completed'?'<svg class=ic aria-hidden=true><use href=#i-check></use></svg>':x.status==='failed'?'<svg class=ic aria-hidden=true><use href=#i-x></use></svg>':'…'} ${x.cost!=null?S.money(x.cost)+' · ':''}${new Date(x.t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span></div>`).join(''):'<div class="none">No clips yet. Your finished and running clips show here.</div>';
   $('hist').querySelectorAll('.item').forEach(el=>{el.onclick=()=>track(el.dataset.id);el.onkeydown=e=>{if(e.key==='Enter')track(el.dataset.id);};});
 }
 
 // ---------- progress ----------
 function stopAll(){timers.forEach(clearInterval);timers=[];$('go').disabled=false;}
 function resetStage(msg){
-  $('stage').innerHTML=`<div class="empty"><div class="big">🎞️</div>${S.esc(msg||'Your video and progress will show here.')}</div>`;
+  $('stage').innerHTML=`<div class="empty"><div class="big"><svg class=ic aria-hidden=true><use href=#i-film></use></svg></div>${S.esc(msg||'Your video and progress will show here.')}</div>`;
 }
 function fail(msg){stopAll();resetStage('Nothing to show.');$('err').textContent=msg;}
 function track(id){
@@ -271,12 +256,12 @@ async function poll(id,cell){
   const cost=j.cost!=null?`${j.estimated?'≈ ':''}$${(+j.cost).toFixed(2)}${j.estimated?' (estimate)':''}`:'';
   if(cell){ cell.innerHTML=`<video controls playsinline loop muted src="${j.videoUrl}"></video><div class="meta">${cost}</div><button class="btn" type="button">Keep this one</button>`;
     cell.querySelector('button').onclick=()=>{document.querySelectorAll('.vcell').forEach(c=>c.classList.toggle('kept',c===cell));fetch('/api/history/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({kept:true})});
-      $('actions').innerHTML=`<a class="btn" href="${j.videoUrl}?download=1">⬇ Download kept MP4</a>`;mountShare($('actions'),{url:j.videoUrl,name:'video-'+id.slice(-8)+'.mp4',prompt:ta.value});};
+      $('actions').innerHTML=`<a class="btn" href="${j.videoUrl}?download=1"><svg class=ic aria-hidden=true><use href=#i-download></use></svg> Download kept MP4</a>`;mountShare($('actions'),{url:j.videoUrl,name:'video-'+id.slice(-8)+'.mp4',prompt:ta.value});};
     renderHist(); window.dispatchEvent(new Event('spend-changed')); return 'stop'; }
   stopAll();
   $('stage').innerHTML=`<video controls autoplay loop playsinline src="${j.videoUrl}"></video>`;
-  $('actions').innerHTML=`<a class="btn" href="${j.videoUrl}?download=1">⬇ Download MP4</a>`+(cost?`<span class="meta" style="align-self:center">Cost ${cost}</span>`:'')+
-    (seeds[id]!=null?`<button class="btn" type="button" id="useSeed" title="Reuse this seed for the next clip">🎲 Seed ${seeds[id]} · reuse</button>`:'');
+  $('actions').innerHTML=`<a class="btn" href="${j.videoUrl}?download=1"><svg class=ic aria-hidden=true><use href=#i-download></use></svg> Download MP4</a>`+(cost?`<span class="meta" style="align-self:center">Cost ${cost}</span>`:'')+
+    (seeds[id]!=null?`<button class="btn" type="button" id="useSeed" title="Reuse this seed for the next clip"><svg class=ic aria-hidden=true><use href=#i-dice></use></svg> Seed ${seeds[id]} · reuse</button>`:'');
   if($('useSeed')) $('useSeed').onclick=()=>{ $('seed').value=seeds[id]; $('seedLock').checked=true; ['seed','seedLock'].forEach(k=>$(k).dispatchEvent(new Event('change'))); toast('Seed '+seeds[id]+' locked for the next clip'); };
   // the Director planned an upscale for this clip: start it straight away (free, on the server)
   const auto=autoEnhance[id]; delete autoEnhance[id];
@@ -299,7 +284,7 @@ $('go').onclick=async()=>{
     $('stage').innerHTML=S.stageHTML({stage:'queued',msg:'Choosing the best length…'});
     const short=x.durs.filter(n=>n<=8), durs=short.length?short:x.durs;
     try{
-      const r=await fetch('/api/enhance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:text,durations:durs,aspect_ratio:$('aspect').value,style:STYLES[style][1]})});
+      const r=await fetch('/api/enhance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:text,durations:durs,aspect_ratio:$('aspect').value})});
       const j=await r.json(); if(r.ok&&j.duration&&x.durs.includes(j.duration)) $('duration').value=j.duration;
     }catch{}
     if(!$('duration').value) $('duration').value=x.defaultDur;
@@ -309,12 +294,11 @@ $('go').onclick=async()=>{
   const c=S.costLine(x,{res:$('resolution').value,dur:$('duration').value,audio,n});
   const ok=await S.confirmSpend({title:n>1?`Make ${n} variations?`:'Make this video?',total:c.total,rows:[
     ['Model',x.name+' ('+S.tierLabel(x.tier)+')'],['Length',$('duration').value+' s'+(n>1?' × '+n:'')],['Resolution',$('resolution').value],['Aspect',$('aspect').value],
-    ['Sound',x.audio===true?(audio?'On':'Off'):x.audio==='always'?'Always on':'None'],['Price',S.money(c.rate,3)+'/s'],['Theme',S.theme&&S.theme()?S.theme().name+' (locked)':'off']]});
+    ['Sound',x.audio===true?(audio?'On':'Off'):x.audio==='always'?'Always on':'None'],['Price',S.money(c.rate,3)+'/s'],['Look',lookName()]]});
   if(!ok){$('go').disabled=false;return;}
-  const th=S.theme&&S.theme(), s=th?'':STYLES[style][1];
   const typed=parseInt($('seed').value,10), seed0=Number.isInteger(typed)?typed:Math.floor(Math.random()*2e9);
   if($('seedLock').checked) $('seed').value=seed0;
-  const base={model,prompt:text+(s?' Visual style: '+s:''),title:text.slice(0,140),duration:+$('duration').value,resolution:$('resolution').value,aspect_ratio:$('aspect').value,generate_audio:audio,
+  const base={model,prompt:text,title:text.slice(0,140),duration:+$('duration').value,resolution:$('resolution').value,aspect_ratio:$('aspect').value,generate_audio:audio,
     quality:$('quality').checked,negative:$('negative').value.trim()||undefined,seed:seed0};
   if(n===1){ $('stage').innerHTML=S.stageHTML({stage:'queued',msg:'Submitting…'}); }
   else $('stage').innerHTML=`<div class="var-grid">${Array.from({length:n},(_,i)=>`<div class="vcell" id="v${i}">${S.stageHTML({stage:'queued',msg:'Submitting…'})}</div>`).join('')}</div>`;
@@ -338,13 +322,12 @@ async function submitClips(base,n,text){
     ids.forEach((id,i)=>{const cell=$('v'+i); const t=setInterval(async()=>{if(await poll(id,cell)==='stop')clearInterval(t);},3000); timers.push(t);});
   }catch(e){fail(e.message);}
 }
-// 🧠 Auto: ask the Director, show its plan (why, alternatives, total vs budget), then run that process
+// Auto: ask the Director, show its plan (why, alternatives, total vs budget), then run that process
 async function runAuto(text){
   const n=+$('variations').value, budget=parseFloat($('autoBudget').value)||undefined;
-  const th=S.theme&&S.theme(), s=th?'':STYLES[style][1];
-  $('stage').innerHTML=S.stageHTML({stage:'queued',msg:'🧠 The Director is reading all models and planning…'});
+  $('stage').innerHTML=S.stageHTML({stage:'queued',msg:'The Director is reading all models and planning…'});
   let res;
-  try{ res=await S.director({page:'clip',prompt:text+(s?' Visual style: '+s:''),aspect:$('aspect').value,budget,style:s||undefined}); }
+  try{ res=await S.director({page:'clip',prompt:text,aspect:$('aspect').value,budget}); }
   catch(e){ return fail(e.message); }
   window.dispatchEvent(new Event('spend-changed'));
   resetStage();
@@ -352,12 +335,12 @@ async function runAuto(text){
   if(!plan){ $('go').disabled=false; $('err').textContent=''; return; }
   const typed=parseInt($('seed').value,10), seed0=Number.isInteger(typed)?typed:Math.floor(Math.random()*2e9);
   if($('seedLock').checked) $('seed').value=seed0;
-  const base={model:plan.model,prompt:text+(s?' Visual style: '+s:''),title:'🧠 '+text.slice(0,130),duration:plan.duration,resolution:plan.resolution,aspect_ratio:$('aspect').value,generate_audio:!!plan.audio,
+  const base={model:plan.model,prompt:text,title:''+text.slice(0,130),duration:plan.duration,resolution:plan.resolution,aspect_ratio:$('aspect').value,generate_audio:!!plan.audio,
     quality:$('quality').checked,negative:$('negative').value.trim()||undefined,seed:seed0};
   if(plan.pictureFirst){
-    $('stage').innerHTML=S.stageHTML({stage:'queued',msg:'🖼 Drawing the first frame (picture first)…'});
+    $('stage').innerHTML=S.stageHTML({stage:'queued',msg:'Drawing the first frame (picture first)…'});
     try{
-      const r=await fetch('/api/still',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:text,aspect_ratio:$('aspect').value,style:s||undefined})});
+      const r=await fetch('/api/still',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:text,aspect_ratio:$('aspect').value})});
       const j=await r.json(); if(!r.ok) throw new Error(j.error||'Picture failed');
       base.still_id=j.id;
     }catch(e){ toast('Picture first failed, making the clip from text: '+e.message,'err'); }
@@ -370,12 +353,12 @@ $('enh').onclick=async()=>{
   $('err').textContent=''; const b=$('enh'); if(!ta.value.trim()) return $('err').textContent='Write a rough idea first.';
   b.disabled=true; b.textContent='Enhancing…';
   try{
-    const r=await fetch('/api/enhance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:ta.value,duration:+$('duration').value||0,durations:m().durs,aspect_ratio:$('aspect').value,style:STYLES[style][1],max_words:150})});
+    const r=await fetch('/api/enhance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:ta.value,duration:+$('duration').value||0,durations:m().durs,aspect_ratio:$('aspect').value,max_words:150})});
     const j=await r.json(); if(!r.ok) throw new Error(j.error||'Enhance failed');
     ta.value=j.prompt.slice(0,LIMIT); cnt(); ta.dispatchEvent(new Event('input'));
     if(j.duration&&m().durs.includes(j.duration)){ $('duration').value=j.duration; $('duration').dispatchEvent(new Event('change')); window.toast&&toast(`Length set to ${j.duration} s for this prompt`); }
   }catch(e){$('err').textContent=e.message;}
-  b.disabled=false; b.textContent='✨ Enhance prompt';
+  b.disabled=false; b.innerHTML='<svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> Enhance prompt';
 };
 $('fetchjob').onclick=()=>{
   const id=$('jobid').value.trim();
@@ -391,17 +374,12 @@ S.persistForm('clip',['script','duration','resolution','aspect','audio','variati
 if(!S.formValue('clip','autoBudget')) S.directorBudget('clip').then(b=>{ $('autoBudget').value=(+b).toFixed(2); updateCost(); });
 $('autoBudget').addEventListener('input',updateCost);
 $('autoBudget').addEventListener('change',()=>{ const v=Math.max(0.05,Math.min(50,parseFloat($('autoBudget').value)||0.5)); $('autoBudget').value=v.toFixed(2); updateCost(); });
-// Theme Lock: the theme replaces the Style chips; choosing a theme also switches to its quality model
-addEventListener('theme-changed',e=>{
-  const t=e.detail.theme;
-  $('styles').hidden=!!t; $('styleTheme').hidden=!t;
-  if(t) $('styleTheme').innerHTML=`🔒 Style comes from the <b>${S.esc(t.name)}</b> theme (${S.esc([t.style,t.palette,t.lighting].filter(Boolean).join(' · ').slice(0,160))}). Turn Theme Lock off to pick a style here.`;
-  if(t&&e.detail.picked&&t.models&&MODELS[t.models.good]){ model=t.models.good; S.saveField('clip','model',model); applyModel(); if([...$('resolution').options].some(o=>o.value===t.models.res)) $('resolution').value=t.models.res; updateCost(); }
-});
-cnt(); renderStyles(); renderHist();
+const lookName=()=>{const t=S.theme&&S.theme(),c=S.character&&S.character();return (t?t.name:'None')+(c?' + character':'');};
+cnt(); renderHist();
 S.models().then(({map,def})=>{
   MODELS=map; const saved=S.formValue('clip','model');
-  model=saved===S.AUTO||MODELS[saved]?saved:MODELS[def]?def:SHOWN.find(id=>MODELS[id]);
+  // first visit: Auto, so nobody has to know the models
+  model=saved===S.AUTO||MODELS[saved]?saved:S.AUTO;
   if(!model){$('err').textContent='Couldn\'t load the model list. Is the server running?';return;}
   applyModel();
 });

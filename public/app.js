@@ -165,7 +165,7 @@
     const maxF = Math.max(...L.byFeature.map((f) => f.cost), 0.0001), maxD = Math.max(...L.byDay.map((d) => d.cost), 0.0001);
     const lim = or.keyLimit, used = lim ? lim - (or.keyRemaining ?? lim) : 0;
     dlg.innerHTML =
-      `<div class="sd-head"><h2>AI spend · ${esc(monthName)}</h2><button class="btn sd-x" data-x aria-label="Close">✕</button></div>` +
+      `<div class="sd-head"><h2>AI spend · ${esc(monthName)}</h2><button class="btn sd-x" data-x aria-label="Close"><svg class=ic aria-hidden=true><use href=#i-x></use></svg></button></div>` +
       (j.months.length > 1 ? `<label class="sd-month">Month<select>${j.months.map((m) => `<option ${m === j.month ? 'selected' : ''}>${m}</option>`).join('')}</select></label>` : '') +
       (j.current && j.openrouter ? `<div class="sd-tiles">
         <div><span>OpenRouter month total</span><b>${money(or.month, 2)}</b></div>
@@ -198,11 +198,11 @@
   addEventListener('spend-changed', () => setTimeout(loadSpend, 1500)); // pages can nudge it after a paid action
 
   // ---------- Easter eggs (Settings → "Little easter-egg glitches"; off when the OS asks for reduced motion) ----------
-  //  · now and then a title, heading or button glitches for a split second
+  //  · every few minutes a page title or heading glitches for a split second (never buttons)
   //  · ↑ ↑ ↓ ↓ ← → ← → B A  → OVERDRIVE
   //  · click the logo (or, on a phone, tap the page title) 5 times fast → the nav gets hacked for a moment
   //  · type "glitch" anywhere outside a text box → the screen tears
-  //  · phones: swipe ↑ ↑ ↓ ↓ ← → ← → then tap twice, or hold the centre orb 1.5 s → OVERDRIVE; shake → tear (Android)
+  //  · phones: hold the centre orb 1.5 s without moving → OVERDRIVE; shake hard → tear (Android)
   //  · after midnight the server light says NETRUNNER ONLINE
   (() => {
     let on = true;
@@ -222,17 +222,17 @@
     };
     const tick = () => {
       if (!document.hidden) {
-        const pool = [...document.querySelectorAll('.pagehead h1, .sb-brand, .panel h2, .btn.primary, .spend-v, .spend-chip, .tabbar a.on, .tb-orb')].filter((e) => e.offsetParent);
+        // headings only: nothing you are about to tap ever jumps
+        const pool = [...document.querySelectorAll('.pagehead h1, .sb-brand, .panel h2')].filter((e) => e.offsetParent);
         glitch(pool[Math.floor(Math.random() * pool.length)]);
-        if (Math.random() < .25) tear(2);
       }
-      setTimeout(tick, 25000 + Math.random() * 45000);
+      setTimeout(tick, 120000 + Math.random() * 120000);
     };
-    setTimeout(tick, 9000 + Math.random() * 12000);
+    setTimeout(tick, 60000 + Math.random() * 60000);
     const buzz = (p) => { try { navigator.vibrate && navigator.vibrate(p); } catch {} }; // Android only; iPhones ignore it
     const overdrive = () => {
-      document.body.classList.add('eg-overdrive'); tear(14); buzz([40, 30, 40, 30, 120]);
-      toast('⚡ OVERDRIVE ENGAGED // all limiters off (not really)', 'ok');
+      document.body.classList.add('eg-overdrive'); tear(6); buzz([40, 30, 120]);
+      toast('OVERDRIVE ENGAGED // all limiters off (not really)', 'ok');
       setTimeout(() => document.body.classList.remove('eg-overdrive'), 2500);
     };
     // nav labels (sidebar on desktop, tab bar on phones) scramble into hex/katakana for a moment
@@ -246,7 +246,7 @@
         nodes.forEach((x, i) => { x.textContent = junk(Math.max(4, orig[i].length)); x.parentElement?.classList.add('eg-scramble'); });
         if (++n > 12) { clearInterval(iv); nodes.forEach((x, i) => { x.textContent = orig[i]; x.parentElement?.classList.remove('eg-scramble'); }); }
       }, 70);
-      tear(6); buzz([20, 40, 20, 40, 20]); toast('SIGNAL INTRUSION DETECTED // 0xDEADBEEF // just kidding', 'err');
+      tear(3); buzz([20, 40, 20]); toast('SIGNAL INTRUSION DETECTED // 0xDEADBEEF // just kidding', 'err');
     };
 
     // ---- keyboard: Konami code, typing "glitch" ----
@@ -272,25 +272,13 @@
     fastTaps(side.querySelector('.sb-logo'), 5, hack);
     fastTaps(document.querySelector('.pagehead h1'), 5, hack);
 
-    // ---- touch: swipe the Konami code (↑ ↑ ↓ ↓ ← → ← →, then two taps) ----
-    const SWIPE = ['U', 'U', 'D', 'D', 'L', 'R', 'L', 'R', 'T', 'T'];
-    let sk = 0, t0 = null;
-    addEventListener('touchstart', (e) => { if (e.touches.length === 1) t0 = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() }; }, { passive: true });
-    addEventListener('touchend', (e) => {
-      if (!t0 || /^(input|textarea|select)$/i.test(e.target.tagName)) { t0 = null; return; }
-      const c = e.changedTouches[0], dx = c.clientX - t0.x, dy = c.clientY - t0.y, dt = Date.now() - t0.t;
-      t0 = null;
-      const g = Math.hypot(dx, dy) < 12 && dt < 300 ? 'T' : dt < 800 && Math.max(Math.abs(dx), Math.abs(dy)) > 40
-        ? (Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'R' : 'L') : (dy > 0 ? 'D' : 'U')) : null;
-      if (!g) { sk = 0; return; }
-      sk = g === SWIPE[sk] ? sk + 1 : g === SWIPE[0] ? 1 : 0;
-      if (sk === SWIPE.length) { sk = 0; overdrive(); }
-    }, { passive: true });
-
     // ---- touch: hold the centre "More" orb for 1.5 s → overdrive (the tap that follows doesn't open the menu) ----
     let holdT = null, held = false;
     const orb = tabs.querySelector('.tb-more');
-    orb.addEventListener('pointerdown', () => { held = false; clearTimeout(holdT); holdT = setTimeout(() => { held = true; overdrive(); }, 1500); });
+    // a finger that moves (scrolling, sliding off) cancels the hold, so a scroll never fires it
+    let hx = 0, hy = 0;
+    orb.addEventListener('pointerdown', (e) => { held = false; hx = e.clientX; hy = e.clientY; clearTimeout(holdT); holdT = setTimeout(() => { held = true; overdrive(); }, 1500); });
+    orb.addEventListener('pointermove', (e) => { if (Math.hypot(e.clientX - hx, e.clientY - hy) > 10) clearTimeout(holdT); });
     ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => orb.addEventListener(ev, () => clearTimeout(holdT)));
     orb.addEventListener('click', (e) => { if (held) { held = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
     orb.addEventListener('contextmenu', (e) => e.preventDefault()); // no long-press menu on Android
@@ -301,8 +289,8 @@
       addEventListener('devicemotion', (e) => {
         const a = e.accelerationIncludingGravity; if (!a) return;
         const f = Math.abs(a.x || 0) + Math.abs(a.y || 0) + Math.abs(a.z || 0), now = Date.now();
-        if (f > 38) { hits = hits.filter((t) => now - t < 900); hits.push(now); }
-        if (hits.length >= 3 && now - last > 4000) { last = now; hits = []; tear(10); buzz(60); glitch(document.querySelector('.pagehead h1')); }
+        if (f > 45) { hits = hits.filter((t) => now - t < 900); hits.push(now); }
+        if (hits.length >= 4 && now - last > 8000) { last = now; hits = []; tear(4); buzz(60); glitch(document.querySelector('.pagehead h1')); }
       });
     }
 
@@ -316,7 +304,12 @@
   if (S) {
     document.getElementById('sbHelp').onclick = () => S.openInfo('help');
     // theme bar under the title on the pages that make videos
-    if (S.mountThemeBar && ['/', '/story', '/ugc', '/motion', '/shorts'].includes(here)) { S.mountThemeBar(wrap && wrap.querySelector('.pagehead')); S.loadThemes(); }
+    // the Look picker only where it shapes the video: Single clip (inside the form) and Story (under the title)
+    if (S.mountThemeBar && ['/', '/story'].includes(here)) {
+      const host = document.getElementById('lookHost');
+      host ? S.mountThemeBar(host, { inline: true }) : S.mountThemeBar(wrap && wrap.querySelector('.pagehead'));
+      S.loadThemes();
+    }
     if (wrap) {
       const ft = document.createElement('footer');
       ft.className = 'site-foot';
@@ -414,7 +407,7 @@
     const box = document.createElement("div");
     box.className = "sharebox";
     box.innerHTML = (getText ? "" : '<label>Caption<textarea class="share-cap" rows="3" placeholder="Caption for your post"></textarea></label>') +
-      '<button class="btn primary share-go" type="button">⇪ Share video</button>';
+      '<button class="btn primary share-go" type="button"><svg class=ic aria-hidden=true><use href=#i-share></use></svg> Share video</button>';
     el.append(box);
     const cap = box.querySelector(".share-cap");
     if (cap) {

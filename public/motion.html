@@ -77,13 +77,14 @@
 </style>
 <link rel="stylesheet" href="/app.css">
 <script src="/studio.js"></script>
+<script src="/icons.js"></script>
 <script src="/theme.js"></script>
 </head>
 <body data-title="Poses &amp; motion" data-sub="Make your influencer strike poses for TikTok edits, or copy the motion from any video.">
 <div class="wrap">
   <div class="tabs">
-    <button class="tab on" id="tabPose" type="button">📸 Pose pack</button>
-    <button class="tab" id="tabMotion" type="button">🕺 Copy motion from a video</button>
+    <button class="tab on" id="tabPose" type="button"><svg class=ic aria-hidden=true><use href=#i-camera></use></svg> Pose pack</button>
+    <button class="tab" id="tabMotion" type="button"><svg class=ic aria-hidden=true><use href=#i-music></use></svg> Copy motion from a video</button>
   </div>
 
   <!-- ===================== POSE PACK ===================== -->
@@ -104,7 +105,7 @@
           <label id="makeupCustomRow" class="hidden">Describe the makeup<input type="text" id="makeupCustom" placeholder="e.g. peach blush, winged liner, nude lip"></label>
         </div>
         <div class="row" id="lookRow" style="margin-bottom:12px;align-items:flex-start;gap:12px">
-          <div><button class="btn" id="mkLook" type="button">🖼️ Preview new look</button><div class="meta" id="lookMsg" style="margin-top:6px;max-width:230px"></div></div>
+          <div><button class="btn" id="mkLook" type="button"><svg class=ic aria-hidden=true><use href=#i-image></use></svg> Preview new look</button><div class="meta" id="lookMsg" style="margin-top:6px;max-width:230px"></div></div>
           <img id="lookImg" class="hidden" style="width:90px;aspect-ratio:9/16;object-fit:cover;border-radius:10px;border:1px solid var(--line)">
         </div>
 
@@ -131,7 +132,7 @@
       <div class="panel">
         <h2>Your clips</h2>
         <div id="pResults" class="results"><div class="meta">Pick an influencer and poses, then generate. Each pose becomes its own short vertical clip you can drop into TikTok / CapCut.</div></div>
-        <div class="row" style="margin-top:14px"><button class="btn hidden" id="pStitch" type="button">🎞️ Join all into one reel</button></div>
+        <div class="row" style="margin-top:14px"><button class="btn hidden" id="pStitch" type="button"><svg class=ic aria-hidden=true><use href=#i-film></use></svg> Join all into one reel</button></div>
         <div id="pReel" style="margin-top:12px"></div>
       </div>
       <div class="panel meta"><b>How it works</b><br>Each clip starts from your influencer's saved picture, so the face, outfit and room stay the same in every pose. Clips are about 4 seconds, ready to trim and add sounds in TikTok. Tip: stay on 480p while testing poses.</div>
@@ -143,7 +144,7 @@
     <div>
       <div class="panel">
         <h2>1 · Driving video (the motion to copy)</h2>
-        <label class="drop" id="drv"><span id="drvTxt">🎥 Click or drop a video<br><small>first 15 seconds are used, audio is removed</small></span><input type="file" accept="video/*"></label>
+        <label class="drop" id="drv"><span id="drvTxt"><svg class=ic aria-hidden=true><use href=#i-video></use></svg> Click or drop a video<br><small>first 15 seconds are used, audio is removed</small></span><input type="file" accept="video/*"></label>
         <video class="pv hidden" id="drvPv" controls muted loop playsinline></video>
         <div class="meta" id="drvInfo"></div>
         <label style="margin-top:10px">…or paste a direct link to an MP4 file (YouTube, TikTok and Instagram page links do not work: save the clip and upload it above)<input type="text" id="drvUrl" placeholder="https://example.com/clip.mp4 (a direct MP4 file, not a YouTube page)"></label>
@@ -153,11 +154,11 @@
 
         <h2>3 · Outfit (optional)</h2>
         <div id="oSec">
-          <label class="drop" id="oDrop" style="padding:14px"><span id="oTxt">👗 Click or drop an outfit picture<br><small>your influencer will wear it, and that photo is used for the copied video</small></span><input type="file" accept="image/*" id="oFile"></label>
+          <label class="drop" id="oDrop" style="padding:14px"><span id="oTxt"><svg class=ic aria-hidden=true><use href=#i-shirt></use></svg> Click or drop an outfit picture<br><small>your influencer will wear it, and that photo is used for the copied video</small></span><input type="file" accept="image/*" id="oFile"></label>
           <div class="row" style="margin-bottom:12px;align-items:flex-start;gap:12px">
             <img id="oImg" class="hidden" alt="Outfit" style="width:90px;aspect-ratio:9/16;object-fit:cover;border-radius:10px;border:1px solid var(--line)">
             <img id="oLook" class="hidden" alt="Influencer wearing the outfit" style="width:90px;aspect-ratio:9/16;object-fit:cover;border-radius:10px;border:1px solid var(--acc)">
-            <div><button class="btn hidden" id="oMk" type="button">🖼️ Preview with outfit</button> <button class="btn hidden" id="oClear" type="button">Remove</button><div class="meta" id="oMsg" style="margin-top:6px;max-width:260px"></div></div>
+            <div><button class="btn hidden" id="oMk" type="button"><svg class=ic aria-hidden=true><use href=#i-image></use></svg> Preview with outfit</button> <button class="btn hidden" id="oClear" type="button">Remove</button><div class="meta" id="oMsg" style="margin-top:6px;max-width:260px"></div></div>
           </div>
         </div>
 
@@ -166,11 +167,11 @@
           <div class="m sel" data-m="seedance"><b>Reference video (Wan 3.0 / Seedance)</b><span>Makes a new video that follows the motion of your clip, with the influencer picture as the identity reference. Wan 3.0 accepts realistic faces; Seedance only accepts stylized ones.</span></div>
           <div class="m" data-m="flux"><b>FLUX Video Edit</b><span>Edits your video: replaces the person using the influencer's description. Keeps the background, camera and motion. Cheapest, but the face is only similar.</span></div>
         </div>
-        <div class="link hidden" id="seedWarn" style="border-color:rgba(255,107,107,.5)"><b style="color:var(--err)">✗ Seedance blocks this influencer's picture.</b><div class="meta" style="margin-top:6px">It reads the picture as a real person. The picture will be dropped and the video made from the motion video and your text only. For an exact character, make a 3D animated or anime influencer on the Influencers page and run <b>Test with Seedance</b> on it.</div></div>
+        <div class="link hidden" id="seedWarn" style="border-color:rgba(255,107,107,.5)"><b style="color:var(--err)"><svg class=ic aria-hidden=true><use href=#i-x></use></svg> Seedance blocks this influencer's picture.</b><div class="meta" style="margin-top:6px">It reads the picture as a real person. The picture will be dropped and the video made from the motion video and your text only. For an exact character, make a 3D animated or anime influencer on the Influencers page and run <b>Test with Seedance</b> on it.</div></div>
         <div class="link hidden" id="descWarn" style="border-color:rgba(251,191,36,.5)">
-          <b style="color:var(--warn)">⚠ This influencer has no description.</b>
+          <b style="color:var(--warn)"><svg class=ic aria-hidden=true><use href=#i-alert></use></svg> This influencer has no description.</b>
           <div class="meta" style="margin:6px 0 10px">Text-based swapping needs words to describe the new person. Without one the video comes back unchanged and you still pay.</div>
-          <button class="btn" id="descBtn" type="button">✨ Describe from picture</button> <span class="meta" id="descMsg"></span>
+          <button class="btn" id="descBtn" type="button"><svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> Describe from picture</button> <span class="meta" id="descMsg"></span>
         </div>
         <div class="grid" id="seedOpts">
           <label>Model<select id="mModel"><option value="alibaba/wan-3.0">Wan 3.0 - realistic faces OK (~$0.11/s)</option><option value="bytedance/seedance-2.0-fast">Seedance 2.0 Fast - stylized only</option><option value="bytedance/seedance-2.0">Seedance 2.0 - stylized only</option></select></label>
@@ -221,7 +222,7 @@ $('tabPose').onclick=()=>tab('pose'); $('tabMotion').onclick=()=>tab('motion');
 async function loadInfs(){
   try{infs=(await (await fetch('/api/influencers')).json()).influencers||[];}catch{infs=[];}
   const withPic=infs.filter(i=>i.image);
-  const opts=(list)=>list.length?list.map(i=>`<option value="${i.id}">${i.name.replace(/</g,'&lt;')}${i.seedance==='ok'?'  ✓ Seedance':i.seedance==='blocked'?'  ✗ Seedance blocks':''}</option>`).join(''):'<option value="">No influencers with a picture yet</option>';
+  const opts=(list)=>list.length?list.map(i=>`<option value="${i.id}">${i.name.replace(/</g,'&lt;')}${i.seedance==='ok'?'  <svg class=ic aria-hidden=true><use href=#i-check></use></svg> Seedance':i.seedance==='blocked'?'  <svg class=ic aria-hidden=true><use href=#i-x></use></svg> Seedance blocks':''}</option>`).join(''):'<option value="">No influencers with a picture yet</option>';
   $('pInf').innerHTML=opts(withPic); $('mInf').innerHTML=opts(infs.length?infs:[]);
   const want=new URLSearchParams(location.search).get('inf'); if(want&&infs.some(i=>i.id===want)){ $('pInf').value=want; $('mInf').value=want; }
   showInf(); autoPrompt();
@@ -266,29 +267,29 @@ $('mkLook').onclick=async()=>{
   if(!needsLook()) return;
   const b=$('mkLook'); b.disabled=true; b.textContent='Creating…'; $('lookMsg').textContent='About 15-40 seconds…';
   try{ await makeLook(); }catch(e){ $('pErr').textContent=e.message; $('lookMsg').textContent=''; }
-  b.disabled=false; b.textContent='🖼️ Preview new look';
+  b.disabled=false; b.innerHTML='<svg class=ic aria-hidden=true><use href=#i-image></use></svg> Preview new look';
 };
 
 /* ---------------- POSE PACK ---------------- */
 const POSES=[
-  ['✌️ Peace sign','makes a peace sign toward the camera and smiles'],
-  ['💁 Hair flip','flips their hair over the shoulder and smiles confidently'],
-  ['👍 Thumbs up','gives a big thumbs up to the camera with a happy nod'],
-  ['👋 Wave hello','waves hello to the camera with a warm smile'],
-  ['😘 Blow a kiss','blows a kiss to the camera'],
-  ['🌀 Spin around','does a slow turn around and ends facing the camera'],
-  ['👉 Point at camera','points at the camera as if saying "you!" with a playful look'],
-  ['🧍 Hand on hip','strikes a confident hand-on-hip pose and tilts the head'],
-  ['😲 Surprised','reacts with a surprised gasp and wide eyes, hands to the face'],
-  ['😂 Laughing','laughs naturally, shoulders shaking, looking at the camera'],
-  ['🚶 Walk to camera','takes a few relaxed steps toward the camera'],
-  ['🤷 Shrug','shrugs with a cheeky "who knows?" expression'],
-  ['🔥 Fire pose','does a confident pose with a smirk, one hand up, trendy attitude'],
-  ['💃 Dance step','does a simple fun dance move on the spot'],
+  ['<svg class=ic aria-hidden=true><use href=#i-hand></use></svg> Peace sign','makes a peace sign toward the camera and smiles'],
+  ['<svg class=ic aria-hidden=true><use href=#i-wind></use></svg> Hair flip','flips their hair over the shoulder and smiles confidently'],
+  ['<svg class=ic aria-hidden=true><use href=#i-thumbs-up></use></svg> Thumbs up','gives a big thumbs up to the camera with a happy nod'],
+  ['<svg class=ic aria-hidden=true><use href=#i-hand></use></svg> Wave hello','waves hello to the camera with a warm smile'],
+  ['<svg class=ic aria-hidden=true><use href=#i-heart></use></svg> Blow a kiss','blows a kiss to the camera'],
+  ['<svg class=ic aria-hidden=true><use href=#i-rotate></use></svg> Spin around','does a slow turn around and ends facing the camera'],
+  ['<svg class=ic aria-hidden=true><use href=#i-pointer></use></svg> Point at camera','points at the camera as if saying "you!" with a playful look'],
+  ['<svg class=ic aria-hidden=true><use href=#i-person></use></svg> Hand on hip','strikes a confident hand-on-hip pose and tilts the head'],
+  ['<svg class=ic aria-hidden=true><use href=#i-surprised></use></svg> Surprised','reacts with a surprised gasp and wide eyes, hands to the face'],
+  ['<svg class=ic aria-hidden=true><use href=#i-laugh></use></svg> Laughing','laughs naturally, shoulders shaking, looking at the camera'],
+  ['<svg class=ic aria-hidden=true><use href=#i-footprints></use></svg> Walk to camera','takes a few relaxed steps toward the camera'],
+  ['<svg class=ic aria-hidden=true><use href=#i-help></use></svg> Shrug','shrugs with a cheeky "who knows?" expression'],
+  ['<svg class=ic aria-hidden=true><use href=#i-flame></use></svg> Fire pose','does a confident pose with a smirk, one hand up, trendy attitude'],
+  ['<svg class=ic aria-hidden=true><use href=#i-music></use></svg> Dance step','does a simple fun dance move on the spot'],
 ];
 const sel=new Set([0,1,2,3]); let custom=[];
 function renderPoses(){
-  const all=[...POSES,...custom.map(t=>['✨ '+t.slice(0,22),t])];
+  const all=[...POSES,...custom.map(t=>['<svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> '+t.slice(0,22),t])];
   $('poses').innerHTML=all.map((p,i)=>`<div class="pose ${sel.has(i)?'sel':''}" data-i="${i}">${p[0]}</div>`).join('');
   $('poses').querySelectorAll('.pose').forEach(el=>el.onclick=()=>{const i=+el.dataset.i; sel.has(i)?sel.delete(i):sel.add(i); renderPoses(); cost();});
   cost();
@@ -308,7 +309,7 @@ function fillDur(sel,model,want,max){
   sel.value=String(ds.reduce((b,n)=>Math.abs(n-want)<Math.abs(b-want)?n:b,ds[0]));
 }
 function cost(){
-  if($('pModel').value===S.AUTO){ $('pCost').textContent='🧠 Director decides'; $('pCostLbl').textContent=`${sel.size} poses · plan and total shown before paying`; return 0; }
+  if($('pModel').value===S.AUTO){ $('pCost').innerHTML='<svg class=ic aria-hidden=true><use href=#i-brain></use></svg> Director decides'; $('pCostLbl').textContent=`${sel.size} poses · plan and total shown before paying`; return 0; }
   const n=sel.size, d=+$('pDur').value||0, p=(PP[$('pModel').value]||{})[$('pRes').value]||0;
   const extra=needsLook()&&!lookFrame?0.07:0; $('pCost').textContent=n&&d?`≈ $${(n*d*p+extra).toFixed(2)} for ${n} × ${d} s`:'-'; $('pCostLbl').textContent=`Estimated total (${n} poses × ${d} s)`;
   return n*d*p+extra;
@@ -325,7 +326,7 @@ $('pGo').onclick=async()=>{
   $('pErr').textContent='';
   const id=$('pInf').value, p=inf(id);
   if(!p||!p.image) return $('pErr').textContent='Choose an influencer that has a saved picture.';
-  const all=[...POSES,...custom.map(t=>['✨ '+t.slice(0,22),t])];
+  const all=[...POSES,...custom.map(t=>['<svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> '+t.slice(0,22),t])];
   const chosen=[...sel].sort((a,b)=>a-b).map(i=>all[i]); if(!chosen.length) return $('pErr').textContent='Pick at least one pose.';
   const per=(PP[$('pModel').value]||{})[$('pRes').value]||0;
   const auto=await S.autoSelect($('pModel'),{page:'poses',prompt:'The person '+chosen.map(c=>c[1]).join('; '),aspect:'9:16',startPicture:true,n:chosen.length,budget:((await S.directorBudget('poses'))||0.15),durSel:$('pDur'),resSel:$('pRes'),title:`Director’s plan for ${chosen.length} pose clip${chosen.length>1?'s':''}`});
@@ -344,21 +345,21 @@ async function runPose(c,p){
   const prompt=`Same person, outfit, makeup, hairstyle and room as the first frame. Natural vertical smartphone video, steady framing, one continuous take, no text or captions. The person ${c.action}. ${extra}`.trim();
   c.failed=false; c.done=false;
   try{
-    const r=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    const r=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({no_theme:true,
       model:$('pModel').value,prompt,title:'Pose: '+c.label,duration:+$('pDur').value,resolution:$('pRes').value,aspect_ratio:'9:16',...(needsLook()&&lookFrame?{frame_image:lookFrame}:{influencer_id:p.id,use_frame:true})})});
     const j=await r.json(); if(!r.ok) throw new Error(j.error||'failed');
     c.id=j.id; if(j.note&&!/saved influencer picture/.test(j.note)) $('s'+c.k).textContent=j.note;
-  }catch(e){ c.failed=true; c.done=true; $('s'+c.k).textContent='❌ '+e.message; retryBtn(c,p); return; }
+  }catch(e){ c.failed=true; c.done=true; $('s'+c.k).innerHTML='<svg class=ic aria-hidden=true><use href=#i-circle-x></use></svg> '+escH(e.message); retryBtn(c,p); return; }
   for(;;){
     await sleep(3000);
     try{
       const d=await (await fetch('/api/jobs/'+c.id)).json();
-      if(d.status==='failed'){ c.failed=c.done=true; $('s'+c.k).textContent='❌ '+(d.error||'failed'); retryBtn(c,p); return; }
+      if(d.status==='failed'){ c.failed=c.done=true; $('s'+c.k).innerHTML='<svg class=ic aria-hidden=true><use href=#i-circle-x></use></svg> '+escH(d.error||'failed'); retryBtn(c,p); return; }
       $('f'+c.k).style.width=d.status==='completed'?'100%':'35%'; $('f'+c.k).parentElement.classList.toggle('indet',d.status!=='completed');
-      $('s'+c.k).textContent=d.status==='completed'?'✅ ready'+(d.cost!=null?' · $'+(+d.cost).toFixed(2):''):(d.stage==='queued'?'Queued':'Generating')+' · '+d.elapsed+' s';
+      $('s'+c.k).innerHTML=d.status==='completed'?'<svg class=ic aria-hidden=true><use href=#i-circle-check></use></svg> ready'+(d.cost!=null?' · $'+(+d.cost).toFixed(2):''):(d.stage==='queued'?'Queued':'Generating')+' · '+d.elapsed+' s';
       if(d.status==='completed'){
         c.done=true; $('v'+c.k).innerHTML=`<video src="${d.videoUrl}" muted loop playsinline controls></video>`;
-        $('a'+c.k).innerHTML=`<a class="btn" href="${d.videoUrl}?download=1">⬇ Download</a>`; return;
+        $('a'+c.k).innerHTML=`<a class="btn" href="${d.videoUrl}?download=1"><svg class=ic aria-hidden=true><use href=#i-download></use></svg> Download</a>`; return;
       }
     }catch{}
   }
@@ -373,7 +374,7 @@ $('pStitch').onclick=async()=>{
     if(d.status==='running'){ $('pReel').textContent=d.step; continue; }
     $('pStitch').disabled=false;
     if(d.status==='failed'){ $('pReel').textContent='Failed: '+d.error; return; }
-    $('pReel').innerHTML=`<video src="${d.url}" controls playsinline style="width:100%;max-width:300px;border-radius:12px;background:#000"></video><div style="margin-top:8px"><a class="btn" href="${d.url}?download=1">⬇ Download reel</a></div>`; return; }
+    $('pReel').innerHTML=`<video src="${d.url}" controls playsinline style="width:100%;max-width:300px;border-radius:12px;background:#000"></video><div style="margin-top:8px"><a class="btn" href="${d.url}?download=1"><svg class=ic aria-hidden=true><use href=#i-download></use></svg> Download reel</a></div>`; return; }
 };
 
 /* ---------------- COPY MOTION ---------------- */
@@ -397,7 +398,7 @@ $('descBtn').onclick=async()=>{
     const s=await fetch('/api/influencers',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:p.id,name:p.name,desc:j.description})});
     if(!s.ok) throw new Error('Could not save the description');
     const keep=$('mInf').value; await loadInfs(); $('mInf').value=keep; showInf(); autoPrompt(); $('descMsg').textContent='Saved to this influencer.';
-  }catch(e){ $('descMsg').textContent='❌ '+e.message; }
+  }catch(e){ $('descMsg').innerHTML='<svg class=ic aria-hidden=true><use href=#i-circle-x></use></svg> '+escH(e.message); }
   $('descBtn').disabled=false;
 };
 function autoPrompt(){
@@ -410,7 +411,7 @@ function autoPrompt(){
     : `@Image1 is the permanent character identity reference (${d}). @Video1 is the motion reference. Generate a vertical 9:16 video of the exact character from @Image1 performing the same movements, body positions, timing and rhythm shown in @Video1, as closely as possible. Preserve the character's face, hairstyle, skin tone, proportions, clothing and art style from @Image1. Do not adopt the identity of the person in @Video1. Natural anatomy, stable clothing, smooth realistic motion, full-body framing.`;
 }
 function mcost(){
-  if(method!=='flux'&&$('mModel').value===S.AUTO){ $('mCost').textContent='🧠 Director decides (models that can copy a video)'; return 0; }
+  if(method!=='flux'&&$('mModel').value===S.AUTO){ $('mCost').innerHTML='<svg class=ic aria-hidden=true><use href=#i-brain></use></svg> Director decides (models that can copy a video)'; return 0; }
   const dur=driver?driver.duration:(+$('mDur').value||8);
   if(method==='flux') $('mCost').textContent='≈ $'+(0.03*dur).toFixed(2)+' ('+Math.round(dur)+'s)';
   else { const x=MM[$('mModel').value]; if(x){ const c=S.costLine(x,{res:$('mRes').value,dur:$('mDur').value,audio:false}); $('mCost').textContent=c.text; return c.total; }
@@ -425,10 +426,10 @@ async function upload(file){
   try{
     const r=await fetch('/api/driver',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:file});
     const j=await r.json(); if(!r.ok) throw new Error(j.error||'Upload failed');
-    driver=j; $('drvTxt').innerHTML='✅ '+file.name.replace(/</g,'&lt;')+'<br><small>click to replace</small>';
+    driver=j; $('drvTxt').innerHTML='<svg class=ic aria-hidden=true><use href=#i-circle-check></use></svg> '+file.name.replace(/</g,'&lt;')+'<br><small>click to replace</small>';
     $('drvPv').src=j.previewUrl; $('drvPv').classList.remove('hidden'); $('drvInfo').textContent='Prepared clip: '+j.duration.toFixed(1)+'s, audio removed.';
     if(method==='seedance'){ fillDur($('mDur'),$('mModel').value,Math.round(j.duration),15); } mcost();
-  }catch(e){ $('drvTxt').textContent='🎥 Click or drop a video'; $('mErr').textContent=e.message; }
+  }catch(e){ $('drvTxt').innerHTML='<svg class=ic aria-hidden=true><use href=#i-video></use></svg> Click or drop a video'; $('mErr').textContent=e.message; }
 }
 $('drv').querySelector('input').onchange=e=>upload(e.target.files[0]);
 ['dragenter','dragover'].forEach(t=>$('drv').addEventListener(t,ev=>{ev.preventDefault();$('drv').classList.add('over')}));
@@ -450,7 +451,7 @@ async function oLoad(file){
   if(!file) return; $('mErr').textContent='';
   try{
     const url=await new Promise((res,rej)=>{const fr=new FileReader();fr.onload=()=>res(fr.result);fr.onerror=()=>rej(new Error('Could not read the picture'));fr.readAsDataURL(file);});
-    outfitPic=await shrinkImg(url,1024); outfitLook=null; $('oImg').src=outfitPic; $('oTxt').innerHTML='✅ '+file.name.replace(/</g,'&lt;')+'<br><small>click to replace</small>'; oUi();
+    outfitPic=await shrinkImg(url,1024); outfitLook=null; $('oImg').src=outfitPic; $('oTxt').innerHTML='<svg class=ic aria-hidden=true><use href=#i-circle-check></use></svg> '+file.name.replace(/</g,'&lt;')+'<br><small>click to replace</small>'; oUi();
   }catch(e){ $('mErr').textContent=e.message; }
 }
 async function oMake(){
@@ -465,8 +466,8 @@ $('oFile').onchange=e=>oLoad(e.target.files[0]);
 ['dragleave','drop'].forEach(t=>$('oDrop').addEventListener(t,ev=>{ev.preventDefault();$('oDrop').classList.remove('over')}));
 $('oDrop').addEventListener('drop',ev=>oLoad(ev.dataTransfer.files[0]));
 $('oMk').onclick=async()=>{ $('mErr').textContent=''; const b=$('oMk'); b.disabled=true; b.textContent='Creating…'; $('oMsg').textContent='About 15-40 seconds…';
-  try{ await oMake(); }catch(e){ $('mErr').textContent=e.message; $('oMsg').textContent=''; } b.disabled=false; b.textContent='🖼️ Preview with outfit'; };
-$('oClear').onclick=()=>{ outfitPic=outfitLook=null; $('oFile').value=''; $('oTxt').innerHTML='👗 Click or drop an outfit picture<br><small>your influencer will wear it, and that photo is used for the copied video</small>'; oUi(); };
+  try{ await oMake(); }catch(e){ $('mErr').textContent=e.message; $('oMsg').textContent=''; } b.disabled=false; b.innerHTML='<svg class=ic aria-hidden=true><use href=#i-image></use></svg> Preview with outfit'; };
+$('oClear').onclick=()=>{ outfitPic=outfitLook=null; $('oFile').value=''; $('oTxt').innerHTML='<svg class=ic aria-hidden=true><use href=#i-shirt></use></svg> Click or drop an outfit picture<br><small>your influencer will wear it, and that photo is used for the copied video</small>'; oUi(); };
 $('mInf').addEventListener('change',oUi);
 
 /* secure link */
@@ -506,7 +507,7 @@ $('mGo').onclick=async()=>{
        ...(outfitLook?{ref_image:outfitLook}:p&&p.image?{ref_influencer_id:p.id}:{})};
   if(url) body.video_url=url; else body.driver_token=driver.token;
   try{
-    const r=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const r=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,no_theme:true})});
     const j=await r.json(); if(!r.ok) throw new Error(j.error||'Request failed');
     $('mNote').textContent=(method==='flux'&&outfitPic?'Outfit picture is not used by FLUX Video Edit (text only). Switch to the Reference video method. ':'')+(j.note||''); await mpoll(j.id);
   }catch(e){ $('mErr').textContent=e.message; $('mStage').innerHTML='<div class="meta" style="padding:30px">Failed.</div>'; }
@@ -519,7 +520,7 @@ async function mpoll(id){
     if(d.status==='failed') throw new Error(d.error||'Generation failed');
     if(d.status!=='completed'){ mshow(d); continue; }
     $('mStage').innerHTML=`<video src="${d.videoUrl}" controls autoplay loop playsinline></video>`;
-    $('mActions').innerHTML=`<a class="btn" href="${d.videoUrl}?download=1">⬇ Download MP4</a>`+(d.cost!=null?`<span class="meta">Cost $${(+d.cost).toFixed(2)} · job ${id}</span>`:'');
+    $('mActions').innerHTML=`<a class="btn" href="${d.videoUrl}?download=1"><svg class=ic aria-hidden=true><use href=#i-download></use></svg> Download MP4</a>`+(d.cost!=null?`<span class="meta">Cost $${(+d.cost).toFixed(2)} · job ${id}</span>`:'');
     window.dispatchEvent(new Event('spend-changed'));
     mountShare($('mActions'),{url:d.videoUrl,name:'motion-'+id.slice(-8)+'.mp4',prompt:$('mPrompt').value}); return;
   }

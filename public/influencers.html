@@ -69,6 +69,7 @@
 </style>
 <link rel="stylesheet" href="/app.css">
 <script src="/studio.js"></script>
+<script src="/icons.js"></script>
 <script src="/theme.js"></script>
 </head>
 <body data-title="Influencers" data-sub="Create and manage the AI influencers used across your videos.">
@@ -77,25 +78,26 @@
     <div class="panel" id="formPanel">
       <h2 id="formTitle">Add influencer</h2>
       <label class="drop" id="drop" style="cursor:pointer"><span id="dropText">No picture yet.<br><small>Generate pictures below (recommended), or click / drop an AI-made character image to upload it.</small></span><input type="file" id="upFile" accept="image/jpeg,image/png,image/webp" class="hidden" aria-label="Upload a character image"></label>
+      <div class="row" style="margin:-4px 0 10px"><button class="btn" id="enhPic" type="button" disabled><svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> Enhance from my photo</button><span class="meta" style="font-size:12px">Upload a photo, then get polished influencer pictures that look like it (style below).</span></div>
       <p class="meta" style="margin:-6px 0 12px">Upload only AI-generated characters. <b>Photos of real people are blocked</b> by the video models, so they won't animate.</p>
       <label>Name<input type="text" id="name" placeholder="e.g. Maya"></label>
       <label>Description (reused word-for-word in prompts)
         <textarea id="desc" placeholder="A friendly woman in her mid-20s with warm light-brown skin, shoulder-length wavy dark brown hair, small gold hoop earrings, cream knit sweater."></textarea></label>
-      <div class="row" style="margin:-4px 0 12px"><button class="btn" id="descPic" type="button">✨ Fill description from the picture</button><span class="meta" id="descPicMsg" style="font-size:12px;color:var(--mute)"></span></div>
+      <div class="row" style="margin:-4px 0 12px"><button class="btn" id="descPic" type="button"><svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> Fill description from the picture</button><span class="meta" id="descPicMsg" style="font-size:12px;color:var(--mute)"></span></div>
       <div class="gen">
-        <h2 style="margin-bottom:8px">✨ Generate pictures from the description</h2>
+        <h2 style="margin-bottom:8px"><svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> Generate pictures from the description</h2>
         <label style="margin-bottom:8px">Made for which video model?<select id="gTarget"><option value="seedance">Seedance (3D animated or anime, so it accepts the picture)</option><option value="grok">Grok Lite and others (realistic is fine)</option></select></label>
         <div class="row" style="margin-bottom:8px">
           <select id="gStyle" style="flex:1" aria-label="Picture style"></select>
           <select id="gCount" style="width:70px" aria-label="Number of pictures"><option>2</option><option selected>4</option></select>
         </div>
         <select id="gModel" style="margin-bottom:8px" aria-label="Picture model"><option value="qwen/qwen-image-3">Qwen Image 3 (~$0.03/pic, measured)</option><option value="x-ai/grok-imagine-image-2.0">Grok Imagine Image 2.0 (~$0.06/pic, measured)</option><option value="bytedance-seed/seedream-5-0-lite">Seedream 5.0 Lite (price not checked)</option><option value="google/gemini-3.1-flash-image">Gemini 3.1 Flash Image (price not checked)</option></select>
-        <button class="btn" id="gen" type="button" style="width:100%">✨ Generate pictures</button>
-        <div id="gMsg" class="meta" style="margin-top:6px">Pictures first, video second: a picture costs 1–6 cents, so you lock the look cheaply before paying for video. Pick one, Save, then press <b>🎬 Animate</b> on the card.</div>
+        <button class="btn" id="gen" type="button" style="width:100%"><svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> Generate pictures</button>
+        <div id="gMsg" class="meta" style="margin-top:6px">Pictures first, video second: a picture costs 1–6 cents, so you lock the look cheaply before paying for video. Pick one, Save, then press <b><svg class=ic aria-hidden=true><use href=#i-clapper></use></svg> Animate</b> on the card.</div>
         <div class="cands" id="cands"></div>
       </div>
       <label>Seed (keeps the look similar between videos)
-        <span class="row"><input type="text" id="seed" style="flex:1;width:auto"><button class="btn" id="dice" type="button">🎲</button></span></label>
+        <span class="row"><input type="text" id="seed" style="flex:1;width:auto"><button class="btn" id="dice" type="button"><svg class=ic aria-hidden=true><use href=#i-dice></use></svg></button></span></label>
       <div class="row">
         <button class="btn primary" id="save" type="button">Save influencer</button>
         <button class="btn" id="reset" type="button">Clear</button>
@@ -111,7 +113,7 @@
 </div>
 
 <dialog class="spend-dlg" id="animDlg" aria-label="Animate influencer">
-  <div class="sd-head"><h2 id="animTitle">Animate</h2><button class="btn sd-x" data-x type="button" aria-label="Close">✕</button></div>
+  <div class="sd-head"><h2 id="animTitle">Animate</h2><button class="btn sd-x" data-x type="button" aria-label="Close"><svg class=ic aria-hidden=true><use href=#i-x></use></svg></button></div>
   <label>What should they do?<textarea id="animPrompt" style="min-height:80px">smiles, waves at the camera and says hi, natural handheld selfie video</textarea></label>
   <div class="grid" style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;margin:10px 0">
     <label>Model<select id="animModel"><option value="x-ai/grok-imagine-video-1.5-lite">Grok Imagine 1.5 Lite</option><option value="bytedance/seedance-2.0-mini">Seedance 2.0 Mini (stylized only)</option><option value="google/veo-3.1-lite">Veo 3.1 Lite</option></select></label>
@@ -143,6 +145,7 @@ function shrink(file,max=768){
 function showPreview(src){
   $('drop').querySelector('img')?.remove();
   if(src){const im=document.createElement('img');im.src=src;$('drop').appendChild(im);}
+  $('enhPic').disabled=!src;
 }
 
 async function upload(f){
@@ -171,16 +174,18 @@ $('descPic').onclick=async()=>{
     const r=await fetch('/api/describe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(image?{image}:{influencer_id:editing})});
     const j=await r.json(); if(!r.ok) throw new Error(j.error||'Failed');
     $('desc').value=j.description; $('descPicMsg').textContent=' Done. Edit it if you like, then Save.';
-  }catch(e){ $('descPicMsg').textContent=' ❌ '+e.message; }
+  }catch(e){ $('descPicMsg').innerHTML=' <svg class=ic aria-hidden=true><use href=#i-circle-x></use></svg> '+escH(e.message); }
   b.disabled=false;
 };
-$('gen').onclick=async()=>{
-  $('err').textContent=''; if(!$('desc').value.trim()) return $('err').textContent='Write a description first.';
+// ref = your photo (Enhance from my photo): the new pictures keep its look
+async function genPics(ref){
+  $('err').textContent=''; if(!ref&&!$('desc').value.trim()) return $('err').textContent='Write a description first.';
   const per={'qwen/qwen-image-3':0.03,'x-ai/grok-imagine-image-2.0':0.06}[$('gModel').value]??0.04, n=+$('gCount').value;
-  if(!(await S.confirmSpend({title:`Generate ${n} pictures?`,total:per*n,rows:[['Model',$('gModel').selectedOptions[0].textContent.split(' (')[0]],['Pictures',n+' × ~'+S.money(per)],['Style',$('gStyle').selectedOptions[0].textContent]]}))) return;
-  const b=$('gen'); b.disabled=true; b.textContent='Generating…'; $('gMsg').textContent='This takes 10-40 seconds…'; $('cands').innerHTML='';
+  if(!(await S.confirmSpend({title:ref?`Enhance your photo into ${n} pictures?`:`Generate ${n} pictures?`,total:per*n,rows:[['Model',$('gModel').selectedOptions[0].textContent.split(' (')[0]],['Pictures',n+' × ~'+S.money(per)],['Style',$('gStyle').selectedOptions[0].textContent]]}))) return;
+  const b=ref?$('enhPic'):$('gen'), label=b.innerHTML; b.disabled=true; b.textContent='Generating…'; $('gMsg').textContent='This takes 10-40 seconds…'; $('cands').innerHTML='';
+  if(ref) $('cands').scrollIntoView({behavior:'smooth',block:'center'});
   try{
-    const r=await fetch('/api/portraits',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({desc:$('desc').value,style:$('gStyle').value,model:$('gModel').value,count:+$('gCount').value})});
+    const r=await fetch('/api/portraits',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({desc:$('desc').value,style:$('gStyle').value,model:$('gModel').value,count:+$('gCount').value,ref:ref||undefined})});
     const j=await r.json(); if(!r.ok) throw new Error(j.error||'Failed');
     $('cands').innerHTML=j.images.map((u,i)=>'<img data-i="'+i+'" src="'+u+'">').join('');
     $('cands').querySelectorAll('img').forEach(im=>im.onclick=async()=>{
@@ -189,8 +194,10 @@ $('gen').onclick=async()=>{
     });
     $('gMsg').textContent='Click the one you like, then Save. Cost: $'+(j.cost||0).toFixed(2);
   }catch(e){ $('err').textContent=e.message; $('gMsg').textContent=''; }
-  b.disabled=false; b.textContent='✨ Generate pictures';
-};
+  b.disabled=false; b.innerHTML=label;
+}
+$('gen').onclick=()=>genPics();
+$('enhPic').onclick=async()=>{ const src=$('drop').querySelector('img')?.src; if(src) genPics(await shrinkSrc(src,1024)); };
 function shrinkSrc(src,max=768){
   return new Promise((res,rej)=>{const im=new Image();im.onload=()=>{const k=Math.min(1,max/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);c.getContext('2d').drawImage(im,0,0,c.width,c.height);res(c.toDataURL('image/jpeg',.9));};im.onerror=()=>rej(new Error('image load failed'));im.src=src;});
 }
@@ -237,10 +244,10 @@ function render(){
   if(!items.length){ $('list').innerHTML='<div class="empty" style="grid-column:1/-1">No influencers yet. Add your first one on the left.</div>'; return; }
   $('list').innerHTML=items.map(p=>`
     <div class="card ${p.id===editing?'sel':''}">
-      <div class="pic">${p.image?`<img src="${p.image}" alt="">`:'🧑'}</div>
-      <div class="info"><b>${esc(p.name)}</b><div class="desc">${esc(p.desc)||'<i>No description</i>'}</div><div class="seed">Seed ${p.seed} · ${p.seedance==='ok'?'<span style="color:var(--ok)">✓ Seedance accepts</span>':p.seedance==='blocked'?'<span style="color:var(--err)">✗ Seedance blocks</span>':'Seedance: untested'}</div>
+      <div class="pic">${p.image?`<img src="${p.image}" alt="">`:'<svg class=ic aria-hidden=true><use href=#i-user></use></svg>'}</div>
+      <div class="info"><b>${esc(p.name)}</b><div class="desc">${esc(p.desc)||'<i>No description</i>'}</div><div class="seed">Seed ${p.seed} · ${p.seedance==='ok'?'<span style="color:var(--ok)"><svg class=ic aria-hidden=true><use href=#i-check></use></svg> Seedance accepts</span>':p.seedance==='blocked'?'<span style="color:var(--err)"><svg class=ic aria-hidden=true><use href=#i-x></use></svg> Seedance blocks</span>':'Seedance: untested'}</div>
         <div class="actions">
-          ${p.image?`<button class="btn primary" data-a="${p.id}" style="width:auto">🎬 Animate</button>`:''}
+          ${p.image?`<button class="btn primary" data-a="${p.id}" style="width:auto"><svg class=ic aria-hidden=true><use href=#i-clapper></use></svg> Animate</button>`:''}
           <a class="btn" href="/ugc?inf=${p.id}">Use in UGC</a>
           <button class="btn" data-e="${p.id}">Edit</button>
           ${p.image?`<button class="btn" data-t="${p.id}">Test with Seedance</button>`:''}
@@ -281,18 +288,18 @@ $('animGo').onclick=async()=>{
   $('animDlg').showModal(); if(!ok) return;
   $('animGo').disabled=true; $('animStage').innerHTML=S.stageHTML({stage:'queued',msg:'Submitting…'});
   try{
-    const r=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:$('animModel').value,
+    const r=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({no_theme:true,model:$('animModel').value,
       prompt:(animP.desc?animP.desc+' ':'')+'The person '+$('animPrompt').value.trim()+'. Same face, hair and clothes as the first frame.',title:'Animate '+animP.name,
       duration:+$('animDur').value,resolution:$('animRes').value,aspect_ratio:'9:16',generate_audio:false,seed:animP.seed,influencer_id:animP.id,use_frame:true})});
     const j=await r.json(); if(!r.ok) throw new Error(j.error||'Failed');
     const poll=async()=>{ const d=await (await fetch('/api/jobs/'+j.id)).json();
-      if(d.status==='failed'){ clearInterval(animT); $('animStage').innerHTML='<p class="err">❌ '+S.esc(d.error||'failed')+'</p>'; $('animGo').disabled=false; return; }
+      if(d.status==='failed'){ clearInterval(animT); $('animStage').innerHTML='<p class="err"><svg class=ic aria-hidden=true><use href=#i-circle-x></use></svg> '+S.escescH(d.error||'failed')+'</p>'; $('animGo').disabled=false; return; }
       if(d.status!=='completed') return $('animStage').innerHTML=S.stageHTML(d);
       clearInterval(animT); $('animGo').disabled=false;
-      $('animStage').innerHTML=`<video src="${d.videoUrl}" controls autoplay loop playsinline style="width:100%;max-height:50vh"></video><a class="btn" href="${d.videoUrl}?download=1">⬇ Download</a>`;
+      $('animStage').innerHTML=`<video src="${d.videoUrl}" controls autoplay loop playsinline style="width:100%;max-height:50vh"></video><a class="btn" href="${d.videoUrl}?download=1"><svg class=ic aria-hidden=true><use href=#i-download></use></svg> Download</a>`;
       window.dispatchEvent(new Event('spend-changed')); };
     animT=setInterval(poll,3000); poll();
-  }catch(e){ $('animStage').innerHTML='<p class="err">❌ '+S.esc(e.message)+'</p>'; $('animGo').disabled=false; }
+  }catch(e){ $('animStage').innerHTML='<p class="err"><svg class=ic aria-hidden=true><use href=#i-circle-x></use></svg> '+S.esc(e.message)+'</p>'; $('animGo').disabled=false; }
 };
 async function load(){
   try{items=(await (await fetch('/api/influencers')).json()).influencers||[];}catch{items=[];}

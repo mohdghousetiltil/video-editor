@@ -17,6 +17,7 @@ const modelsLib = require("./lib/models");
 const { createHistory } = require("./lib/history");
 const providers = require("./lib/providers");
 const director = require("./lib/director");
+const directorCache = new Map(); // same request within 10 minutes = same plan
 const { createThemes, themeText, qualityText, NEGATIVE } = require("./lib/themes");
 
 // Tiny .env loader (first, so every setting below can come from .env)
@@ -122,7 +123,7 @@ const spend = createSpend({ DATA, API, getKey: () => KEY, getCap: () => settings
 const logSpend = spend.log;
 const prices = createPrices({ API, getKey: () => KEY });
 const history = createHistory(DATA);
-const themes = createThemes(DATA);
+const themes = createThemes();
 // storyboard stills: one picture per scene, approved before any video is paid for (work/stills/<id>.<ext>)
 const STILLS = path.join(STORE, "work", "stills");
 fs.mkdirSync(STILLS, { recursive: true });
@@ -324,12 +325,12 @@ const server = http.createServer(async (req, res) => {
       const ar = String(b.aspect_ratio || "");
       const frameRule = " Framing: one single continuous full-frame shot" + (ar ? ` composed for ${ar}${ar === "9:16" ? " vertical" : ""}` : "") +
         ". No split screen, no comic panels, no collage, no grid, no picture-in-picture, no borders or letterboxing.";
-      // Theme Lock: the saved look (style, palette, lighting, camera, character, outfit) goes into every prompt.
-      // A page can pass theme_id to use a theme once, or no_theme to skip it (e.g. copying a real video's motion).
+      // The chosen look (Real, Disney, Pixar, Anime, Brain rot) and the character description go into every prompt.
+      // A page can pass theme_id to use a look once, or no_theme to skip both (e.g. copying a real video's motion).
       const st = settings.get();
-      const theme = b.no_theme ? null : themes.get(typeof b.theme_id === "string" ? b.theme_id : st.themeLock ? st.themeId : null);
-      const charDesc = theme && theme.influencerId ? (readInf().find((x) => x.id === theme.influencerId) || {}).desc : null;
-      const extra = MODELS[model]?.bare ? "" : themeText(theme, charDesc) + qualityText({ booster: b.quality !== false, negative: b.negative, theme });
+      const theme = b.no_theme ? null : themes.get(typeof b.theme_id === "string" ? b.theme_id : st.themeId);
+      const charDesc = b.no_theme ? "" : typeof b.character === "string" ? b.character : st.character;
+      const extra = MODELS[model]?.bare ? "" : themeText(theme, charDesc) + qualityText({ booster: b.quality !== false, negative: b.negative });
       const body = { model, prompt: b.prompt.trim() + (MODELS[model]?.bare ? "" : frameRule) + extra };
       if (b.duration) body.duration = Number(b.duration);
       if (b.resolution) body.resolution = b.resolution;
@@ -388,11 +389,6 @@ const server = http.createServer(async (req, res) => {
           note = "Started from the saved influencer picture.";
         }
       }
-      // the theme's style picture guides the look when the clip doesn't already start from a picture
-      if (theme && !body.frame_images && !MODELS[model]?.bare && (body.input_references || []).length < 4) {
-        const sd = themes.styleDataUrl(theme.id);
-        if (sd) { body.input_references = [...(body.input_references || []), { type: "image_url", image_url: { url: sd } }]; body.prompt += " Use the reference picture only for the visual style, colours and rendering."; refImageAdded = true; }
-      }
       // cheapest configured provider for this model (fal.ai / BytePlus when their keys are set, else OpenRouter)
       // end frame (Kling, Seedance, Veo, Wan…): the clip ends on this picture, so the next scene can start from it
       if (typeof b.last_frame_image === "string" && /^data:image\/(jpeg|png|webp);base64,/.test(b.last_frame_image) && (live.frames || []).includes("last_frame"))
@@ -402,7 +398,7 @@ const server = http.createServer(async (req, res) => {
       const submit = async () => {
         if (route.provider !== "openrouter") {
           try {
-            const out = await providers.submit(route, body, fetch, { negative: [b.quality !== false && NEGATIVE, theme && theme.negative, b.negative].filter(Boolean).join(", ") });
+            const out = await providers.submit(route, body, fetch, { negative: [b.quality !== false && NEGATIVE, b.negative].filter(Boolean).join(", ") });
             extJob = out.job;
             return { r: { ok: true, status: 202 }, j: { id: out.id, status: "pending" } };
           } catch (e) {
@@ -538,7 +534,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/portraits") {
       if (!KEY) return send(res, 500, { error: "OPENROUTER_API_KEY missing." });
       const b = await readBody(req);
-      const desc = String(b.desc || "").trim().slice(0, 1200);
+      // ref: your own photo; the new pictures keep that person's look and turn it into a clean influencer portrait
+      const ref = typeof b.ref === "string" && /^data:image\/(jpeg|png|webp);base64,/.test(b.ref) && b.ref.length < 8e6 ? b.ref : null;
+      const desc = String(b.desc || "").trim().slice(0, 1200) || (ref ? "the person in the reference photo" : "");
       if (!desc) return send(res, 400, { error: "Write a description first." });
       const IMAGE_MODELS = ["qwen/qwen-image-3", "x-ai/grok-imagine-image-2.0", "bytedance-seed/seedream-5-0-lite", "google/gemini-3.1-flash-image"];
       const model = IMAGE_MODELS.includes(b.model) ? b.model : IMAGE_MODELS[0];
@@ -546,7 +544,8 @@ const server = http.createServer(async (req, res) => {
       const prompt = `${lead}${desc}. Head and shoulders, looking at the camera, front-facing, relaxed expression with a slight smile, soft natural light, clean simple background${(b.style || "photo") === "photo" ? ", natural skin texture and pores, no beauty filter" : ""}. Vertical 9:16 framing.`;
       const n = Math.max(1, Math.min(4, Number(b.count) || 4));
       const call = async (k) => {
-        const r = await orFetch(`${API}/images`, { method: "POST", headers: orHeaders(), body: JSON.stringify({ model, prompt, n: k, aspect_ratio: "9:16" }) }, { safe: false });
+        const r = await orFetch(`${API}/images`, { method: "POST", headers: orHeaders(), body: JSON.stringify({ model, prompt: ref ? "Image 1 is a reference photo. Make a new, polished influencer portrait of the same character: keep the face shape, hair, skin tone, eye colour and overall look recognisable, improve lighting, framing and detail. " + prompt : prompt, n: k, aspect_ratio: "9:16",
+          ...(ref ? { input_references: [{ type: "image_url", image_url: { url: ref } }] } : {}) }) }, { safe: false });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error?.message || "Image generation failed (" + r.status + ")");
         return j;
@@ -646,6 +645,25 @@ const server = http.createServer(async (req, res) => {
       if (!KEY) return send(res, 500, { error: "OPENROUTER_API_KEY missing." });
       const b = await readBody(req);
       if (!b.prompt || !b.prompt.trim()) return send(res, 400, { error: "Write something first." });
+      const look = themes.get(typeof b.look === "string" ? b.look : settings.get().themeId);
+      // character box: turn a rough idea into one exact, reusable description (the same words go into every clip)
+      if (b.kind === "character" || b.kind === "bible") {
+        const bible = b.kind === "bible";
+        const sys = "You write character descriptions for an AI video model. The same description is pasted into every shot of a series, so it must pin down one consistent look. " +
+          (bible ? "The user gives a story's character and setting notes: rewrite them so EVERY character gets one compact description (under 50 words each), then one sentence for the main setting. Under 220 words in total, plain text, one line per character. For each character: "
+            : "Write ONE compact paragraph, under 70 words.") + " Present tense, no names of real people or brands: who they are (kind of being, age range, build), face (shape, eyes, eyebrows, notable features), hair (colour, length, style), skin or fur tone, " +
+          "outfit with exact colours and items, and 1-2 distinctive details (accessory, mark, posture). Only visible traits, no personality or backstory, no scene or action. Keep everything the user gave. " +
+          (look ? `The video look is ${look.name}: ${look.style}. Describe the character so it fits that look. ` : "") + "Output ONLY the description, no preamble or quotes.";
+        const r = await orFetch(`${API}/chat/completions`, { method: "POST", headers: orHeaders(),
+          body: JSON.stringify({ model: textModel(), max_tokens: bible ? 1200 : 600, reasoning: { enabled: false }, messages: [{ role: "system", content: sys }, { role: "user", content: b.prompt.trim().slice(0, 1500) }] }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) return send(res, r.status, { error: j.error?.message || "Enhance failed" });
+        logSpend("Prompt writing", j.usage?.cost, textModel());
+        const out = (j.choices?.[0]?.message?.content || "").replace(/^["'\s]+|["'\s]+$/g, "").trim();
+        return out ? send(res, 200, { prompt: out.slice(0, 1500) }) : send(res, 502, { error: "Enhancer returned nothing, try again." });
+      }
+      const charNote = settings.get().character && !b.no_character
+        ? "A fixed main-character description is added to the prompt separately: call them 'the main character', never describe their face, hair or outfit differently. " : "";
       // No duration given: let the enhancer choose one the selected model accepts (e.g. Veo only does 4, 6 or 8 s).
       const allowed = (Array.isArray(b.durations) ? b.durations : []).map(Number).filter((n) => n > 0 && n <= 60).sort((x, y) => x - y);
       const auto = !(Number(b.duration) > 0);
@@ -661,7 +679,7 @@ const server = http.createServer(async (req, res) => {
         "Never describe split screens, comic panels, multiple frames or a storyboard: the whole frame shows one scene. " +
         "End with a short 'Sound:' line (ambience, effects, any short spoken line in quotes). Keep under " + (Number(b.max_words) || 140) + " words. " +
         lenRule + "Aspect ratio: " + (b.aspect_ratio || "9:16") + ". " +
-        (b.style ? "Visual style to respect: " + b.style + " " : "") + (b.extra || "");
+        (b.style ? "Visual style to respect: " + b.style + " " : look ? `Visual style to respect (${look.name} look): ${look.style}. ` : "") + charNote + (b.extra || "");
       const r = await orFetch(`${API}/chat/completions`, {
         method: "POST", headers: orHeaders(),
         body: JSON.stringify({ model: textModel(), max_tokens: 2000, reasoning: { enabled: false }, messages: [{ role: "system", content: sys }, { role: "user", content: b.prompt.trim() }] }),
@@ -726,18 +744,18 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    // ---- 🧠 the Director: picks the model and the process for the best quality within the budget ----
+    // ---- the Director: picks the model and the process for the best quality within the budget ----
     if (req.method === "POST" && url.pathname === "/api/director") {
       const b = await readBody(req);
       const st = settings.get();
       const page = String(b.page || "clip");
       const budget = Number(b.budget) > 0 ? Math.min(50, Number(b.budget)) : (st.directorBudget || {})[page] ?? null;
-      const theme = st.themeLock ? themes.get(st.themeId) : null;
+      const theme = ["clip", "story"].includes(page) ? themes.get(st.themeId) : null; // the look is only used on Single clip and Story
       const reqD = {
         page, prompt: String(b.prompt || "").slice(0, 2000), aspect: ["9:16", "16:9", "1:1"].includes(b.aspect) ? b.aspect : "9:16",
         duration: Number(b.duration) || null, resolution: ["480p", "720p", "1080p"].includes(b.resolution) ? b.resolution : "720p",
         audio: b.audio === false ? false : b.audio === true ? true : undefined, startPicture: !!b.startPicture, budget,
-        theme: theme ? [theme.name, theme.style].filter(Boolean).join(": ") : (typeof b.style === "string" ? b.style.slice(0, 200) : null),
+        theme: [theme ? `${theme.name} look: ${theme.style}` : typeof b.style === "string" ? b.style.slice(0, 200) : "", ["clip", "story"].includes(page) && st.character ? "main character: " + st.character.slice(0, 200) : ""].filter(Boolean).join("; ") || null,
         scenes: Array.isArray(b.scenes) ? b.scenes.slice(0, 40).map((s) => ({ title: String(s.title || "").slice(0, 80), prompt: String(s.prompt || "").slice(0, 600), seconds: Number(s.seconds) || 4, key: !!s.key })) : undefined,
       };
       const catalog = await liveModels();
@@ -745,14 +763,15 @@ const server = http.createServer(async (req, res) => {
       const brainModel = st.directorModel || "google/gemini-3.5-flash";
       const callBrain = async (messages) => {
         const r = await orFetch(`${API}/chat/completions`, { method: "POST", headers: orHeaders(),
-          body: JSON.stringify({ model: brainModel, max_tokens: 6000, temperature: 0.2, reasoning: { effort: "low" }, response_format: { type: "json_object" }, messages }) });
+          body: JSON.stringify({ model: brainModel, max_tokens: 6000, temperature: 0, reasoning: { effort: "low" }, response_format: { type: "json_object" }, messages }),
+          signal: AbortSignal.timeout(45000) }, { retries: 1 }).catch((e) => { throw new Error(e.name === "TimeoutError" ? "Director brain timed out" : e.message); });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error?.message || `Director brain failed (${r.status})`);
         logSpend("Director", j.usage?.cost, brainModel);
         return { text: j.choices?.[0]?.message?.content || "", cost: j.usage?.cost || 0 };
       };
       try {
-        const out = await director.decide(reqD, { catalog, available, callBrain });
+        const out = await director.decide(reqD, { catalog, available, callBrain, cache: b.fresh ? null : directorCache });
         return send(res, 200, { ...out, brain: brainModel });
       } catch (e) { return send(res, e.status || 502, { error: e.message }); }
     }

@@ -65,6 +65,7 @@
 </style>
 <link rel="stylesheet" href="/app.css">
 <script src="/studio.js"></script>
+<script src="/icons.js"></script>
 <script src="/theme.js"></script>
 </head>
 <body data-title="UGC review studio" data-sub="Create a realistic influencer review of your product, using a saved AI influencer.">
@@ -84,20 +85,20 @@
           <label style="flex-direction:row;align-items:center;gap:8px;color:var(--text);font-size:13px"><input type="checkbox" id="usePic" checked style="width:auto"> Use this influencer's saved picture as the first frame, so the face stays the same. (The product photo can't be sent in this mode, so describe the product below.)</label>
         </div>
         <div id="sfBox" style="display:none;margin-bottom:12px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--panel2)">
-          <div class="meta" style="margin-bottom:8px;color:var(--text)"><b>🖼️ Start frame</b>: combines the influencer and your product photo into one picture of them holding your exact product. The video then starts from it, so the product matches.</div>
+          <div class="meta" style="margin-bottom:8px;color:var(--text)"><b><svg class=ic aria-hidden=true><use href=#i-image></use></svg> Start frame</b>: combines the influencer and your product photo into one picture of them holding your exact product. The video then starts from it, so the product matches.</div>
           <div class="row" style="margin:0;align-items:flex-start;gap:12px">
-            <div><button class="btn" id="mkFrame" type="button">🖼️ Create start frame</button><div class="meta" id="sfMsg" style="margin-top:6px;max-width:220px"></div></div>
+            <div><button class="btn" id="mkFrame" type="button"><svg class=ic aria-hidden=true><use href=#i-image></use></svg> Create start frame</button><div class="meta" id="sfMsg" style="margin-top:6px;max-width:220px"></div></div>
             <img id="sfImg" style="display:none;width:96px;aspect-ratio:9/16;object-fit:cover;border-radius:10px;border:1px solid var(--line)">
           </div>
         </div>
         <div id="personaBox">
           <label>Influencer description (reused word-for-word in every video so they stay consistent)
             <textarea id="pdesc" style="min-height:90px" placeholder="e.g. A friendly woman in her mid-20s with warm light-brown skin, shoulder-length wavy dark brown hair, small gold hoop earrings, wearing a plain cream knit sweater."></textarea></label>
-          <div class="row"><span style="display:flex;gap:8px;flex-wrap:wrap"><input type="text" id="pname2" aria-label="Influencer name" placeholder="Name, e.g. Maya" style="width:160px"><button class="btn" id="psave" type="button">💾 Save influencer</button><button class="btn" id="pnew" type="button">New</button></span><span class="meta" id="pseed"></span></div>
+          <div class="row"><span style="display:flex;gap:8px;flex-wrap:wrap"><input type="text" id="pname2" aria-label="Influencer name" placeholder="Name, e.g. Maya" style="width:160px"><button class="btn" id="psave" type="button"><svg class=ic aria-hidden=true><use href=#i-save></use></svg> Save influencer</button><button class="btn" id="pnew" type="button">New</button></span><span class="meta" id="pseed"></span></div>
         </div>
         <div class="photos">
-          <label class="drop" id="d1" style="display:none"><span class="tag">Influencer</span><span>📷 Click or drop<br>influencer photo</span><input type="file" accept="image/*"></label>
-          <label class="drop" id="d2"><span class="tag">Product</span><span>📦 Click or drop<br>product photo</span><input type="file" accept="image/*"></label>
+          <label class="drop" id="d1" style="display:none"><span class="tag">Influencer</span><span><svg class=ic aria-hidden=true><use href=#i-camera></use></svg> Click or drop<br>influencer photo</span><input type="file" accept="image/*"></label>
+          <label class="drop" id="d2"><span class="tag">Product</span><span><svg class=ic aria-hidden=true><use href=#i-box></use></svg> Click or drop<br>product photo</span><input type="file" accept="image/*"></label>
         </div>
 
         <h2>2 · Product details</h2>
@@ -114,7 +115,7 @@
         <label id="plookRow" style="display:none;margin-bottom:10px">What the product looks like (only needed if you don't create a start frame)<input type="text" id="plook" placeholder="e.g. a small frosted glass bottle with a white dropper and a gold label"></label>
         <label>Key benefits / what to say (optional)<textarea id="notes" style="min-height:70px" placeholder="Lightweight, absorbs fast, smells amazing, visible glow in a week…"></textarea></label>
 
-        <div class="row"><span style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="write" type="button">✨ Write UGC prompt</button><button class="btn" id="real" type="button">🎯 Make it realistic</button></span><span class="meta">Both add flawless-UGC realism rules</span></div>
+        <div class="row"><span style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="write" type="button"><svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> Write UGC prompt</button><button class="btn" id="real" type="button"><svg class=ic aria-hidden=true><use href=#i-target></use></svg> Make it realistic</button></span><span class="meta">Both add flawless-UGC realism rules</span></div>
         <div id="tplBox"></div>
         <label>Final prompt (edit freely)<textarea id="prompt" placeholder="Click “Write UGC prompt”, or write your own…"></textarea></label>
 
@@ -140,7 +141,7 @@
     <div>
       <div class="panel">
         <h2>Result</h2>
-        <div class="stage" id="stage"><div class="empty"><div class="big">🎞️</div>Upload two photos and generate.</div></div>
+        <div class="stage" id="stage"><div class="empty"><div class="big"><svg class=ic aria-hidden=true><use href=#i-film></use></svg></div>Upload two photos and generate.</div></div>
         <div class="actions" id="actions"></div>
         <div class="meta" id="note" style="margin-top:8px"></div>
       </div>
@@ -195,7 +196,7 @@ $('mkFrame').onclick=async()=>{
     const j=await r.json(); if(!r.ok) throw new Error(j.error||'Failed');
     startFrameData=await shrinkSrc(j.image); showSF(); $('sfMsg').textContent='Check the product looks right. Not happy? Click again for a new one. Cost $'+(j.cost||0).toFixed(2);
   }catch(e){ $('err').textContent=e.message; $('sfMsg').textContent=''; }
-  b.disabled=false; b.textContent='🖼️ Create start frame';
+  b.disabled=false; b.innerHTML='<svg class=ic aria-hidden=true><use href=#i-image></use></svg> Create start frame';
 };
 function shrinkSrc(src,max=1024){
   return new Promise((res,rej)=>{const im=new Image();im.onload=()=>{const k=Math.min(1,max/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);c.getContext('2d').drawImage(im,0,0,c.width,c.height);res(c.toDataURL('image/jpeg',.9));};im.onerror=()=>rej(new Error('image load failed'));im.src=src;});
@@ -274,7 +275,7 @@ for(const id of ['d1','d2']){
 // lengths, resolutions and prices from the shared model table (only lengths the model accepts are offered)
 let MODELS={};
 function applyModel(){
-  if($('model').value===window.studio.AUTO){ $('modelNotes').textContent='🧠 The Director picks the model, length and resolution for a realistic person holding your product, within your budget. You see its plan before paying.'; return cost(); }
+  if($('model').value===window.studio.AUTO){ $('modelNotes').innerHTML='<svg class=ic aria-hidden=true><use href=#i-brain></use></svg> The Director picks the model, length and resolution for a realistic person holding your product, within your budget. You see its plan before paying.'; return cost(); }
   const x=MODELS[$('model').value]; if(!x) return cost();
   const cur=+$('duration').value||8;
   $('duration').innerHTML=x.durs.filter(d=>d>=4).map(d=>`<option value="${d}">${d} s</option>`).join('');
@@ -283,7 +284,7 @@ function applyModel(){
   $('modelNotes').innerHTML=window.studio.notesHTML(x); cost();
 }
 function cost(){
-  if($('model').value===window.studio.AUTO){ $('cost').textContent='🧠 Director decides · plan and total shown before paying'; return; }
+  if($('model').value===window.studio.AUTO){ $('cost').innerHTML='<svg class=ic aria-hidden=true><use href=#i-brain></use></svg> Director decides · plan and total shown before paying'; return; }
   const x=MODELS[$('model').value];
   if(x){ $('cost').textContent=window.studio.costLine(x,{res:$('res').value,dur:$('duration').value,audio:$('audio').value==='true'}).text; return; }
   const p=PRICE[$('model').value][$('res').value]||0, d=+$('duration').value||0;
@@ -310,7 +311,7 @@ $('write').onclick=async()=>{
     const j=await r.json(); if(!r.ok) throw new Error(j.error||'Failed');
     $('prompt').value=j.prompt;
   }catch(e){$('err').textContent=e.message}
-  b.disabled=false; b.textContent='✨ Write UGC prompt';
+  b.disabled=false; b.innerHTML='<svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> Write UGC prompt';
 };
 $('real').onclick=async()=>{
   $('err').textContent=''; const cur=$('prompt').value.trim();
@@ -323,7 +324,7 @@ $('real').onclick=async()=>{
     const j=await r.json(); if(!r.ok) throw new Error(j.error||'Failed');
     $('prompt').value=j.prompt;
   }catch(e){$('err').textContent=e.message}
-  b.disabled=false; b.textContent='🎯 Make it realistic';
+  b.disabled=false; b.innerHTML='<svg class=ic aria-hidden=true><use href=#i-target></use></svg> Make it realistic';
 };
 
 function show(p,msg){$('stage').innerHTML=window.studio.stageHTML(typeof p==='object'?p:{stage:'queued',msg})}
@@ -335,7 +336,7 @@ async function poll(id){
   if(j.status!=='completed') return show(j);
   stop();
   $('stage').innerHTML=`<video controls autoplay loop playsinline src="${j.videoUrl}"></video>`;
-  $('actions').innerHTML=`<a class="btn" href="${j.videoUrl}?download=1">⬇ Download MP4</a>`+(j.cost!=null?`<span class="meta">Cost ${j.estimated?'≈ ':''}$${(+j.cost).toFixed(2)}${j.estimated?' (estimate)':''}</span><span class="meta">· job ${id}</span>`:'');
+  $('actions').innerHTML=`<a class="btn" href="${j.videoUrl}?download=1"><svg class=ic aria-hidden=true><use href=#i-download></use></svg> Download MP4</a>`+(j.cost!=null?`<span class="meta">Cost ${j.estimated?'≈ ':''}$${(+j.cost).toFixed(2)}${j.estimated?' (estimate)':''}</span><span class="meta">· job ${id}</span>`:'');
   mountShare($('actions'),{url:j.videoUrl,name:'ugc-'+id.slice(-8)+'.mp4',prompt:$('prompt').value});
   window.dispatchEvent(new Event('spend-changed'));
 }
@@ -347,14 +348,14 @@ $('go').onclick=async()=>{
   if(fm&&!startFrameData&&!$('plook').value.trim()) return $('err').textContent='Describe what the product looks like (or click Create start frame to use your product photo).';
   if(!fm&&(!imgs.d2||(!persona&&!imgs.d1))) return $('err').textContent=persona?'Add the product photo.':'Add both photos (influencer and product).';
   if(!$('prompt').value.trim()) return $('err').textContent='Write or generate a prompt first.';
-  // 🧠 Auto: the Director's approved plan sets model, length and resolution and replaces the confirmation below
+  // Auto: the Director's approved plan sets model, length and resolution and replaces the confirmation below
   const auto=await window.studio.autoSelect($('model'),{page:'ugc',prompt:$('prompt').value,aspect:$('aspect').value,startPicture:!!(fm&&(startFrameData||fm.id)),durSel:$('duration'),resSel:$('res'),audioSel:$('audio'),title:'Director’s plan for this UGC video'});
   if(!auto.ok) return;
   const x=MODELS[$('model').value], c=x?window.studio.costLine(x,{res:$('res').value,dur:$('duration').value,audio:$('audio').value==='true'}):{total:0};
   if(!auto.plan&&!(await window.studio.confirmSpend({title:'Make this UGC video?',total:c.total,rows:[['Model',x?x.name:$('model').value],['Length',$('duration').value+' s'],['Resolution',$('res').value],['Aspect',$('aspect').value],['Voice / sound',$('audio').value==='true'?'On':'Off']]}))) return;
   $('go').disabled=true; show(0,'Submitting…');
   try{
-    const r=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    const r=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({no_theme:true,
       model:$('model').value,duration:+$('duration').value,resolution:$('res').value,
       prompt:(()=>{let p=$('prompt').value.trim(),d=$('pdesc').value.trim();
         return persona&&d&&!p.includes(d.slice(0,25))?d+' '+p:p})(),

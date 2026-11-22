@@ -252,29 +252,19 @@ test("studio (page helper): total cost line with Auto, and money formatting", ()
 const { createThemes, themeText, qualityText, PRESETS } = require("../lib/themes");
 const { enhanceFilter } = require("../lib/enhance");
 
-test("themes: presets, saving a preset makes a copy, theme text and quality text", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "thm-"));
-  const t = createThemes(dir);
-  assert.equal(PRESETS.length, 6);
-  assert.ok(t.get("p-3dstory").builtin);
-  const mine = t.save({ id: "p-3dstory", character: "A traveller with curly black hair", outfit: "mustard raincoat", name: "Passport Story" });
-  assert.notEqual(mine.id, "p-3dstory");
-  assert.equal(mine.builtin, false);
-  assert.equal(mine.palette, t.get("p-3dstory").palette); // copied from the preset
-  assert.equal(t.save({ id: mine.id, outfit: "red coat" }).outfit, "red coat");
-  t.setImage(mine.id, "style", "data:image/png;base64,iVBORw0KGgo=");
-  assert.match(t.pub(t.get(mine.id)).styleImage, /\/api\/themes\/t[a-f0-9]+\/image/);
-  assert.throws(() => t.setImage(mine.id, "style", "nope"));
-  const txt = themeText(t.get(mine.id));
-  assert.match(txt, /Style: 3D animated/);
+test("looks: five looks, old theme ids map over, look + character text, quality text", () => {
+  const t = createThemes();
+  assert.deepEqual(PRESETS.map((x) => x.id), ["real", "disney", "pixar", "anime", "brainrot"]);
+  assert.equal(t.get("p-3dstory").id, "pixar"); // saved settings from the old themes keep working
+  assert.equal(t.get("nope"), null);
+  for (const x of PRESETS) assert.doesNotMatch(x.style, /disney|pixar/i); // brand names stay out of prompts
+  const txt = themeText(t.get("pixar"), "A traveller with curly black hair");
+  assert.match(txt, /Style: high-end 3D animated/);
   assert.match(txt, /exactly as described.*curly black hair/);
-  assert.match(txt, /Outfit, unchanged in every shot: red coat/);
-  assert.match(themeText(t.get(mine.id), "Saved influencer words"), /Saved influencer words/);
+  assert.match(themeText(null, "Only a character"), /Only a character/); // character works without a look
   assert.equal(themeText(null), "");
   assert.match(qualityText({ negative: "logos" }), /^ Quality: sharp focus.*Avoid: warping.*logos\.$/);
   assert.equal(qualityText({ booster: false }), "");
-  t.remove(mine.id);
-  assert.equal(t.get(mine.id), null);
 });
 
 test("enhance: filter chain only upscales, in the right orientation", () => {
@@ -338,6 +328,37 @@ test("director: budget fit swaps or skips the least visible things first and sta
   const rules = await D.decide({ page: "story", aspect: "9:16", budget: 0.6, scenes }, { catalog: c, available: avail, callBrain: async () => { throw new Error("x"); } });
   assert.ok(rules.cost.total <= 0.6 + 1e-9);
   assert.equal(rules.plan.scenes[1].model, "google/veo-3.1-fast");
+});
+
+test("director: second try fixes a bad reply, names map to ids, skipped scenes are repaired, plans are cached", async () => {
+  const c = CAT();
+  const req = { page: "clip", prompt: "Close-up of a woman smiling", aspect: "9:16", budget: 1 };
+  let calls = 0;
+  const flaky = async (msgs) => { calls++; return { text: calls === 1 ? "oops" : JSON.stringify({ model: "Veo 3.1 Fast", duration: 4 }), cost: 0.001 }; };
+  const out = await D.decide(req, { catalog: c, available: avail, callBrain: flaky });
+  assert.equal(out.source, "brain");
+  assert.equal(out.tries, 2);
+  assert.equal(out.plan.model, "google/veo-3.1-fast"); // written as a name, mapped to the id
+  assert.equal(D.resolveId("VEO-3.1-FAST", D.candidates(c, req, avail)), "google/veo-3.1-fast");
+  // a much worse pick than the budget allows is upgraded
+  const cheap = await D.decide(req, { catalog: c, available: avail, callBrain: async () => ({ text: JSON.stringify({ model: "x-ai/grok-imagine-video-1.5-lite", duration: 4, audio: false }) }) });
+  assert.equal(cheap.plan.model, "google/veo-3.1-fast");
+  assert.match(cheap.plan.reason, /instead of .*clearly better/);
+  assert.equal(cheap.plan.alternatives[0].model, "x-ai/grok-imagine-video-1.5-lite"); // the first pick stays one tap away
+  // story: one scene missing from the reply is filled in by the rules
+  const scenes = [{ prompt: "Wide skyline", seconds: 4 }, { prompt: "Her face, close-up", seconds: 4, key: true }, { prompt: "A taxi", seconds: 4 }];
+  const part = await D.decide({ page: "story", aspect: "9:16", budget: 2, scenes }, { catalog: c, available: avail,
+    callBrain: async () => ({ text: JSON.stringify({ scenes: [{ i: 0, model: "acme/newvid-2", duration: 4 }, { i: 1, model: "google/veo-3.1-fast", duration: 4 }] }) }) });
+  assert.equal(part.source, "brain+rules");
+  assert.equal(part.plan.scenes.length, 3);
+  assert.ok(c[part.plan.scenes[2].model]);
+  // cache: the same request gives the same plan without calling the brain again
+  const cache = new Map(); let n = 0;
+  const once = async () => { n++; return { text: JSON.stringify({ model: "google/veo-3.1-fast", duration: 4 }), cost: 0.002 }; };
+  await D.decide(req, { catalog: c, available: avail, callBrain: once, cache });
+  const again = await D.decide(req, { catalog: c, available: avail, callBrain: once, cache });
+  assert.equal(n, 1);
+  assert.ok(again.cached && again.brainCost === 0);
 });
 
 test("director: page limits decide which models can be used", () => {

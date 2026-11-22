@@ -27,6 +27,7 @@ async function servePage(request, env) {
     .on('script[src="/app.js"]', { element: (e) => e.setAttribute("src", "/app.js?v=" + v) })
     .on('script[src="/studio.js"]', { element: (e) => e.setAttribute("src", "/studio.js?v=" + v) })
     .on('script[src="/theme.js"]', { element: (e) => e.setAttribute("src", "/theme.js?v=" + v) })
+    .on('script[src="/icons.js"]', { element: (e) => e.setAttribute("src", "/icons.js?v=" + v) })
     .transform(res);
   const r = new Response(out.body, out);
   r.headers.delete("etag"); r.headers.delete("last-modified");

@@ -67,6 +67,7 @@
 </style>
 <link rel="stylesheet" href="/app.css">
 <script src="/studio.js"></script>
+<script src="/icons.js"></script>
 <script src="/theme.js"></script>
 </head>
 <body data-title="Story mode" data-sub="Paste a story and press one button: AI plans the scenes, keeps your characters looking the same in every shot, voices it and stitches one video. Open Advanced to fine-tune anything.">
@@ -84,30 +85,30 @@
     <div class="chips" id="fmtPresets" aria-label="Format presets" style="margin-top:10px"></div>
     <div class="quick">
       <label>Quality<select id="preset">
-        <option value="budget">💰 Budget: fixed budget, short clips slowed and held to fit</option>
-        <option value="balanced" selected>⚖ Balanced: cheap drafts + better key scenes, 720p</option>
-        <option value="best">💎 Best: sharpest models, 720p</option>
-        <option value="auto">🧠 Auto (Director): best quality within your budget</option>
-        <option value="custom">🛠 Custom (use Advanced settings)</option>
+        <option value="budget">Budget: fixed budget, short clips slowed and held to fit</option>
+        <option value="balanced" selected>Balanced: cheap drafts + better key scenes, 720p</option>
+        <option value="best">Best: sharpest models, 720p</option>
+        <option value="auto">Auto (Director): best quality within your budget</option>
+        <option value="custom">Custom (use Advanced settings)</option>
       </select></label>
       <label>Length<select id="quickLen"><option value="15">15 s</option><option value="30" selected>30 s</option><option value="45">45 s</option><option value="60">60 s</option></select></label>
-      <label>Look<select id="quickLook"><option value="clean">Clean</option><option value="glitch">⚡ Neon glitch</option></select></label>
+      <label>Look<select id="quickLook"><option value="clean">Clean</option><option value="glitch">Neon glitch</option></select></label>
       <label>Main character (optional)<select id="castInf"><option value="">Invent from the story</option></select></label>
     </div>
     <div class="warnbox" id="budgetWarn" hidden></div>
-    <label id="autoBudgetRow" hidden style="max-width:260px">🧠 Director budget for the whole story ($)<input id="autoBudget" inputmode="decimal" value="2.00"></label>
+    <label id="autoBudgetRow" hidden style="max-width:260px"><svg class=ic aria-hidden=true><use href=#i-brain></use></svg> Director budget for the whole story ($)<input id="autoBudget" inputmode="decimal" value="2.00"></label>
     <div class="dir-note" id="dirNote" hidden aria-live="polite"></div>
-    <label class="lockrow"><input type="checkbox" id="lock" checked> <span>🔒 <b>Keep characters consistent</b>: AI draws one character sheet, then starts every scene from a picture made from it, so faces, hair and clothes stay the same across the video. Adds about $0.02 per scene.</span></label>
+    <label class="lockrow"><input type="checkbox" id="lock" checked> <span><svg class=ic aria-hidden=true><use href=#i-lock></use></svg> <b>Keep characters consistent</b>: AI draws one character sheet, then starts every scene from a picture made from it, so faces, hair and clothes stay the same across the video. Adds about $0.02 per scene.</span></label>
     <div class="meta" id="presetNote" style="margin:8px 0 12px"></div>
     <div class="actions" style="display:flex;gap:10px;flex-wrap:wrap">
-      <button class="btn primary" id="auto" type="button">✨ Make my video</button>
+      <button class="btn primary" id="auto" type="button"><svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> Make my video</button>
       <button class="btn" id="plan" type="button">Plan scenes first (review before paying)</button>
     </div>
     <div class="err" id="err"></div>
     <details id="adv" style="margin-top:14px"><summary>Advanced settings</summary>
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel2);margin:12px 0 0">
       <label style="flex-direction:row;align-items:center;gap:10px;color:var(--text);font-size:14px;cursor:pointer;flex:1;min-width:240px">
-        <input type="checkbox" id="budget" style="width:auto"> <span>💰 <b>Budget mode</b>: every scene is a real AI video clip on the cheapest small model (Grok Imagine 1.5 Lite, 480p, $0.02 per second). Scene lengths are trimmed to fit your budget, and the narration carries the story.</span>
+        <input type="checkbox" id="budget" style="width:auto"> <span><svg class=ic aria-hidden=true><use href=#i-wallet></use></svg> <b>Budget mode</b>: every scene is a real AI video clip on the cheapest small model (Grok Imagine 1.5 Lite, 480p, $0.02 per second). Scene lengths are trimmed to fit your budget, and the narration carries the story.</span>
       </label>
       <label style="width:130px">Budget ($)<input id="budgetAmt" type="text" inputmode="decimal" pattern="[0-9]*[.]?[0-9]{0,2}" value="0.15" aria-describedby="budgetWarn"></label>
     </div>
@@ -115,14 +116,7 @@
       <label>Total length (s)<input id="total" type="number" value="30" min="8" max="90"></label>
       <label>Aspect<select id="aspect"><option>9:16</option><option>16:9</option><option>1:1</option></select></label>
       <label>Resolution<select id="res"><option>480p</option><option>720p</option></select></label>
-      <label>Style<select id="style">
-        <option value="Cinematic live-action movie style, dramatic lighting, smooth camera movement.">Cinematic</option>
-        <option value="Bright colorful 3D animated kids cartoon in the style of CoComelon, cute round characters, soft glossy shading.">Kids cartoon</option>
-        <option value="Japanese anime style, vivid colors, cel shading, detailed painted backgrounds.">Anime</option>
-        <option value="Ultra-realistic cinematic horror, dark atmosphere, low-key lighting, no gore.">Horror</option>
-        <option value="High-quality 3D animated feature-film style like Pixar, warm lighting.">3D film</option>
-        <option value="">None</option>
-      </select></label>
+      <select id="style" hidden aria-hidden="true"><option value=""></option></select>
       <label>Cheap model (filler scenes)<select id="cheap">
         <option value="heygen/heygen-video-1">HeyGen Video (~$0.02/s)</option>
         <option value="x-ai/grok-imagine-video-1.5-lite" selected>Grok Imagine 1.5 Lite (~$0.02/s)</option>
@@ -142,16 +136,17 @@
   <div class="panel hidden" id="planPanel">
     <h2>2 · Scenes (edit anything, switch models per scene)</h2>
     <label>Character &amp; setting bible (added to every scene so the look stays consistent)<textarea id="bible" style="min-height:70px"></textarea></label>
-    <div id="castBox" class="castbox hidden"><img id="castImg" alt="Character sheet"><div><b>🔒 Character sheet</b> <span class="meta" id="castCost"></span><p class="meta">Every scene starts from a picture drawn from this sheet. Edited the bible? Redraw it.</p><button class="btn" id="castRedo" type="button">↻ Redraw sheet</button></div></div>
+    <div class="tools" style="margin:6px 0 0"><button class="btn" id="bibleEnh" type="button"><svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> Enhance characters</button><span class="meta" id="bibleMsg" aria-live="polite"></span></div>
+    <div id="castBox" class="castbox hidden"><img id="castImg" alt="Character sheet"><div><b><svg class=ic aria-hidden=true><use href=#i-lock></use></svg> Character sheet</b> <span class="meta" id="castCost"></span><p class="meta">Every scene starts from a picture drawn from this sheet. Edited the bible? Redraw it.</p><button class="btn" id="castRedo" type="button"><svg class=ic aria-hidden=true><use href=#i-rotate></use></svg> Redraw sheet</button></div></div>
     <div style="margin-top:14px;padding:12px;border:1px solid var(--line2);background:var(--panel2)">
-      <h2 style="margin-bottom:8px">🖼 Storyboard</h2>
+      <h2 style="margin-bottom:8px"><svg class=ic aria-hidden=true><use href=#i-image></use></svg> Storyboard</h2>
       <label style="flex-direction:row;align-items:center;gap:8px;color:var(--text);font-size:14px"><input type="checkbox" id="pictureFirst" checked style="width:auto"> <span><b>Picture first</b>: draw every scene as a still (about $0.02 each), check them side by side, swap any that look off, then animate each scene from its picture. Faces and colours stay the same.</span></label>
       <label style="flex-direction:row;align-items:center;gap:8px;color:var(--text);font-size:14px;margin-top:6px"><input type="checkbox" id="connect" checked style="width:auto"> <span><b>Connect scenes</b>: each clip ends on the next scene's picture (on models with end-frame support: Veo, Seedance, Wan, Gemini), so cuts flow smoothly.</span></label>
-      <div class="row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px"><button class="btn" id="drawBoard" type="button">🖼 Draw storyboard</button><span class="meta" id="boardMsg" aria-live="polite"></span></div>
+      <div class="row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px"><button class="btn" id="drawBoard" type="button"><svg class=ic aria-hidden=true><use href=#i-image></use></svg> Draw storyboard</button><span class="meta" id="boardMsg" aria-live="polite"></span></div>
       <div class="sboard" id="board"></div>
     </div>
     <div style="margin-top:14px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--panel2)">
-      <label style="flex-direction:row;align-items:center;gap:8px;margin-bottom:10px;color:var(--text);font-size:14px"><input type="checkbox" id="narOn" checked style="width:auto"> 🎙️ Add voiceover narration (each scene's narration is voiced and mixed into that scene)</label>
+      <label style="flex-direction:row;align-items:center;gap:8px;margin-bottom:10px;color:var(--text);font-size:14px"><input type="checkbox" id="narOn" checked style="width:auto"> <svg class=ic aria-hidden=true><use href=#i-mic></use></svg> Add voiceover narration (each scene's narration is voiced and mixed into that scene)</label>
       <div class="grid" id="narGrid" style="margin:0">
         <label>Voice model<select id="ttsModel"></select></label>
         <label>Voice<select id="ttsVoice"></select></label>
@@ -161,7 +156,7 @@
       <audio id="ttsAudio" controls class="hidden" style="width:100%;margin-top:10px"></audio>
       <div class="meta" id="ttsMsg" style="margin-top:6px"></div>
     </div>
-    <label style="flex-direction:row;align-items:center;gap:8px;margin-top:12px"><input type="checkbox" id="glitch" style="width:auto"> ⚡ Neon glitch look on the final video (horizontal tearing bursts, RGB split, scanlines). Free, added when stitching.</label>
+    <label style="flex-direction:row;align-items:center;gap:8px;margin-top:12px"><input type="checkbox" id="glitch" style="width:auto"> <svg class=ic aria-hidden=true><use href=#i-zap></use></svg> Neon glitch look on the final video (horizontal tearing bursts, RGB split, scanlines). Free, added when stitching.</label>
     <label style="flex-direction:row;align-items:center;gap:8px;margin-top:12px"><input type="checkbox" id="chain" checked style="width:auto"> Chain scenes: start flagged scenes from the previous scene's last frame (keeps characters consistent, but those scenes run one after another so it takes longer)</label>
     <div id="scenes" style="margin-top:12px"></div>
     <div class="meta hidden" id="budgetNote" style="margin:12px 0;padding:10px 12px;border:1px solid var(--line);border-radius:10px"></div>
@@ -171,7 +166,7 @@
     <style>#breakdown>div{display:flex;justify-content:space-between;gap:8px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel2)}</style>
     <div class="meta" style="margin-bottom:10px">Audio is off for all clips so the sound stays consistent when stitched. Add narration and music afterwards. Clips from different models can look slightly different.</div>
     <button class="btn primary" id="gen">Generate all scenes &amp; stitch</button>
-    <button class="btn hidden" id="regen" type="button" style="margin-top:8px">🔁 Regenerate everything from scratch</button>
+    <button class="btn hidden" id="regen" type="button" style="margin-top:8px"><svg class=ic aria-hidden=true><use href=#i-repeat></use></svg> Regenerate everything from scratch</button>
   </div>
 
   <div class="panel hidden" id="outPanel">
@@ -229,10 +224,10 @@ function render(){
         <input type="number" min="1" max="15" value="${s.seconds}" data-f="seconds"> s
         <select data-f="model">${models().map(m=>`<option value="${m}" ${m===s.model?'selected':''}>${NAME(m)}</option>`).join('')}</select>
         <span class="meta" data-cost>$${(price(s)).toFixed(2)}</span></div>
-      ${i>0?`<label style="flex-direction:row;align-items:center;gap:6px;margin-bottom:6px"><input type="checkbox" data-f="continues" ${s.continues?'checked':''} style="width:auto"> ↪ Start from previous scene's last frame</label>`:''}
+      ${i>0?`<label style="flex-direction:row;align-items:center;gap:6px;margin-bottom:6px"><input type="checkbox" data-f="continues" ${s.continues?'checked':''} style="width:auto"> <svg class=ic aria-hidden=true><use href=#i-corner-right></use></svg> Start from previous scene's last frame</label>`:''}
       <textarea data-f="prompt">${esc(s.prompt)}</textarea>
       <textarea data-f="narration" placeholder="Narration spoken in this scene (leave empty for silence)" style="min-height:48px;margin-top:6px;border-color:#2f3550">${esc(s.narration||'')}</textarea>
-      ${s.dir?`<div class="dir">🧠 ${esc(NAME(s.model))}${s.res&&s.res!==$('res').value?' · '+s.res:''}: ${esc(s.dir)}</div>`:''}
+      ${s.dir?`<div class="dir"><svg class=ic aria-hidden=true><use href=#i-brain></use></svg> ${esc(NAME(s.model))}${s.res&&s.res!==$('res').value?' · '+s.res:''}: ${esc(s.dir)}</div>`:''}
       <div class="meta" data-nw>${nwText(s)}</div>
       <div class="bar"><div class="fill" id="f${i}"></div></div><div class="meta" id="m${i}" aria-live="polite"></div><div id="r${i}"></div>
     </div>`).join('');
@@ -253,10 +248,10 @@ const TTS={
 };
 function nwText(s){
   const words=(s.narration||'').trim().split(/\s+/).filter(Boolean).length, d=dur(s), max=Math.round(d*2.5);
-  if(!words) return '🔇 silent scene';
+  if(!words) return '<svg class=ic aria-hidden=true><use href=#i-volume-x></use></svg> silent scene';
   const speech=+(words/2.5).toFixed(1);
   if(words<=max*1.05) return words+' words · about '+speech+' s of speech, fits the '+d+' s clip';
-  return '⚠ narration about '+speech+' s, clip '+d+' s: '+($('budget').checked
+  return '<svg class=ic aria-hidden=true><use href=#i-alert></use></svg> narration about '+speech+' s, clip '+d+' s: '+($('budget').checked
     ?'the clip will be slowed (up to 1.5×) and then hold its last frame'+(speech>d*1.5?' for '+(speech-d*1.5).toFixed(1)+' s':'')
     :'the voice will be sped up'+(speech>d*1.35?' and cut off at the end. Shorten the text or lengthen the scene':''));
 }
@@ -279,7 +274,7 @@ function totals(){
     `<div><span class="meta">Filler scenes (${fillS.length} · ${secs(fillS)}s)</span><b>$${sum(fillS).toFixed(2)}</b></div>`+
     `<div><span class="meta">All on ${NAME($('good').value)} would be</span><b>$${allGood.toFixed(2)}</b></div>`+
     `<div><span class="meta">Narration voiceover</span><b>${nc>0?'$'+nc.toFixed(3):'off'}</b></div>`+
-    `<div><span class="meta">🔒 Character sheet + storyboard pictures still to draw</span><b>${lc>0?'$'+lc.toFixed(2):'none'}</b></div>`+
+    `<div><span class="meta"><svg class=ic aria-hidden=true><use href=#i-lock></use></svg> Character sheet + storyboard pictures still to draw</span><b>${lc>0?'$'+lc.toFixed(2):'none'}</b></div>`+
     `<div><span class="meta">You save</span><b style="color:var(--ok)">${save>0?'$'+save.toFixed(2)+' ('+Math.round(save/allGood*100)+'%)':'$0.00'}</b></div>`;
 }
 
@@ -305,7 +300,7 @@ function budgetNote(){
   const on=$('budget').checked; $('budgetNote').classList.toggle('hidden',!on); if(!on) return;
   const v=scenes.reduce((a,s)=>a+dur(s),0), p=scenes.reduce((a,s)=>a+(s.planned||s.seconds),0);
   const t=scenes.reduce((a,s)=>a+price(s),0)+narCost()+lockCost();
-  $('budgetNote').innerHTML=`💰 Budget mode: ${scenes.length} real video clips, ${v} s of generated video (≈ $${t.toFixed(2)} of your $${budgetAmt().toFixed(2)}).`+
+  $('budgetNote').innerHTML=`<svg class=ic aria-hidden=true><use href=#i-wallet></use></svg> Budget mode: ${scenes.length} real video clips, ${v} s of generated video (≈ $${t.toFixed(2)} of your $${budgetAmt().toFixed(2)}).`+
     (v<p?` The story was planned for ${p} s, so clips are shorter than planned: where the narration runs longer than a clip, the clip is slowed down (up to 1.5×) and then holds its last frame. Raise the budget for more motion.`:'');
 }
 ['budget','budgetAmt'].forEach(id=>$(id).addEventListener('change',()=>{
@@ -318,7 +313,7 @@ const PRESETS={
   budget:{budget:true,res:'480p',cheap:BUDGET_VIDEO,good:BUDGET_VIDEO},
   balanced:{budget:false,res:'720p',cheap:'x-ai/grok-imagine-video-1.5-lite',good:'bytedance/seedance-2.0-mini'},
   best:{budget:false,res:'720p',cheap:'bytedance/seedance-2.0-mini',good:'bytedance/seedance-2.0-fast'},
-  // 🧠 Auto starts from Balanced; the Director then replaces every scene's model after planning
+  // Auto starts from Balanced; the Director then replaces every scene's model after planning
   auto:{budget:false,res:'720p',cheap:'x-ai/grok-imagine-video-1.5-lite',good:'bytedance/seedance-2.0-mini',auto:true},
 };
 function applyPreset(){
@@ -330,7 +325,7 @@ function applyPreset(){
 function presetNote(){
   const p=PRESETS[$('preset').value], secs=+$('quickLen').value||30;
   $('autoBudgetRow').hidden=$('preset').value!=='auto';
-  if($('preset').value==='auto'){ $('budgetWarn').hidden=true; $('presetNote').textContent=`🧠 After planning, the Director picks a model for every scene from all available models: the best quality where it shows (faces, close-ups, key scenes), cheaper models elsewhere, within ${S.money(parseFloat($('autoBudget').value)||2)} in total. You see every choice and the total before paying.`; return; }
+  if($('preset').value==='auto'){ $('budgetWarn').hidden=true; $('presetNote').innerHTML=`<svg class=ic aria-hidden=true><use href=#i-brain></use></svg> After planning, the Director picks a model for every scene from all available models: the best quality where it shows (faces, close-ups, key scenes), cheaper models elsewhere, within ${S.money(parseFloat($('autoBudget').value)||2)} in total. You see every choice and the total before paying.`; return; }
   if(!p){ $('presetNote').textContent='Custom: your Advanced settings are used as they are.'; return; }
   const n=Math.max(2,Math.round(secs/6)), keys=Math.max(1,Math.round(n*.3));
   const est=p.budget?+$('budgetAmt').value||0.15:
@@ -341,8 +336,8 @@ function presetNote(){
   const rate=PRICE[BUDGET_VIDEO]['480p'], lockB=$('lock').checked?LOCK_SHEET+n*LOCK_SCENE:0, real=Math.max(n,Math.floor((budgetAmt()-BUDGET_RESERVE-lockB)/rate));
   $('budgetWarn').hidden=!p.budget;
   if(p.budget) $('budgetWarn').innerHTML=real<secs
-    ?`💰 <b>Budget mode makes only about ${real} s of real video for this ${secs} s story</b> (${S.money(budgetAmt())} at ${S.money(rate,3)}/s, 480p). Each clip is slowed down (up to 1.5×) and then holds its last frame while the narration plays. Raise the budget to about ${S.money(secs*rate+lockB+BUDGET_RESERVE)} for full motion.`
-    :`💰 Budget mode: your ${S.money(budgetAmt())} covers the full ${secs} s at 480p.`;
+    ?`<svg class=ic aria-hidden=true><use href=#i-wallet></use></svg> <b>Budget mode makes only about ${real} s of real video for this ${secs} s story</b> (${S.money(budgetAmt())} at ${S.money(rate,3)}/s, 480p). Each clip is slowed down (up to 1.5×) and then holds its last frame while the narration plays. Raise the budget to about ${S.money(secs*rate+lockB+BUDGET_RESERVE)} for full motion.`
+    :`<svg class=ic aria-hidden=true><use href=#i-wallet></use></svg> Budget mode: your ${S.money(budgetAmt())} covers the full ${secs} s at 480p.`;
 }
 ['preset','quickLen','quickLook','lock'].forEach(id=>$(id).addEventListener('change',()=>{ applyPreset(); if(scenes.length){ if($('budget').checked) applyBudget(); render(); } }));
 // saved influencers as the optional main character
@@ -360,8 +355,8 @@ function showCast(){
 }
 async function ensureCast(force){
   if(projCast&&!force) return projCast;
-  $('final').textContent='🔒 Drawing the character sheet…';
-  const r=await fetch('/api/cast',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bible:$('bible').value,style:$('style').value,influencer_ids:$('castInf').value?[$('castInf').value]:[]})});
+  $('final').innerHTML='<svg class=ic aria-hidden=true><use href=#i-lock></use></svg> Drawing the character sheet…';
+  const r=await fetch('/api/cast',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bible:$('bible').value,style:lookStyle(),influencer_ids:$('castInf').value?[$('castInf').value]:[]})});
   const j=await r.json(); if(!r.ok) throw new Error(j.error||'Character sheet failed');
   projCast={id:j.id,url:j.url}; scenes.forEach(s=>{ delete s._frame; }); showCast(); save(); return projCast;
 }
@@ -373,7 +368,7 @@ async function planScenes(){
   let ok=false;
   try{
     const r=await fetch('/api/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-      script:$('script').value,total:+$('total').value,aspect:$('aspect').value,style:(()=>{const t=S.theme&&S.theme(); return t?[t.style,t.palette&&'palette: '+t.palette,t.lighting&&'lighting: '+t.lighting,t.character&&'main character: '+t.character,t.outfit&&'outfit: '+t.outfit].filter(Boolean).join('; '):$('style').value;})()})});
+      script:$('script').value,total:+$('total').value,aspect:$('aspect').value,style:lookText()})});
     const j=await r.json(); if(!r.ok) throw new Error(j.error||'Planning failed');
     $('bible').value=j.bible||'';
     scenes=j.scenes.map(s=>({title:s.title,prompt:s.prompt,seconds:Math.round(s.seconds)||6,key:!!s.key,continues:!!s.continues,narration:s.narration||'',model:s.key?$('good').value:$('cheap').value}));
@@ -386,21 +381,21 @@ async function planScenes(){
   return ok;
 }
 $('plan').onclick=()=>{ applyPreset(); planScenes(); };
-// 🧠 the Director: a model, length and resolution for every scene, plus picture first / connect, within the budget
+// the Director: a model, length and resolution for every scene, plus picture first / connect, within the budget
 async function directScenes(){
-  $('dirNote').hidden=false; $('dirNote').textContent='🧠 The Director is choosing a model for every scene…';
+  $('dirNote').hidden=false; $('dirNote').innerHTML='<svg class=ic aria-hidden=true><use href=#i-brain></use></svg> The Director is choosing a model for every scene…';
   try{
     const budget=parseFloat($('autoBudget').value)||undefined;
-    const r=await S.director({page:'story',aspect:$('aspect').value,budget,style:S.theme&&S.theme()?undefined:$('style').selectedOptions[0]?.textContent,
+    const r=await S.director({page:'story',aspect:$('aspect').value,budget,
       scenes:scenes.map(s=>({title:s.title,prompt:s.prompt,seconds:s.seconds,key:s.key}))});
     const p=r.plan;
     p.scenes.forEach(d=>{ const s=scenes[d.i]; if(!s) return; s.model=d.model; s.seconds=d.duration; s.res=d.resolution; s.dir=d.reason||''; if(d.picture===false) s.noPicture=true; });
     if(['480p','720p'].includes(p.resolution)) $('res').value=p.resolution;
     $('pictureFirst').checked=!!p.pictureFirst; $('connect').checked=p.connect!==false;
-    $('dirNote').innerHTML=`🧠 <b>Director:</b> ${esc(p.reason||'')}<br>Video ${S.money(r.cost.video)} + pictures ${S.money(r.cost.still)} = <b>${S.money(r.cost.total)}</b>${r.budget?' of your '+S.money(r.budget)+' budget':''} · decided by ${r.source==='brain'?esc(r.brain)+' ('+S.money(r.brainCost,4)+')':'the built-in rules'} from ${r.candidates} models.`+
+    $('dirNote').innerHTML=`<svg class=ic aria-hidden=true><use href=#i-brain></use></svg> <b>Director:</b> ${esc(p.reason||'')}<br>Video ${S.money(r.cost.video)} + pictures ${S.money(r.cost.still)} = <b>${S.money(r.cost.total)}</b>${r.budget?' of your '+S.money(r.budget)+' budget':''} · decided by ${r.source!=='rules'?esc(r.brain)+' ('+S.money(r.brainCost,4)+')':'the built-in rules'} from ${r.candidates} models.`+
       (r.warnings.length?'<br><span class="meta">'+r.warnings.map(esc).join('<br>')+'</span>':'');
     window.dispatchEvent(new Event('spend-changed'));
-  }catch(e){ $('dirNote').textContent='🧠 The Director could not plan ('+e.message+'), so the Balanced models are used.'; }
+  }catch(e){ $('dirNote').innerHTML='<svg class=ic aria-hidden=true><use href=#i-brain></use></svg> The Director could not plan ('+escH(e.message)+'), so the Balanced models are used.'; }
 }
 $('autoBudget').addEventListener('change',()=>{ const v=Math.max(0.1,Math.min(50,parseFloat($('autoBudget').value)||2)); $('autoBudget').value=v.toFixed(2); presetNote(); });
 S.directorBudget('story').then(b=>{ if(!S.formValue('story','autoBudget')) $('autoBudget').value=(+b).toFixed(2); presetNote(); });
@@ -416,12 +411,12 @@ $('auto').onclick=async()=>{
         try{ await drawBoard(boardScenes(),true); }catch(e){ $('err').textContent=e.message; }
         $('planPanel').scrollIntoView({behavior:'smooth'}); toast('Check the storyboard, swap any scene that looks off, then press Animate.');
       }
-      b.disabled=false; b.textContent='✨ Make my video'; return;
+      b.disabled=false; b.innerHTML='<svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> Make my video'; return;
     }
     if(await confirmScenes(pending())){ $('outPanel').classList.remove('hidden'); $('outPanel').scrollIntoView({behavior:'smooth'}); execute(pending(),false); }
     else { $('planPanel').scrollIntoView({behavior:'smooth'}); toast('Scenes planned: review them below, nothing was charged for video.'); }
   }
-  b.disabled=false; b.textContent='✨ Make my video';
+  b.disabled=false; b.innerHTML='<svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> Make my video';
 };
 ['res','cheap','good'].forEach(id=>$(id).addEventListener('change',()=>{
   if(id!=='res'&&!$('budget').checked) scenes.forEach(s=>{ s.model=s.key?$('good').value:$('cheap').value });
@@ -441,7 +436,7 @@ $('ttsPrev').onclick=async()=>{
     const r=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:$('ttsModel').value,voice:$('ttsVoice').value,text,instructions:$('ttsTone').value||undefined})});
     if(!r.ok){ throw new Error((await r.json()).error||'failed'); }
     const a=$('ttsAudio'); a.src=URL.createObjectURL(await r.blob()); a.classList.remove('hidden'); a.play(); $('ttsMsg').textContent='';
-  }catch(e){ $('ttsMsg').textContent='❌ '+e.message; }
+  }catch(e){ $('ttsMsg').innerHTML='<svg class=ic aria-hidden=true><use href=#i-circle-x></use></svg> '+escH(e.message); }
   b.disabled=false;
 };
 let jobs=[], runP=[];
@@ -450,19 +445,19 @@ const storySeed=()=>{ let h=7; for(const c of String(projId||'story')) h=(h*31+c
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 function showRetry(i){
   const box=$('r'+i); if(!box) return; box.innerHTML='';
-  const bt=document.createElement('button'); bt.type='button'; bt.className='btn'; bt.style.marginTop='8px'; bt.textContent='🔄 Retry this scene';
+  const bt=document.createElement('button'); bt.type='button'; bt.className='btn'; bt.style.marginTop='8px'; bt.innerHTML='<svg class=ic aria-hidden=true><use href=#i-refresh></use></svg> Retry this scene';
   bt.onclick=()=>retry(i); box.append(bt);
 }
 function failJob(i,msg,skipped){
   const job=jobs[i]; job.failed=job.done=true; job.skipped=!!skipped;
-  if($('m'+i)) $('m'+i).textContent='❌ '+msg; showRetry(i); save();
+  if($('m'+i)) $('m'+i).innerHTML='<svg class=ic aria-hidden=true><use href=#i-circle-x></use></svg> '+escH(msg); showRetry(i); save();
 }
 function progress(){const n=jobs.filter(j=>j.done&&!j.failed).length; $('final').textContent='Generating scenes… '+n+'/'+jobs.length+' done'}
 async function run(i){
-  const s=scenes[i], job=jobs[i], style=$('style').value, bible=$('bible').value.trim();
+  const s=scenes[i], job=jobs[i], bible=$('bible').value.trim();
   let prev=null, note='';
   if(i>0&&s.continues&&$('chain').checked){
-    $('m'+i).textContent='⏳ waiting for scene '+i+' to finish, to start from its last frame…';
+    $('m'+i).innerHTML='<svg class=ic aria-hidden=true><use href=#i-hourglass></use></svg> waiting for scene '+i+' to finish, to start from its last frame…';
     await runP[i-1];
     if(jobs[i-1].failed) return failJob(i,'skipped because the previous scene failed',true);
     prev=jobs[i-1].id;
@@ -472,19 +467,19 @@ async function run(i){
   if(!job.id){
     try{
       if(!pf&&$('lock').checked&&!prev&&projCast&&!s._frame){
-        $('m'+i).textContent='🔒 drawing this scene\'s first frame from the character sheet…';
-        const k=await fetch('/api/keyframe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cast:projCast.id,prompt:s.prompt,aspect_ratio:$('aspect').value,style:$('style').value})});
+        $('m'+i).innerHTML='<svg class=ic aria-hidden=true><use href=#i-lock></use></svg> drawing this scene\'s first frame from the character sheet…';
+        const k=await fetch('/api/keyframe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cast:projCast.id,prompt:s.prompt,aspect_ratio:$('aspect').value,style:lookStyle()})});
         const kj=await k.json(); if(!k.ok) throw new Error(kj.error||'Scene frame failed');
         s._frame=kj.image;
       }
       if(pf) $('r'+i).innerHTML=`<img class="kf" src="${s.still.url}" alt="Scene ${i+1} picture">`;
       else if(s._frame&&!prev) $('r'+i).innerHTML=`<img class="kf" src="${s._frame}" alt="First frame">`;
       const r=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-        model:s.model,prompt:(bible?bible+' ':'')+s.prompt+(style?' Visual style: '+style:''),duration:dur(s),
+        model:s.model,prompt:(bible?bible+' ':'')+s.prompt,duration:dur(s),
         resolution:resOf(s),aspect_ratio:$('aspect').value,generate_audio:false,frame_from_job:prev,seed:storySeed(),title:'Scene '+(i+1)+': '+(s.title||''),
-        ...(pf?{still_id:s.still.id,last_still_id:endStill}:s._frame&&!prev?{frame_image:s._frame,frame_note:'🔒 Started from the locked character frame.'}:{})})});
+        ...(pf?{still_id:s.still.id,last_still_id:endStill}:s._frame&&!prev?{frame_image:s._frame,frame_note:'Started from the locked character frame.'}:{})})});
       const j=await r.json(); if(!r.ok) throw new Error(j.error||'failed');
-      job.id=j.id; note=j.note?'⚠ '+j.note+' · ':(prev?'↪ from previous last frame · ':pf?'🖼 from its picture'+(endStill?' → next picture':'')+' · ':''); save();
+      job.id=j.id; note=j.note?'<svg class=ic aria-hidden=true><use href=#i-alert></use></svg> '+j.note+' · ':(prev?'<svg class=ic aria-hidden=true><use href=#i-corner-right></use></svg> from previous last frame · ':pf?'<svg class=ic aria-hidden=true><use href=#i-image></use></svg> from its picture'+(endStill?' → next picture':'')+' · ':''); save();
     }catch(e){ return failJob(i,e.message); }
   }
   for(;;){
@@ -493,7 +488,7 @@ async function run(i){
       const d=await (await fetch('/api/jobs/'+job.id)).json();
       if(d.status==='failed') return failJob(i,d.error||'failed');
       $('f'+i).parentElement.classList.toggle('indet',d.status!=='completed'); $('f'+i).style.width=d.status==='completed'?'100%':'35%';
-      $('m'+i).textContent=note+(d.status==='completed'?'✅ done'+(d.cost!=null?' · '+S.money(+d.cost,3)+(d.estimated?' (estimate)':' (OpenRouter)'):''):(d.stage==='queued'?'Queued':'Generating')+' · '+d.elapsed+' s elapsed'+(d.typical?' · usually '+d.typical[0]+'–'+d.typical[1]+' s':''));
+      $('m'+i).innerHTML=note+(d.status==='completed'?'<svg class=ic aria-hidden=true><use href=#i-circle-check></use></svg> done'+(d.cost!=null?' · '+S.money(+d.cost,3)+(d.estimated?' (estimate)':' (OpenRouter)'):''):(d.stage==='queued'?'Queued':'Generating')+' · '+d.elapsed+' s elapsed'+(d.typical?' · usually '+d.typical[0]+'–'+d.typical[1]+' s':''));
       if(d.status==='completed'){ job.done=true; job.cost=d.cost!=null?+d.cost:null; progress(); save(); return; }
     }catch{}
   }
@@ -501,11 +496,11 @@ async function run(i){
 async function execute(idxs,keep){
   $('gen').disabled=true; $('outPanel').classList.remove('hidden'); $('final').textContent='Starting scenes…';
   if($('lock').checked&&!projCast){
-    try{ await ensureCast(); }catch(e){ $('final').textContent='❌ '+e.message+' (untick "Keep characters consistent" to go without it)'; $('gen').disabled=false; return; }
+    try{ await ensureCast(); }catch(e){ $('final').innerHTML='<svg class=ic aria-hidden=true><use href=#i-circle-x></use></svg> '+escH(e.message)+' (untick "Keep characters consistent" to go without it)'; $('gen').disabled=false; return; }
     $('final').textContent='Starting scenes…';
   }
   if($('pictureFirst').checked&&idxs.some(i=>boardScenes().includes(i)&&!scenes[i].still)){
-    try{ await drawBoard(idxs.filter(i=>!scenes[i].still),true); }catch(e){ $('final').textContent='❌ '+e.message; $('gen').disabled=false; return; }
+    try{ await drawBoard(idxs.filter(i=>!scenes[i].still),true); }catch(e){ $('final').innerHTML='<svg class=ic aria-hidden=true><use href=#i-circle-x></use></svg> '+escH(e.message); $('gen').disabled=false; return; }
   }
   if(!keep) idxs.forEach(i=>{ jobs[i]={i,id:null,done:false,failed:false}; if($('r'+i)) $('r'+i).innerHTML=''; if($('f'+i)) $('f'+i).style.width='0'; if($('m'+i)) $('m'+i).textContent=''; });
   idxs.forEach(i=>{ runP[i]=run(i); });
@@ -514,7 +509,7 @@ async function execute(idxs,keep){
   const bad=jobs.map((j,i)=>j.failed?i:-1).filter(i=>i>=0);
   if(bad.length){
     $('final').innerHTML='A scene failed, so nothing was stitched. Your scenes and settings are kept, so you can edit them and retry. Successful scenes are kept and not charged again. ';
-    const b=document.createElement('button'); b.type='button'; b.className='btn'; b.textContent='🔄 Retry failed scenes'; b.onclick=()=>retry(bad[0],true); $('final').append(b);
+    const b=document.createElement('button'); b.type='button'; b.className='btn'; b.innerHTML='<svg class=ic aria-hidden=true><use href=#i-refresh></use></svg> Retry failed scenes'; b.onclick=()=>retry(bad[0],true); $('final').append(b);
     return;
   }
   const miss=pending();
@@ -530,7 +525,7 @@ async function retry(i,all){
 function pending(){ return scenes.map((_,i)=>jobs[i]&&jobs[i].id&&jobs[i].done&&!jobs[i].failed?-1:i).filter(i=>i>=0); }
 function updateGen(){
   const left=pending().length, done=scenes.length-left, board=$('pictureFirst').checked&&scenes.some(s=>s.still);
-  $('gen').innerHTML=board&&done===0?'🎬 Animate all scenes from their pictures &amp; stitch':left===0&&done>0?'🎙️ Re-stitch existing clips with the current narration &amp; voice (no new video cost)':done>0?'Continue: generate remaining '+left+' scene(s) &amp; stitch':'Generate all scenes &amp; stitch';
+  $('gen').innerHTML=board&&done===0?'<svg class=ic aria-hidden=true><use href=#i-clapper></use></svg> Animate all scenes from their pictures &amp; stitch':left===0&&done>0?'<svg class=ic aria-hidden=true><use href=#i-mic></use></svg> Re-stitch existing clips with the current narration &amp; voice (no new video cost)':done>0?'Continue: generate remaining '+left+' scene(s) &amp; stitch':'Generate all scenes &amp; stitch';
   $('regen').classList.toggle('hidden',done===0);
 }
 async function confirmScenes(todo){
@@ -540,7 +535,7 @@ async function confirmScenes(todo){
   const names=[...new Set(todo.map(i=>NAME(scenes[i].model)))].join(', ');
   return S.confirmSpend({title:`Generate ${todo.length} scene${todo.length>1?'s':''} and stitch?`,total:vid+lock+nc,rows:[
     ['Models',names],['Video',`${secs} s in ${todo.length} clips`],['Resolution',$('res').value],['Aspect',$('aspect').value],
-    ['Pictures / character sheet',lock?S.money(lock):'already drawn'],['Narration',nc?S.money(nc,3)+' (estimate)':'off'],['Theme',S.theme&&S.theme()?S.theme().name+' (locked)':'off']],
+    ['Pictures / character sheet',lock?S.money(lock):'already drawn'],['Narration',nc?S.money(nc,3)+' (estimate)':'off'],['Look',S.theme&&S.theme()?S.theme().name:'none']],
     note:$('budget').checked?$('budgetWarn').textContent:'Finished scenes are reused and never charged twice.'});
 }
 $('gen').onclick=async()=>{
@@ -562,7 +557,7 @@ async function stitch(ids){
     projFinal={url:d.url,warnings:d.warnings||[]}; save();
     const actual=jobs.reduce((a,x)=>a+(x&&x.cost||0),0), est=scenes.reduce((a,s)=>a+price(s),0);
     const costLine=actual?`<p class="meta">Video cost reported by OpenRouter for these scenes: <b>${S.money(actual,3)}</b> (estimate was ${S.money(est,3)}). Character pictures and narration are on top; the month total in the sidebar is OpenRouter's own figure.</p>`:'';
-    $('final').innerHTML=costLine+(d.warnings&&d.warnings.length?'<div style="color:var(--warn);margin-bottom:8px">⚠ '+d.warnings.join('<br>⚠ ')+'</div>':'')+`<video controls autoplay loop playsinline src="${d.url}"></video><a class="btn" href="${d.url}?download=1" style="text-decoration:none;display:inline-block">⬇ Download MP4</a>`;
+    $('final').innerHTML=costLine+(d.warnings&&d.warnings.length?'<div style="color:var(--warn);margin-bottom:8px"><svg class=ic aria-hidden=true><use href=#i-alert></use></svg> '+d.warnings.join('<br><svg class=ic aria-hidden=true><use href=#i-alert></use></svg> ')+'</div>':'')+`<video controls autoplay loop playsinline src="${d.url}"></video><a class="btn" href="${d.url}?download=1" style="text-decoration:none;display:inline-block"><svg class=ic aria-hidden=true><use href=#i-download></use></svg> Download MP4</a>`;
     S.mountEnhance&&S.mountEnhance($('final'),{src:d.url});
     mountShare($('final'),{url:d.url,name:'story.mp4',prompt:$('script').value});
     window.dispatchEvent(new Event('spend-changed'));
@@ -575,11 +570,11 @@ function renderBoard(){
   b.className='sboard'+($('aspect').value==='16:9'?' r169':$('aspect').value==='1:1'?' r11':'');
   $('drawBoard').disabled=!scenes.length; if(!on){ b.innerHTML=''; $('boardMsg').textContent='Off: scenes are made from text'+($('lock').checked?' and the character sheet.':'.'); return; }
   const need=boardScenes().filter(i=>!scenes[i].still).length;
-  $('drawBoard').textContent=need===boardScenes().length?'🖼 Draw storyboard':need?`🖼 Draw the ${need} missing picture${need>1?'s':''}`:'↻ Redraw all pictures';
+  $('drawBoard').innerHTML=need===boardScenes().length?'<svg class=ic aria-hidden=true><use href=#i-image></use></svg> Draw storyboard':need?`<svg class=ic aria-hidden=true><use href=#i-image></use></svg> Draw the ${need} missing picture${need>1?'s':''}`:'<svg class=ic aria-hidden=true><use href=#i-rotate></use></svg> Redraw all pictures';
   $('boardMsg').textContent=scenes.length?(need?`≈ ${S.money(need*STILL_COST)} for ${need} picture${need>1?'s':''}`:'All pictures ready. Scene 3 looks off? Redraw or swap it before animating.'):'';
   b.innerHTML=scenes.map((s,i)=>{ const cont=i>0&&s.continues&&$('chain').checked;
-    return `<div class="sb-cell" data-i="${i}"><div class="sb-img" style="${s.still?`background-image:url('${s.still.url}')`:''}">${s.still?'':cont?'↪ continues':'no picture'}</div>
-      <b>${i+1}. ${esc((s.title||'Scene').slice(0,22))}</b>${cont?'<span class="meta">starts from scene '+i+'\'s end</span>':`<div class="row2"><button class="btn" type="button" data-redo title="Draw this picture again (about ${S.money(STILL_COST)})">↻</button><label class="btn" title="Use your own picture (AI-made)">⬆<input type="file" accept="image/jpeg,image/png,image/webp" hidden data-up></label></div>`}</div>`; }).join('');
+    return `<div class="sb-cell" data-i="${i}"><div class="sb-img" style="${s.still?`background-image:url('${s.still.url}')`:''}">${s.still?'':cont?'<svg class=ic aria-hidden=true><use href=#i-corner-right></use></svg> continues':'no picture'}</div>
+      <b>${i+1}. ${esc((s.title||'Scene').slice(0,22))}</b>${cont?'<span class="meta">starts from scene '+i+'\'s end</span>':`<div class="row2"><button class="btn" type="button" data-redo title="Draw this picture again (about ${S.money(STILL_COST)})"><svg class=ic aria-hidden=true><use href=#i-rotate></use></svg></button><label class="btn" title="Use your own picture (AI-made)"><svg class=ic aria-hidden=true><use href=#i-upload></use></svg><input type="file" accept="image/jpeg,image/png,image/webp" hidden data-up></label></div>`}</div>`; }).join('');
   b.querySelectorAll('.sb-cell').forEach(c=>{ const i=+c.dataset.i;
     const r=c.querySelector('[data-redo]'); if(r) r.onclick=async()=>{ if(!(await S.confirmSpend({title:`Redraw scene ${i+1}'s picture?`,total:STILL_COST,rows:[['Scene',scenes[i].title||'']]}))) return; r.disabled=true; try{ await drawBoard([i],false,true); }catch(e){ toast(e.message,'err'); } };
     const u=c.querySelector('[data-up]'); if(u) u.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
@@ -594,14 +589,14 @@ function totals0(){ if(scenes.length) { const t=$('total$'); if(t){ const nc=nar
 function resetJob(i){ if(jobs[i]&&jobs[i].done){ jobs[i]=undefined; } }
 async function drawBoard(idxs,confirmed,redo){
   idxs=idxs.filter(i=>boardScenes().includes(i)); if(!idxs.length) return;
-  if(!confirmed&&!redo&&!(await S.confirmSpend({title:`Draw ${idxs.length} storyboard picture${idxs.length>1?'s':''}?`,total:idxs.length*STILL_COST+($('lock').checked&&!projCast?LOCK_SHEET:0),rows:[['Pictures',`${idxs.length} × about ${S.money(STILL_COST)}`],['Theme',S.theme&&S.theme()?S.theme().name:'off'],['Character sheet',$('lock').checked?(projCast?'already drawn':S.money(LOCK_SHEET)):'off']]}))) return;
+  if(!confirmed&&!redo&&!(await S.confirmSpend({title:`Draw ${idxs.length} storyboard picture${idxs.length>1?'s':''}?`,total:idxs.length*STILL_COST+($('lock').checked&&!projCast?LOCK_SHEET:0),rows:[['Pictures',`${idxs.length} × about ${S.money(STILL_COST)}`],['Look',S.theme&&S.theme()?S.theme().name:'none'],['Character sheet',$('lock').checked?(projCast?'already drawn':S.money(LOCK_SHEET)):'off']]}))) return;
   if($('lock').checked&&!projCast) await ensureCast();
   $('drawBoard').disabled=true; let done=0, failed=0;
   const bible=$('bible').value.trim(), th=S.theme&&S.theme();
   const one=async(i)=>{ const s=scenes[i];
     $('boardMsg').textContent=`Drawing pictures… ${done}/${idxs.length}`;
     try{
-      const r=await fetch('/api/still',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:(bible?bible+' ':'')+s.prompt,aspect_ratio:$('aspect').value,cast:$('lock').checked&&projCast?projCast.id:undefined,influencer_id:$('castInf').value||undefined,style:th?undefined:$('style').value})});
+      const r=await fetch('/api/still',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:(bible?bible+' ':'')+s.prompt,aspect_ratio:$('aspect').value,cast:$('lock').checked&&projCast?projCast.id:undefined,influencer_id:$('castInf').value||undefined})});
       const j=await r.json(); if(!r.ok) throw new Error(j.error||'Picture failed');
       s.still={id:j.id,url:j.url}; resetJob(i);
     }catch(e){ failed++; if(failed===1) toast('Scene '+(i+1)+': '+e.message,'err'); }
@@ -614,12 +609,27 @@ async function drawBoard(idxs,confirmed,redo){
 }
 $('drawBoard').onclick=()=>{ const need=boardScenes().filter(i=>!scenes[i].still); drawBoard(need.length?need:boardScenes()); };
 ['pictureFirst','connect','chain','aspect'].forEach(id=>$(id).addEventListener('change',()=>{ if(scenes.length) render(); }));
-// Theme Lock: the theme's look replaces the Style choice; picking a theme switches to its models and resolution
+// the Look (bar under the title) styles every scene; picking one switches to its suggested models
 addEventListener('theme-changed',e=>{
   const t=e.detail.theme;
-  $('style').disabled=!!t; $('style').title=t?'Style comes from the '+t.name+' theme':'';
   if(t&&e.detail.picked&&t.models){ $('preset').value='custom'; if([...$('cheap').options].some(o=>o.value===t.models.cheap)) $('cheap').value=t.models.cheap; if([...$('good').options].some(o=>o.value===t.models.good)) $('good').value=t.models.good; else if(!$('good').querySelector(`option[value="${t.models.good}"]`)){ $('good').insertAdjacentHTML('beforeend',`<option value="${t.models.good}">${t.models.good}</option>`); $('good').value=t.models.good; } $('res').value=['480p','720p'].includes(t.models.res)?t.models.res:'720p'; $('glitch').checked=t.look==='glitch'; $('budget').checked=false; ['res','cheap','good'].forEach(id=>$(id).dispatchEvent(new Event('change'))); presetNote(); toast(`${t.name}: ${NAME(t.models.cheap)} for B-roll, ${NAME(t.models.good)} for key scenes`); }
 });
+
+// the Look and the character from the bar under the title (the server adds both to every clip and picture)
+function lookStyle(){ const t=S.theme&&S.theme(); return t?t.style:''; }
+function lookText(){ const t=S.theme&&S.theme(), c=S.character&&S.character(); return [t&&t.style, c&&'main character: '+c].filter(Boolean).join('; '); }
+// Enhance the character & setting bible: exact faces, hair, outfits and colours, so every scene matches
+$('bibleEnh').onclick=async()=>{
+  const b=$('bibleEnh'), ta=$('bible'); if(!ta.value.trim()){ $('bibleMsg').textContent='Plan scenes first, or write who is in the story.'; return; }
+  b.disabled=true; b.textContent='Enhancing…'; $('bibleMsg').textContent='';
+  try{
+    const r=await fetch('/api/enhance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'bible',prompt:ta.value})});
+    const j=await r.json(); if(!r.ok) throw new Error(j.error||'Enhance failed');
+    ta.value=j.prompt; ta.dispatchEvent(new Event('input')); ta.dispatchEvent(new Event('change')); $('bibleMsg').textContent='Done: every character is pinned down. Redraw the storyboard to use it.';
+    window.dispatchEvent(new Event('spend-changed'));
+  }catch(e){ $('bibleMsg').innerHTML='<svg class=ic aria-hidden=true><use href=#i-circle-x></use></svg> '+escH(e.message); }
+  b.disabled=false; b.innerHTML='<svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> Enhance characters';
+};
 
 /* ---------------- history (saved on the server, so every device sees it) ---------------- */
 const HKEY='storyHistory', FIELDS=['script','total','aspect','res','style','cheap','good','bible','ttsModel','ttsVoice','ttsTone','budgetAmt','preset','quickLen','quickLook','castInf'];
@@ -642,8 +652,8 @@ function renderHist(){
   if(!h.length) $('hist').innerHTML='<div class="meta">No saved stories yet. Plan a story below and it will appear here automatically.</div>'; else
   $('hist').innerHTML=h.map(p=>{
     const n=p.scenes.length, d=(p.jobs||[]).filter(j=>j&&j.done&&!j.failed).length;
-    const st=p.final?'✅ finished':d?d+'/'+n+' scenes done':n+' scenes planned';
-    return `<div class="item" data-id="${p.id}" style="cursor:default"><span class="t" style="flex:1"><b>${esc(p.title)}</b><br><span class="s">${new Date(p.ts).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})} · ${st}</span></span><button class="btn" data-a="open" type="button">▶ Continue</button><button class="btn danger" data-a="del" type="button" title="Delete">✕</button></div>`;
+    const st=p.final?'<svg class=ic aria-hidden=true><use href=#i-circle-check></use></svg> finished':d?d+'/'+n+' scenes done':n+' scenes planned';
+    return `<div class="item" data-id="${p.id}" style="cursor:default"><span class="t" style="flex:1"><b>${esc(p.title)}</b><br><span class="s">${new Date(p.ts).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})} · ${st}</span></span><button class="btn" data-a="open" type="button">▶ Continue</button><button class="btn danger" data-a="del" type="button" title="Delete"><svg class=ic aria-hidden=true><use href=#i-x></use></svg></button></div>`;
   }).join('');
   $('hist').querySelectorAll('.item').forEach(el=>{
     el.querySelector('[data-a=open]').onclick=()=>restore(el.dataset.id);
@@ -659,10 +669,10 @@ function restore(id){
   projId=p.id; projFinal=p.final||null; scenes=p.scenes; jobs=(p.jobs||[]).map((j,i)=>j?{i,...j}:undefined); runP=[];
   $('planPanel').classList.remove('hidden'); render(); totals(); $('planPanel').scrollIntoView({behavior:'smooth'});
   scenes.forEach((_,i)=>{ const j=jobs[i]; if(!j) return;
-    if(j.done&&!j.failed){ $('f'+i).style.width='100%'; $('m'+i).textContent='✅ done (from history)'; }
-    else if(j.failed){ $('m'+i).textContent='❌ failed last time'; showRetry(i); } });
+    if(j.done&&!j.failed){ $('f'+i).style.width='100%'; $('m'+i).innerHTML='<svg class=ic aria-hidden=true><use href=#i-circle-check></use></svg> done (from history)'; }
+    else if(j.failed){ $('m'+i).innerHTML='<svg class=ic aria-hidden=true><use href=#i-circle-x></use></svg> failed last time'; showRetry(i); } });
   updateGen();
-  if(projFinal){ $('outPanel').classList.remove('hidden'); $('final').innerHTML=(projFinal.warnings&&projFinal.warnings.length?'<div style="color:var(--warn);margin-bottom:8px">⚠ '+projFinal.warnings.join('<br>⚠ ')+'</div>':'')+`<video controls loop playsinline src="${projFinal.url}"></video><a class="btn" href="${projFinal.url}?download=1" style="text-decoration:none;display:inline-block">⬇ Download MP4</a><div class="meta" style="margin-top:8px">If the video does not play, the server was restarted: click Regenerate to make it again.</div>`; mountShare($('final'),{url:projFinal.url,name:'story.mp4',prompt:$('script').value}); return; }
+  if(projFinal){ $('outPanel').classList.remove('hidden'); $('final').innerHTML=(projFinal.warnings&&projFinal.warnings.length?'<div style="color:var(--warn);margin-bottom:8px"><svg class=ic aria-hidden=true><use href=#i-alert></use></svg> '+projFinal.warnings.join('<br><svg class=ic aria-hidden=true><use href=#i-alert></use></svg> ')+'</div>':'')+`<video controls loop playsinline src="${projFinal.url}"></video><a class="btn" href="${projFinal.url}?download=1" style="text-decoration:none;display:inline-block"><svg class=ic aria-hidden=true><use href=#i-download></use></svg> Download MP4</a><div class="meta" style="margin-top:8px">If the video does not play, the server was restarted: click Regenerate to make it again.</div>`; mountShare($('final'),{url:projFinal.url,name:'story.mp4',prompt:$('script').value}); return; }
   const inflight=scenes.map((_,i)=>i).filter(i=>jobs[i]&&jobs[i].id&&!jobs[i].done&&!jobs[i].failed);
   if(inflight.length) execute(inflight,true);
 }
@@ -671,9 +681,9 @@ document.querySelector('.wrap').addEventListener('change',save);
 let diskList=[];
 function renderDisk(){
   $('diskWrap').classList.toggle('hidden',!diskList.length);
-  $('disk').innerHTML=diskList.map(f=>`<div class="item" data-u="${f.url}" style="cursor:default"><span class="t" style="flex:1"><b>${new Date(f.ts).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</b><br><span class="s">${f.clips} scenes${f.narrated?' · narrated':''} · ${(f.size/1048576).toFixed(1)} MB</span></span><button class="btn" data-a="play" type="button">▶ Play</button><a class="btn" href="${f.url}?download=1" style="text-decoration:none">⬇</a></div>`).join('');
+  $('disk').innerHTML=diskList.map(f=>`<div class="item" data-u="${f.url}" style="cursor:default"><span class="t" style="flex:1"><b>${new Date(f.ts).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</b><br><span class="s">${f.clips} scenes${f.narrated?' · narrated':''} · ${(f.size/1048576).toFixed(1)} MB</span></span><button class="btn" data-a="play" type="button">▶ Play</button><a class="btn" href="${f.url}?download=1" style="text-decoration:none"><svg class=ic aria-hidden=true><use href=#i-download></use></svg></a></div>`).join('');
   $('disk').querySelectorAll('.item').forEach(el=>el.querySelector('[data-a=play]').onclick=()=>{
-    $('outPanel').classList.remove('hidden'); $('final').innerHTML=`<video controls autoplay loop playsinline src="${el.dataset.u}"></video><a class="btn" href="${el.dataset.u}?download=1" style="text-decoration:none;display:inline-block">⬇ Download MP4</a>`; mountShare($('final'),{url:el.dataset.u,name:'story.mp4',prompt:$('script').value});
+    $('outPanel').classList.remove('hidden'); $('final').innerHTML=`<video controls autoplay loop playsinline src="${el.dataset.u}"></video><a class="btn" href="${el.dataset.u}?download=1" style="text-decoration:none;display:inline-block"><svg class=ic aria-hidden=true><use href=#i-download></use></svg> Download MP4</a>`; mountShare($('final'),{url:el.dataset.u,name:'story.mp4',prompt:$('script').value});
     $('outPanel').scrollIntoView({behavior:'smooth'});
   });
 }

@@ -117,18 +117,51 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
     });
     return attempt(process.env.YTDLP_PATH || "yt-dlp", []);
   }
-  // background music: an uploaded track (work/shorts/music/<id>.*) or "pad", a soft generated chord bed (no rights issues)
+  // background music: an uploaded track (work/shorts/music/<id>.*) or one made right here from maths (ffmpeg
+  // aevalsrc), so there are never any rights issues. "pad" is the older soft chord bed, kept for saved settings.
   const MUSIC = path.join(DIR, "music");
   fs.mkdirSync(MUSIC, { recursive: true });
+  // b = position inside a beat of length L seconds; tones decay from each beat
+  const beat = (L) => `mod(t,${L})`;
+  const MOOD_EXPR = {
+    // 120 bpm: kick on every beat, off-beat hats, a bass line that moves every 2 bars
+    upbeat: `0.55*sin(2*PI*(45+90*exp(-25*${beat(0.5)}))*${beat(0.5)})*exp(-7*${beat(0.5)})` +
+      `+0.05*(random(1)-0.5)*exp(-60*mod(t+0.25,0.5))` +
+      `+0.16*sin(2*PI*110*if(lt(mod(t,4),2),1,if(lt(mod(t,4),3),1.335,1.189))*t)*(0.55+0.45*exp(-6*${beat(0.25)}))`,
+    // low drone, slow pulse, a soft clock tick: tension that builds
+    suspense: `(0.22*sin(2*PI*55*t)+0.12*sin(2*PI*82.41*t)+0.05*sin(2*PI*233.08*t))*(0.6+0.4*sin(2*PI*0.5*t))` +
+      `+0.12*sin(2*PI*1400*t)*exp(-90*${beat(0.5)})`,
+    // warm chords that change every 4 s, gently breathing
+    chill: `(0.15*sin(2*PI*220*t)+0.11*sin(2*PI*277.18*t)+0.1*sin(2*PI*329.63*t)+0.07*sin(2*PI*110*t))*if(lt(mod(t,8),4),1,0)` +
+      `+(0.15*sin(2*PI*196*t)+0.11*sin(2*PI*246.94*t)+0.1*sin(2*PI*293.66*t)+0.07*sin(2*PI*98*t))*if(lt(mod(t,8),4),0,1)`,
+    // big slow drums and a power chord
+    epic: `0.7*sin(2*PI*(40+60*exp(-18*${beat(1)}))*${beat(1)})*exp(-4*${beat(1)})` +
+      `+(0.12*sin(2*PI*73.42*t)+0.1*sin(2*PI*110*t)+0.08*sin(2*PI*146.83*t))*(0.7+0.3*sin(2*PI*0.25*t))`,
+    // bouncy plucks, like a cartoon
+    funny: `0.22*sin(2*PI*if(lt(mod(t,1),0.5),392,if(lt(mod(t,1),0.75),523.25,440))*t)*exp(-9*${beat(0.25)})` +
+      `+0.3*sin(2*PI*(60+60*exp(-30*${beat(0.5)}))*${beat(0.5)})*exp(-10*${beat(0.5)})`,
+  };
+  const MOODS = Object.keys(MOOD_EXPR);
   async function musicPath(m, dir, len) {
-    if (m === "pad") {
-      const f = path.join(dir, "pad.m4a");
-      const chord = "0.18*sin(2*PI*220*t)+0.14*sin(2*PI*277.18*t)+0.12*sin(2*PI*329.63*t)+0.08*sin(2*PI*110*t)";
-      await run(["-y", "-f", "lavfi", "-i", `aevalsrc='(${chord})*(0.6+0.4*sin(2*PI*0.25*t))':s=48000:d=${Math.ceil(len + 1)}`, "-af", "lowpass=f=1200,aecho=0.8:0.7:60:0.3", "-c:a", "aac", "-b:a", "128k", "pad.m4a"], dir);
+    if (m === "pad") m = "chill";
+    if (MOOD_EXPR[m]) {
+      const f = path.join(dir, `music-${m}.m4a`), soft = m === "upbeat" || m === "funny" ? "lowpass=f=5000" : "lowpass=f=1800";
+      await run(["-y", "-f", "lavfi", "-i", `aevalsrc='${MOOD_EXPR[m]}':s=48000:d=${Math.ceil(len + 1)}`, "-af", `${soft},aecho=0.8:0.6:50:0.25,alimiter=limit=0.8`, "-ac", "2", "-c:a", "aac", "-b:a", "128k", path.basename(f)], dir);
       return f;
     }
     const f = fs.readdirSync(MUSIC).find((n) => n.startsWith(m + "."));
     return f ? path.join(MUSIC, f) : null;
+  }
+  // sound effects, also made from maths: a sub boom for the hook, a rewind sweep into the story, a whoosh on cuts
+  const SFX = {
+    boom: "aevalsrc='0.9*sin(2*PI*(30+70*exp(-12*t))*t)*exp(-3.5*t)':s=48000:d=1.2",
+    rewind: "aevalsrc='0.35*sin(2*PI*(1800*exp(-5*t)+120)*t)*(1-t/0.5)':s=48000:d=0.5",
+    whoosh: "anoisesrc=d=0.45:c=pink:a=0.5:r=48000,afade=t=in:d=0.28,afade=t=out:st=0.28:d=0.17,bandpass=f=1800:width_type=o:w=2",
+  };
+  async function sfxPath(kind, dir) {
+    const f = `sfx-${kind}.wav`;
+    if (!fs.existsSync(path.join(dir, f))) await run(["-y", "-f", "lavfi", "-i", SFX[kind], "-ac", "2", f], dir);
+    return f;
   }
 
   function safeLink(u) {
@@ -244,9 +277,13 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       : range ? "" : `Watch this ${Math.round(duration)} s video${title ? ` ("${title}")` : ""}. `) +
     `Source frame size ${w}x${h}. ${CLOCK_NOTE}\n${WHAT_WORKS}${hint ? ` The creator asked for: ${hint}.` : ""}\n` +
     `Pick the single best moment and EDIT it into a ${min}-${max} second vertical Short: keep the strongest part, and cut out pauses, filler words, repetition and slow bits with jump cuts. The edit is a list of 1-4 pieces in time order, all from the same moment, each at least 2 seconds; together they must total ${min}-${max} seconds. Use one piece if it already flows. Never cut mid-word or mid-sentence. The first piece must open on the hook.\n` +
-    `Return ONLY this JSON, no other text:\n{"segments":[{"start":0,"end":0}],"framing":"crop","focus_x":0.5,"hook":"","title":"","description":"","hashtags":[],"thumbnail_time":0,"thumbnail_text":"","has_speech":true,"reason":""}\n` +
+    `Return ONLY this JSON, no other text:\n{"segments":[{"start":0,"end":0}],"teaser":{"start":0,"end":0},"mood":"","framing":"crop","focus_x":0.5,"hook":"","title":"","description":"","hashtags":[],"thumbnail_time":0,"thumbnail_text":"","has_speech":true,"reason":""}\n` +
     `Rules:\n- segments/thumbnail_time: seconds in the original video.\n` +
     `- framing: "crop" if the important action stays inside a central vertical strip (one person talking, one subject) - then focus_x is that subject's horizontal centre (0 = left edge, 1 = right edge). "fit" if important things span the width (gameplay with HUD, wide shots, on-screen text, burned-in subtitles, two people far apart).\n` +
+    `- teaser: 1-2 seconds of the most surprising or satisfying instant (the payoff, the reveal, the crash, the punchline) INSIDE the chosen pieces; it is flashed first as a cold open before the story starts. {"start":0,"end":0} if nothing stands out.
+` +
+    `- mood: the music that fits, one of: ${MOODS.join(", ")}.
+` +
     `- hook: on-screen text for the first 3 seconds, max 6 words, creates curiosity, no emojis; "" if the clip already hooks by itself.\n` +
     `- title: Shorts title, max 70 characters, punchy and honest, no hashtags.\n- description: 1-2 sentences plus a short call to action.\n` +
     `- hashtags: 3-6 relevant tags without "#", always include "shorts".\n- thumbnail_time: the most striking sharp frame inside the chosen pieces.\n- thumbnail_text: 2-4 bold words for the thumbnail.\n` +
@@ -256,12 +293,13 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
   const VO_RULES = {
     intro: "voiceover: exactly ONE line at start 0, 4-9 words, said like a creator teasing the clip (\"Watch what this guy does next\"), to be spoken over the first ~3 seconds.",
     full: "voiceover: commentary by an energetic but natural creator narrating this clip for TikTok: an opening hook line at start 0, then short lines (max ~2.5 words per second of the gap they sit in) placed ONLY in moments where nobody in the clip is speaking, building to the payoff; leave the payoff itself and any important speech un-narrated. 2-6 lines.",
+    story: "voiceover: tell this clip like a storytelling creator. The clip opens with a TEASER_S s flash of the payoff, then the story plays from the start. Line 1 at start 0, over the teaser: a curiosity hook, 3-7 words (\"Wait till you see what happens.\" / \"Nobody expected this.\"). Line 2 right after the teaser: lead into the story (\"So it happened like this.\" / \"Here's how it started.\"). Then 2-4 short lines recounting what is going on, in past tense like telling a friend, building suspense, placed ONLY where nobody in the clip is speaking (max ~2.5 words per second of the gap). Quiet or music-only stretches longer than 3 s MUST get a line, so the Short never goes silent. Let the payoff play un-narrated; optionally one short reaction line in the last 2 s. 3-7 lines in total.",
     auto: "voiceover: if people in the clip carry the story with their speech, write only ONE hook line at start 0 (4-9 words, over the first ~3 seconds). If there's little or no speech (gameplay, sports, scenery, action, music), narrate it like an energetic creator: a hook at start 0, then short lines only where nobody is speaking (max ~2.5 words per second of the gap), building to the payoff. 1-6 lines.",
   };
-  const captionPrompt = (len, vo) =>
+  const captionPrompt = (len, vo, teaser = 0) =>
     `This is a ${len.toFixed(1)} s vertical Short. Return ONLY JSON: {"captions":[{"start":0.0,"end":0.0,"text":""}]${vo ? ',"voiceover":[{"start":0.0,"text":""}]' : ""}}\n` +
     `captions: the speech in the clip as captions; each caption 1-4 words, in the spoken language, start/end in seconds from the clip start (accurate to 0.1 s), in order, not overlapping. Spoken words only (no song lyrics, no sound descriptions); [] if nobody speaks.\n` +
-    (vo ? `${VO_RULES[vo]} Never describe the obvious or say "in this video". Write it in the spoken language of the clip (English if none). start is seconds from the clip start.` : "");
+    (vo ? `${VO_RULES[vo].replace("TEASER_S", teaser.toFixed(1))} Never describe the obvious or say "in this video". Write it in the spoken language of the clip (English if none). start is seconds from the clip start.` : "");
 
   // ---------- editing ----------
   const even = (n) => Math.round(n / 2) * 2;
@@ -409,13 +447,21 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       fs.writeFileSync(path.join(dir, "opts.json"), JSON.stringify({ ...opts, file: path.basename(srcFile) }));
       // 2. sanity-check the edit
       const segs = cleanSegments(plan, lo, hi, min, max);
-      const start = segs[0].start, end = segs[segs.length - 1].end;
-      const len = segs.reduce((a, s) => a + s.end - s.start, 0);
+      // story voiceover: flash 1-2 s of the payoff first (a cold open), then tell it from the start
+      let tz = null;
+      if (opts.narration === "story") {
+        const a = toSec(plan.teaser && plan.teaser.start), b0 = toSec(plan.teaser && plan.teaser.end), b = Math.min(b0, a + 2);
+        if (b - a >= 0.8 && segs.some((x) => a >= x.start - 0.05 && b <= x.end + 0.05)) tz = { start: a, end: b };
+        else { const l = segs[segs.length - 1]; if (l.end - l.start >= 4) tz = { start: l.end - 2.5, end: l.end - 1 }; }
+      }
+      const pieces = tz ? [tz, ...segs] : segs;
+      const start = Math.min(...pieces.map((x) => x.start)), end = Math.max(...pieces.map((x) => x.end));
+      const len = pieces.reduce((a, s) => a + s.end - s.start, 0);
       const framing = plan.framing === "crop" ? "crop" : "fit";
       const focusX = Math.max(0, Math.min(1, Number(plan.focus_x) || 0.5));
       let thumbT = toSec(plan.thumbnail_time);
       if (!segs.some((s) => thumbT >= s.start && thumbT <= s.end)) thumbT = segs[0].start + (segs[0].end - segs[0].start) * 0.35;
-      job.plan = { start, end, framing, segments: segs, reason: plan.reason || "" };
+      job.plan = { start, end, framing, segments: segs, teaser: tz, mood: MOODS.includes(plan.mood) ? plan.mood : null, reason: plan.reason || "" };
 
       // 3. the edit: jump cuts between pieces, and a punch-in zoom that alternates every few seconds
       //    (the "beat" rhythm short-form editors use) so the picture never sits still for long.
@@ -433,7 +479,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       // frames while waiting its turn: gigabytes of memory on a 30 s clip, and the server killed ffmpeg.
       // Lengths are whole frames so the separately cut audio stays in sync.
       const FPS = 30, beats = [], audioSegs = [];
-      for (const s of segs) {
+      for (const s of pieces) {
         const F = Math.max(1, Math.round((s.end - s.start) * FPS)), k = zoom ? Math.max(1, Math.round(F / FPS / 4.5)) : 1;
         let f0 = 0;
         for (let i = 0; i < k; i++) {
@@ -443,6 +489,9 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
         }
         audioSegs.push({ a: s.start - start, b: s.start - start + F / FPS });
       }
+      // where each piece starts in the finished cut: the teaser's end gets the rewind sound, other joins a whoosh
+      const joins = []; { let t = 0; for (const x of audioSegs) { if (t > 0) joins.push(+t.toFixed(3)); t += x.b - x.a; } }
+      const teaserLen = tz ? joins[0] || 0 : 0;
       await pool(beats, 2, (b, i) => run(["-y", "-ss", b.t.toFixed(3), "-i", srcFile, "-filter_complex",
         frameFilter(src, framing, focusX, "[0:v]fps=30,", i) + (b.z ? `,scale=${zw}:${zh},crop=1080:1920:${zx}:${zy},setsar=1` : "") + ",format=yuv420p[v]",
         "-map", "[v]", "-frames:v", String(b.frames), "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "17", "-video_track_timescale", "15360", `beat${i}.mp4`], dir)
@@ -476,13 +525,13 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
 
       // 4. captions + voiceover script, from the finished cut (so timings match what viewers see)
       setStep(job, 4, 62);
-      const vo = ["intro", "full", "auto"].includes(opts.narration) ? opts.narration : null;
+      const vo = ["story", "intro", "full", "auto"].includes(opts.narration) ? opts.narration : null;
       let captions = [], lines = [];
       if ((src.audio && plan.has_speech !== false) || vo) {
         await run(["-y", "-i", "cut.mp4", "-vf", "scale=-2:360,fps=4", "-c:v", "libx264", "-preset", "veryfast", "-crf", "32",
           ...(src.audio ? ["-c:a", "aac", "-ac", "1", "-b:a", "64k"] : ["-an"]), "cap.mp4"], dir);
         try {
-          const c = await askVideo(job, path.join(dir, "cap.mp4"), captionPrompt(cutLen, vo), 4000);
+          const c = await askVideo(job, path.join(dir, "cap.mp4"), captionPrompt(cutLen, vo, teaserLen), 4000);
           captions = (Array.isArray(c.captions) ? c.captions : [])
             .map((x) => ({ start: +x.start, end: +x.end, text: String(x.text || "").trim() }))
             .filter((x) => x.text && x.end > x.start && x.start < cutLen)
@@ -501,7 +550,14 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
             .map((x) => ({ start: Math.max(0, +x.start || 0), text: String(x.text || "").replace(/\s+/g, " ").trim().slice(0, 300) }))
             .filter((x) => x.text && x.start < cutLen - 1)
             .sort((a, b) => a.start - b.start)
-            .slice(0, vo === "intro" ? 1 : 6);
+            .slice(0, vo === "intro" ? 1 : vo === "story" ? 7 : 6);
+          // story: always a hook over the teaser and a lead-in right after it, even if the AI left them out
+          if (vo === "story") {
+            if (!lines.some((l) => l.start < 0.5)) lines.unshift({ start: 0, text: "Wait till you see what happens." });
+            if (teaserLen && !lines.some((l) => l.start >= teaserLen - 0.4 && l.start <= teaserLen + 1.5))
+              lines.splice(1, 0, { start: teaserLen, text: "So it happened like this." });
+            lines.sort((a, b) => a.start - b.start);
+          }
         } catch (e) { job.warning = "Captions skipped: " + e.message; }
       }
 
@@ -561,30 +617,56 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
 
       // 6. final render: captions burned in; original sound ducked under the narrator; loudness to -14 LUFS
       setStep(job, 5, 76);
+      // sound effects: a boom under the hook, a rewind sweep where the teaser ends, a whoosh on the other cuts
+      const fx = [];
+      if (opts.sfx !== false && vo === "story") {
+        if (teaserLen) fx.push({ kind: "boom", at: 0, vol: 0.7 }, { kind: "rewind", at: Math.max(0, teaserLen - 0.35), vol: 0.5 });
+        for (const j of joins.slice(teaserLen ? 1 : 0)) fx.push({ kind: "whoosh", at: Math.max(0, j - 0.25), vol: 0.9 });
+      }
+      // 6a. narrator lines + sound effects -> one full-length track (voice.wav). Mixing short inputs that end early
+      //     straight into the big video graph deadlocks ffmpeg, so they are pre-mixed over silence of the clip's length.
+      const lay = [...voiced.map((l) => ({ file: l.file, t: ((l.end - l.start) * l.tempo).toFixed(3), f: `atempo=${l.tempo.toFixed(3)},afade=t=out:st=${Math.max(0, l.end - l.start - 0.08).toFixed(3)}:d=0.08,volume=1.5`, at: l.start })),
+        ...(await Promise.all(fx.map(async (f) => ({ file: await sfxPath(f.kind, dir), f: `volume=${f.vol}`, at: f.at }))))];
+      if (lay.length) {
+        const vin = ["-f", "lavfi", "-t", cutLen.toFixed(3), "-i", "anullsrc=r=48000:cl=stereo"];
+        lay.forEach((x) => vin.push(...(x.t ? ["-t", x.t] : []), "-i", x.file));
+        const ms = (s) => Math.round(s * 1000);
+        const g = lay.map((x, i) => `[${i + 1}:a]aresample=48000,aformat=channel_layouts=stereo,${x.f},adelay=${ms(x.at)}|${ms(x.at)}[l${i}];`).join("") +
+          `[0:a]${lay.map((_, i) => `[l${i}]`).join("")}amix=inputs=${lay.length + 1}:duration=first:normalize=0[a]`;
+        await run(["-y", ...vin, "-filter_complex", g, "-map", "[a]", "-c:a", "pcm_s16le", "voice.wav"], dir);
+      }
+      const mood = opts.music === "auto" ? (job.plan.mood || "chill") : opts.music;
+      const musicFile = mood && mood !== "none" ? await musicPath(mood, dir, cutLen) : null;
+      job.sound = { music: musicFile ? mood : null, effects: fx.length };
+      // 6b. the video: cut sound (ducked) + voice.wav + music, all full length
       const ins = ["-i", "cut.mp4"];
       if (!src.audio) ins.push("-f", "lavfi", "-t", cutLen.toFixed(3), "-i", "anullsrc=r=48000:cl=stereo");
-      voiced.forEach((l) => ins.push("-i", l.file));
-      const o = src.audio ? "0:a" : "1:a", first = src.audio ? 1 : 2;
-      const musicFile = opts.music && opts.music !== "none" ? await musicPath(opts.music, dir, cutLen) : null;
-      if (musicFile) ins.push("-stream_loop", "-1", "-i", musicFile);
-      const mIn = first + voiced.length;
-      // original sound: mute / low (25%) / keep (100%, dipped to 35% under the narrator). Under a hook voiceover
-      // it is muted for the first 3 s so the two voices don't fight.
-      const origVol = { mute: 0, low: 0.25, keep: 1 }[opts.orig] ?? 1, duckVol = Math.min(origVol, opts.orig === "keep" ? 0.35 : 0.22);
-      const hookVo = voiced.length > 0 && voiced[0].start < 1;
-      const mixEnd = musicFile ? `[mx];[${mIn}:a]aresample=48000,atrim=end=${cutLen.toFixed(3)},volume=0.12,afade=t=out:st=${Math.max(0, cutLen - 1.5).toFixed(2)}:d=1.5[mu];[mx][mu]amix=inputs=2:duration=first:normalize=0,` : ",";
-      // optional neon-glitch look goes under the captions, so the text stays sharp
-      let af = (opts.look === "glitch" ? glitchFilter("[0:v]", "[gv];[gv]", 1080, 1920, cutLen, cutLen) : "[0:v]") + `subtitles=subs.ass:fontsdir=${fontsArg(dir)}[v];`;
+      const o = src.audio ? "0:a" : "1:a";
+      let next = src.audio ? 1 : 2;
+      const vIn = lay.length ? next++ : null;
+      if (lay.length) ins.push("-i", "voice.wav");
+      const mIn = musicFile ? next++ : null;
+      if (musicFile) ins.push("-stream_loop", "-1", "-t", cutLen.toFixed(3), "-i", musicFile);
+      // original sound: mute / low (25%) / keep (100%). Under the narrator it glides down (0.25 s) to a quiet bed and
+      // back up (0.3 s) after, so the voice is always clear and the clip's sound never jumps.
+      const origVol = { mute: 0, low: 0.25, keep: 1 }[opts.orig] ?? 1, duckVol = Math.min(origVol, opts.orig === "keep" ? 0.18 : 0.1);
+      // optional neon-glitch look goes under the captions, so the text stays sharp; a quick white flash where the
+      // teaser cuts back to the start of the story
+      const flash = teaserLen ? `drawbox=c=white@0.85:t=fill:enable='between(t,${(teaserLen - 0.05).toFixed(2)},${(teaserLen + 0.07).toFixed(2)})',` : "";
+      let af = (opts.look === "glitch" ? glitchFilter("[0:v]", "[gv];[gv]", 1080, 1920, cutLen, cutLen) : "[0:v]") + `${flash}subtitles=subs.ass:fontsdir=${fontsArg(dir)}[v];`;
       if (voiced.length) {
-        const duck = voiced.map((l) => `between(t,${(l.start - 0.1).toFixed(2)},${(l.end + 0.2).toFixed(2)})`).join("+");
-        const v = `if(${duck},${duckVol},${origVol})`;
-        af += `[${o}]volume='${hookVo ? `if(lt(t,3),0,${v})` : v}':eval=frame[orig];`;
-        voiced.forEach((l, i) => {
-          const ms = Math.round(l.start * 1000);
-          af += `[${first + i}:a]aresample=48000,atempo=${l.tempo.toFixed(3)},atrim=end=${(l.end - l.start).toFixed(3)},afade=t=out:st=${Math.max(0, l.end - l.start - 0.08).toFixed(3)}:d=0.08,adelay=${ms}|${ms},volume=1.5[n${i}];`;
-        });
-        af += `[orig]${voiced.map((_, i) => `[n${i}]`).join("")}amix=inputs=${voiced.length + 1}:duration=first:normalize=0${mixEnd}loudnorm=I=-14:TP=-1.5:LRA=11[a]`;
-      } else af += `[${o}]volume=${origVol}${mixEnd}loudnorm=I=-14:TP=-1.5:LRA=11[a]`;
+        const ramp = (l) => `clip((t-(${(l.start - 0.3).toFixed(2)}))/0.25,0,1)*clip((${(l.end + 0.35).toFixed(2)}-t)/0.3,0,1)`;
+        const d = voiced.map(ramp).reduce((acc, x) => (acc ? `max(${acc},${x})` : x), "");
+        af += `[${o}]volume='${origVol}-${(origVol - duckVol).toFixed(3)}*${d}':eval=frame[orig];`;
+      } else af += `[${o}]volume=${origVol}[orig];`;
+      // speech = the clip's sound + the narrator. Music sits under it: it fills quiet stretches and is pushed down
+      // automatically (sidechain) whenever someone talks, so it never fights the voice.
+      af += vIn != null ? `[orig][${vIn}:a]amix=inputs=2:duration=first:normalize=0[sp];` : `[orig]anull[sp];`;
+      if (mIn != null) {
+        af += `[${mIn}:a]aresample=48000,aformat=channel_layouts=stereo,volume=0.3,afade=t=out:st=${Math.max(0, cutLen - 1.5).toFixed(2)}:d=1.5[mu];` +
+          `[sp]asplit[sp1][sp2];[mu][sp1]sidechaincompress=threshold=0.02:ratio=12:attack=20:release=450[mud];` +
+          `[sp2][mud]amix=inputs=2:duration=first:normalize=0,loudnorm=I=-14:TP=-1.5:LRA=11[a]`;
+      } else af += `[sp]loudnorm=I=-14:TP=-1.5:LRA=11[a]`;
       await run(["-y", ...ins, "-filter_complex", af, "-map", "[v]", "-map", "[a]", "-t", cutLen.toFixed(3),
         "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-profile:v", "high", "-movflags", "+faststart", "short.mp4"], dir);
 
@@ -603,7 +685,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
         voiceover: voiced.map((l) => l.text), candidates: job.candidates || 0,
         title: String(plan.title || srcTitle || "").slice(0, 100), description: String(plan.description || ""), hashtags: tags.slice(0, 8),
         look: opts.look, thumbnailText: tt, cost: +(job.cost || 0).toFixed(4), warning: job.warning || null,
-        hookBurned: !!hook, edit: job.edit || null, fit: job.fit || null,
+        hookBurned: !!hook, teaser: teaserLen ? +teaserLen.toFixed(1) : 0, sound: job.sound || null, edit: job.edit || null, fit: job.fit || null,
         opts: { orig: opts.orig, captions: opts.captions, capStyle: opts.capStyle, music: opts.music, safe: opts.safe, fit: opts.fit, narration: opts.narration, voice: opts.voice, len: opts.len },
       };
       saveMeta(id, meta);
@@ -650,7 +732,8 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
   const readOpts = (get) => ({
     len: get("len") === "30-60" ? "30-60" : "15-30",
     hint: String(get("hint") || "").slice(0, 300),
-    narration: ["auto", "intro", "full"].includes(get("narration")) ? get("narration") : "off",
+    // "story" (default): a cold-open teaser, a hook line, then the clip told like a story ("so it happened like this…")
+    narration: ["story", "auto", "intro", "full", "off"].includes(get("narration")) ? get("narration") : "story",
     voice: VOICES.some((v) => v.voice === get("voice")) ? get("voice") : VOICES[0].voice,
     edit: get("edit") === "clean" ? "clean" : "dynamic",
     from: parseTime(get("from")), to: parseTime(get("to")),
@@ -659,7 +742,9 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
     orig: ["mute", "low", "keep"].includes(get("orig")) ? get("orig") : "keep",
     captions: get("captions") === "off" ? "off" : "on",
     capStyle: ["bold", "box", "minimal"].includes(get("capStyle")) ? get("capStyle") : "bold",
-    music: get("music") === "pad" || /^m[a-f0-9]{16}$/.test(get("music") || "") ? get("music") : "none",
+    // generated music (no rights issues): auto = the mood the AI read from the clip
+    music: ["auto", ...MOODS, "pad", "none"].includes(get("music")) || /^m[a-f0-9]{16}$/.test(get("music") || "") ? get("music") : "auto",
+    sfx: get("sfx") !== "0" && get("sfx") !== "false",
     safe: get("safe") !== "0" && get("safe") !== "false",
   });
 

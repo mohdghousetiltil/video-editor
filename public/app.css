@@ -185,7 +185,7 @@ textarea.over{border-color:var(--pink) !important;background:rgba(255,46,147,.08
 .model,.chip{cursor:pointer;border-radius:0 !important;transition:transform .15s var(--ease),border-color .15s,background .15s,box-shadow .15s}
 .model{clip-path:polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,0 100%)}
 .chip{font-family:var(--font-ui);font-weight:600;letter-spacing:.04em;clip-path:polygon(8px 0,100% 0,calc(100% - 8px) 100%,0 100%);padding-left:16px !important;padding-right:16px !important}
-.model:hover,.chip:hover{transform:translateY(-2px);border-color:var(--acc) !important}
+@media(hover:hover){.model:hover,.chip:hover{transform:translateY(-2px);border-color:var(--acc) !important}}
 .model.sel{border-color:var(--acc) !important;background:linear-gradient(135deg,rgba(0,229,255,.18),rgba(139,92,255,.1)) !important;box-shadow:inset 0 0 0 1px rgba(0,229,255,.3),0 0 22px -6px rgba(0,229,255,.7)}
 .chip.sel{background:linear-gradient(135deg,var(--acc),var(--violet)) !important;border-color:transparent !important;color:#03101a !important;font-weight:700;box-shadow:0 0 18px -4px rgba(0,229,255,.9)}
 
@@ -365,14 +365,14 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 /* a thin neon beam sweeps down the screen now and then */
 body::before{content:"";position:fixed;left:0;right:0;top:-4px;height:3px;z-index:199;pointer-events:none;
   background:linear-gradient(90deg,transparent,var(--cy) 30%,#fff 50%,var(--mg) 70%,transparent);opacity:0;
-  box-shadow:0 0 18px var(--cy),0 0 40px rgba(255,46,147,.5);animation:cy-sweep 11s cubic-bezier(.5,0,.5,1) 2s infinite}
+  box-shadow:0 0 18px var(--cy),0 0 40px rgba(255,46,147,.5);animation:cy-sweep 30s cubic-bezier(.5,0,.5,1) 4s infinite}
 @keyframes cy-sweep{0%{transform:translateY(0);opacity:0}2%{opacity:.55}14%{transform:translateY(100vh);opacity:.35}15%,100%{transform:translateY(100vh);opacity:0}}
 
 /* page titles: chrome text with a cyan/magenta ghost that tears sideways every few seconds */
 .pagehead h1{position:relative;display:inline-block}
 .pagehead h1::before,.pagehead h1::after{content:attr(data-text);position:absolute;inset:0;pointer-events:none;-webkit-background-clip:initial;background:none;filter:none}
-.pagehead h1::before{color:var(--mg);text-shadow:-2px 0 var(--mg);clip-path:inset(0 0 100% 0);animation:cy-tear1 5.5s steps(1) infinite}
-.pagehead h1::after{color:var(--cy);text-shadow:2px 0 var(--cy);clip-path:inset(100% 0 0 0);animation:cy-tear2 5.5s steps(1) infinite}
+.pagehead h1::before{color:var(--mg);text-shadow:-2px 0 var(--mg);clip-path:inset(0 0 100% 0);animation:cy-tear1 16s steps(1) infinite}
+.pagehead h1::after{color:var(--cy);text-shadow:2px 0 var(--cy);clip-path:inset(100% 0 0 0);animation:cy-tear2 16s steps(1) infinite}
 @keyframes cy-tear1{0%,92%,100%{clip-path:inset(0 0 100% 0);transform:none}93%{clip-path:inset(10% 0 55% 0);transform:translate(-6px,-1px)}95%{clip-path:inset(60% 0 8% 0);transform:translate(4px,1px)}97%{clip-path:inset(30% 0 40% 0);transform:translate(-3px,0)}}
 @keyframes cy-tear2{0%,92%,100%{clip-path:inset(100% 0 0 0);transform:none}93.5%{clip-path:inset(55% 0 20% 0);transform:translate(5px,1px)}96%{clip-path:inset(5% 0 75% 0);transform:translate(-5px,-1px)}98%{clip-path:inset(70% 0 5% 0);transform:translate(2px,0)}}
 .pagehead p{font-family:var(--font-ui);letter-spacing:.02em}
@@ -386,14 +386,14 @@ h2{text-shadow:0 0 10px rgba(0,229,255,.45)}
 h2::after{content:"";flex:1;height:1px;margin-left:8px;background:linear-gradient(90deg,rgba(0,229,255,.35),transparent)}
 
 /* primary buttons jitter like a bad signal on hover */
-.primary:hover:not(:disabled){animation:cy-jit .35s steps(2) 1}
+@media(hover:hover){.primary:hover:not(:disabled){animation:cy-jit .35s steps(2) 1}}
 @keyframes cy-jit{0%{transform:translate(0)}25%{transform:translate(-2px,1px);filter:hue-rotate(40deg)}50%{transform:translate(2px,-1px)}75%{transform:translate(-1px,0);filter:hue-rotate(-30deg)}100%{transform:none}}
 .btn:focus-visible{outline:2px solid var(--yl);outline-offset:3px}
 
 /* sidebar: neon-tube brand with a blinking cursor, active item underline that glitches */
 .sb-brand span:last-child::after{content:"_";color:var(--mg);margin-left:2px;animation:cy-blink 1.1s steps(1) infinite}
 @keyframes cy-blink{50%{opacity:0}}
-.sb-logo{animation:cy-tube 7s linear infinite}
+.sb-logo{animation:cy-tube 18s linear infinite}
 @keyframes cy-tube{0%,96%,100%{filter:drop-shadow(0 0 10px rgba(0,229,255,.7))}97%{filter:drop-shadow(0 0 2px rgba(0,229,255,.2)) brightness(.6)}98.5%{filter:drop-shadow(0 0 16px rgba(255,46,147,.9))}}
 .sb-nav a.on .tx b{text-shadow:-1px 0 rgba(255,46,147,.7),1px 0 rgba(0,229,255,.7)}
 .sb-foot,.spend-k{font-family:var(--font-mono) !important}
@@ -477,28 +477,9 @@ small,.meta,.hint,.count,.sd-note{font-size:13px}
 button.chip{color:var(--text);font:inherit;background:var(--panel2);border:1px solid var(--line2);cursor:pointer}
 button.chip.sel{color:#04121a;background:var(--acc);border-color:var(--acc)}
 /* ---------- themes + enhance ---------- */
-.theme-bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;margin:-6px 0 18px;padding:10px 12px;border:1px solid var(--line2);background:rgba(8,11,24,.7)}
-.theme-chip{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:8px;font-family:var(--font-ui);font-weight:700;font-size:14px;letter-spacing:.04em;padding:4px 10px;border:1px solid var(--line2)}
-.theme-chip:hover,.theme-chip:focus-visible{border-color:var(--acc);box-shadow:var(--glow)}
 .tsw{display:inline-block;width:42px;height:10px;border:1px solid rgba(255,255,255,.15)}
-.theme-lock{flex-direction:row !important;align-items:center;gap:6px;color:var(--text) !important;font-size:14px !important;cursor:pointer}
-.theme-lock input{width:auto !important}
-.theme-lock.big{font-size:15px !important;margin-bottom:8px}
-.theme-warn{color:var(--warn);font-size:13px}
-.theme-dlg{width:min(860px,calc(100vw - 32px))}
-.theme-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin:12px 0}
-.tcard{border:1px solid var(--line2);padding:8px;display:flex;flex-direction:column;gap:6px;background:rgba(5,7,16,.6)}
-.tcard.on{border-color:var(--acc);box-shadow:var(--glow)}
-.tcard .tex{aspect-ratio:9/12;background-size:cover;background-position:center;display:grid;place-items:center;font-size:34px}
-.tcard .tsw{width:100%;height:6px}
-.tcard small{color:var(--mute)}
 .tact{display:flex;gap:6px;flex-wrap:wrap}.tact .btn{padding:4px 8px !important;min-height:0 !important;font-size:13px}
-.tform{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.tform label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--mute)}
-.tform textarea{min-height:60px}
 @media(max-width:700px){.tform{grid-template-columns:1fr}}
-.tstyle{display:flex;gap:14px;margin-top:14px;align-items:flex-start}
-.tsimg{width:90px;height:160px;flex:none;border:1px solid var(--line2);background:#000 center/cover no-repeat;display:grid;place-items:center;text-align:center;font-size:12px;color:var(--mute)}
 .enh{flex-basis:100%;margin-top:6px}
 .enh summary{cursor:pointer;font-weight:600;color:var(--acc)}
 .enh-opts{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:end;margin:10px 0}
@@ -538,7 +519,32 @@ button.chip.sel{color:#04121a;background:var(--acc);border-color:var(--acc)}
 .page-status{min-height:0;margin:8px 0 0;font-size:13px;color:var(--acc2)}
 .page-status.err{color:var(--err)}
 .page-status:empty{display:none}
-.theme-bar{padding:6px 10px;margin:-8px 0 16px;gap:8px 12px}
-.theme-bar .theme-warn,.theme-bar .meta{font-size:12px}
 #toasts{display:none !important}
 .inline-confirm{flex-basis:100%;width:100%;box-sizing:border-box}.inline-confirm.director-dlg{width:100%}
+
+/* Look picker: one row of chips + optional character box */
+.look-bar{display:flex;flex-direction:column;gap:8px;margin:-6px 0 18px;padding:10px 12px;border:1px solid var(--line2);background:rgba(8,10,22,.55)}
+.look-bar.inline{margin:0 0 14px;padding:0;border:0;background:none}
+.look-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.look-row .chips{margin:0}
+.look-lbl{font-family:var(--font-ui);font-weight:700;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
+.look-char-btn{all:unset;cursor:pointer;font-size:14px;color:var(--text);padding:4px 0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.look-char-btn:hover,.look-char-btn:focus-visible{color:var(--acc)}
+.look-char textarea{min-height:70px;width:100%}
+.look-char .tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px}
+/* Single clip model choice: Auto or one dropdown */
+.models.model-pick{grid-template-columns:1fr 1fr}
+.model.pick select{margin-top:6px;width:100%}
+@media(max-width:560px){.models.model-pick{grid-template-columns:1fr}}
+
+/* the hidden attribute always wins over display rules (labels are display:flex) */
+[hidden]{display:none !important}
+/* line icons (public/icons.js) in place of emojis */
+.ic{width:1.15em;height:1.15em;vertical-align:-.2em;flex:none;display:inline-block}
+.btn .ic,.chip .ic,.tab .ic{margin-right:2px}
+.empty .big .ic{width:44px;height:44px;opacity:.8}
+
+/* phones: a scroll that starts on a button scrolls (no tap delay, no stuck hover), and long-pressing the
+   tab bar or the More orb never selects text or opens the copy menu */
+button,.btn,.chip,.model,a,label{touch-action:manipulation}
+.tabbar,.tabbar *,.radial,.radial *,.sb-nav{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}

@@ -3,7 +3,7 @@
 // templates and the Help / About / Privacy / Spend texts. Everything hangs off window.studio.
 (function () {
   const S = (window.studio = {});
-  const esc = (S.esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])));
+  const esc = (S.esc = window.escH = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])));
   const money = (S.money = (n, d = 2) => (n == null || !isFinite(n) ? '—' : n > 0 && n < 0.5 * 10 ** -d ? '<$' + (10 ** -d).toFixed(d) : '$' + Number(n).toFixed(d)));
   const ls = {
     get: (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
@@ -75,7 +75,7 @@
     });
   };
 
-  // ---------- 🧠 the Director: asks the app's brain for the model and process, shows its plan, returns the approved one ----------
+  // ---------- the Director: asks the app's brain for the model and process, shows its plan, returns the approved one ----------
   S.AUTO = '__auto';
   S.director = async (req) => {
     const r = await fetch('/api/director', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req) });
@@ -95,7 +95,7 @@
       const d = inlinePanel('director-dlg', title);
       const paint = () => {
         const m = map[plan.model] || { name: plan.model }, total = totalOf(plan), over = res.budget && total > res.budget + 1e-9;
-        d.innerHTML = `<h3>🧠 ${esc(title)}</h3>
+        d.innerHTML = `<h3><svg class=ic aria-hidden=true><use href=#i-brain></use></svg> ${esc(title)}</h3>
           <p class="dir-why">${esc(plan.reason || '')}</p>
           <dl class="cf-rows"><dt>Model</dt><dd>${esc(m.name)} <span class="tier ${esc(m.tier || '')}">${S.tierLabel(m.tier)}</span> · quality ${m.q || '?'}/10</dd>
           <dt>Length</dt><dd>${plan.duration} s${n > 1 ? ' × ' + n : ''}</dd><dt>Resolution</dt><dd>${esc(plan.resolution)}</dd>
@@ -105,7 +105,7 @@
           ${over ? '<p class="cf-warn">This choice is over your budget.</p>' : ''}
           ${(res.warnings || []).length ? `<p class="meta">${res.warnings.map(esc).join('<br>')}</p>` : ''}
           ${(plan.alternatives || []).length ? `<div class="dir-alts"><span class="meta">Or switch to:</span>${plan.alternatives.map((a, i) => `<button type="button" class="btn" data-alt="${i}">${esc(a.name || a.model)} · ${money(totalOf({ ...plan, model: a.model, resolution: (map[a.model] || {}).res && map[a.model].res.includes(plan.resolution) ? plan.resolution : ((map[a.model] || {}).res || [])[0] }))}<small>${esc(a.why || '')}</small></button>`).join('')}</div>` : ''}
-          <p class="meta">Decided by ${res.source === 'brain' ? esc(res.brain || 'the AI') + ` (${money(res.brainCost, 4)})` : 'the built-in rules (the AI brain did not answer)'} from ${res.candidates} models.</p>
+          <p class="meta">Decided by ${res.source === 'rules' ? 'the built-in rules (the AI brain did not answer)' : esc(res.brain || 'the AI') + (res.cached ? ' (same plan as a moment ago, free)' : ` (${money(res.brainCost, 4)})`)} from ${res.candidates} models.</p>
           ${first ? '<p class="cf-warn" role="alert"><b>Heads up:</b> this charges real money to your account. The monthly cap in Settings stops paid calls once it is reached.</p>' : ''}
           <div class="cf-act"><button class="btn primary" data-yes type="button">Confirm · ${money(total)}</button><button class="btn" data-no type="button">Cancel</button></div>`;
         d.querySelectorAll('[data-alt]').forEach((b) => (b.onclick = () => {
@@ -127,14 +127,14 @@
     });
   };
 
-  // A page's own model <select> with a "🧠 Auto" option: when Auto is picked, ask the Director, show its plan, then
+  // A page's own model <select> with a "Auto" option: when Auto is picked, ask the Director, show its plan, then
   // set the page's model / length / resolution / sound fields to the approved plan. Resolves:
   //   { ok: true, plan: null }  → not on Auto, the page carries on as before (with its own confirmation)
   //   { ok: true, plan }        → approved; fields are set, the page skips its own confirmation
   //   { ok: false }             → cancelled or failed (message already shown)
   S.addAutoOption = (sel) => {
     if (!sel || sel.querySelector(`option[value="${S.AUTO}"]`)) return;
-    sel.insertAdjacentHTML('afterbegin', `<option value="${S.AUTO}">🧠 Auto: the Director picks the best within budget</option>`);
+    sel.insertAdjacentHTML('afterbegin', `<option value="${S.AUTO}">Auto: the Director picks the best within budget</option>`);
     sel.addEventListener('change', (e) => { if (e.isTrusted) delete sel.dataset.auto; }); // picked by hand: stays picked
   };
   S.autoSelect = async (sel, { page, prompt, aspect, budget, n = 1, startPicture, durSel, resSel, audioSel, title } = {}) => {
@@ -233,7 +233,7 @@
     const d = document.createElement('dialog');
     d.className = 'spend-dlg info-dlg';
     d.setAttribute('aria-label', title);
-    d.innerHTML = `<div class="sd-head"><h2>${title}</h2><button class="btn sd-x" data-x aria-label="Close">✕</button></div><div class="info-body">${body}</div>`;
+    d.innerHTML = `<div class="sd-head"><h2>${title}</h2><button class="btn sd-x" data-x aria-label="Close"><svg class=ic aria-hidden=true><use href=#i-x></use></svg></button></div><div class="info-body">${body}</div>`;
     document.body.append(d);
     d.addEventListener('click', (e) => { if (e.target === d || e.target.closest('[data-x]')) { d.close(); d.remove(); } });
     d.addEventListener('close', () => d.remove());
