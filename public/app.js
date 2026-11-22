@@ -75,6 +75,56 @@
   }).join('');
   document.body.append(scrim, radial);
 
+  // drag anywhere on the dial to spin it: the pages orbit the centre (labels stay upright), the dashed ring turns
+  // with them, and a flick keeps it coasting for a moment. A tap without movement still opens the page.
+  {
+    const items = [...radial.querySelectorAll('a')], ring = radial.querySelector('.radial-ring');
+    let rot = 0, drag = null, vel = 0, coast = 0, moved = false;
+    const place = () => {
+      items.forEach((el, k) => {
+        const a = (-90 + (360 * k) / n + rot) * Math.PI / 180;
+        el.style.setProperty('--x', (Math.cos(a) * R).toFixed(1) + 'px');
+        el.style.setProperty('--y', (Math.sin(a) * R).toFixed(1) + 'px');
+      });
+      ring.style.setProperty('--rot', rot.toFixed(1) + 'deg');
+    };
+    const angle = (e) => { const r = radial.getBoundingClientRect(); return Math.atan2(e.clientY - r.top, e.clientX - r.left) * 180 / Math.PI; };
+    radial.addEventListener('pointerdown', (e) => {
+      if (e.button || e.target.closest('.radial-x')) return;
+      cancelAnimationFrame(coast);
+      drag = { id: e.pointerId, last: angle(e), x: e.clientX, y: e.clientY, t: performance.now() }; vel = 0; moved = false;
+    });
+    radial.addEventListener('pointermove', (e) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      if (!moved) {
+        if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 8) return;
+        moved = true; radial.classList.add('spin');
+        try { radial.setPointerCapture(e.pointerId); } catch {}
+      }
+      const a = angle(e), now = performance.now();
+      let d = a - drag.last; if (d > 180) d -= 360; if (d < -180) d += 360;
+      rot += d; vel = d / Math.max(8, now - drag.t); drag.last = a; drag.t = now;
+      place();
+    });
+    const end = (e) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      drag = null;
+      if (!moved) return;
+      // coast: the spin slows down on its own
+      const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      let v = reduce ? 0 : Math.max(-0.6, Math.min(0.6, vel)), prev = performance.now();
+      const step = (now) => {
+        const dt = Math.min(40, now - prev); prev = now; rot += v * dt; v *= Math.pow(0.9, dt / 16); place();
+        if (Math.abs(v) > 0.01) coast = requestAnimationFrame(step); else radial.classList.remove('spin');
+      };
+      coast = requestAnimationFrame(step);
+    };
+    radial.addEventListener('pointerup', end);
+    radial.addEventListener('pointercancel', end);
+    // a drag is not a tap: don't open the page the finger happened to lift on
+    radial.addEventListener('click', (e) => { if (moved && e.target.closest('a')) { e.preventDefault(); e.stopPropagation(); moved = false; } }, true);
+  }
+
   const moreBtn = tabs.querySelector('.tb-more');
   const setOpen = (open, refocus, kb) => {
     if (open) { // centre of the visible screen, a little above the middle so the bottom labels clear the tab bar

@@ -210,21 +210,29 @@ module.exports = function storyRoutes(ctx) {
             if (extend) {
               const D = Math.max(vd, ad + 0.4), slow = vd ? Math.max(1, Math.min(1.5, D / vd)) : 1;
               const v = `[0:v]setpts=${slow.toFixed(3)}*PTS,${vf},tpad=stop_mode=clone:stop_duration=${Math.max(0, D - vd * slow + 0.1).toFixed(3)}[v]`;
-              const fc = audio ? `${v};[0:a]volume=0.25,apad[a0];[1:a]apad[a1];[a0][a1]amix=inputs=2:duration=longest:dropout_transition=0[a]` : `${v};[1:a]apad[a]`;
+              // padding always has a fixed length: an endless apad never stops on the server's older ffmpeg
+              const pd = `apad=whole_dur=${D.toFixed(3)}`;
+              const fc = audio ? `${v};[0:a]volume=0.25,${pd}[a0];[1:a]${pd}[a1];[a0][a1]amix=inputs=2:duration=longest:dropout_transition=0[a]` : `${v};[1:a]${pd}[a]`;
               args = ["-y", "-i", `raw${i}.mp4`, "-i", `nar${i}.mp3`, "-filter_complex", fc, "-map", "[v]", "-map", "[a]", "-t", D.toFixed(3), ...enc, `n${i}.mp4`];
             } else {
               const tempo = vd && ad ? Math.max(1, Math.min(1.35, (ad / vd) * 0.98)) : 1;
               if (vd && ad / tempo > vd + 0.2) st.warnings.push(`Scene ${i + 1}: narration is longer than the clip and was cut off. Shorten the text.`);
-              const a1 = `[1:a]atempo=${tempo.toFixed(3)},apad[a1]`;
+              // the scene lasts exactly as long as its clip: narration padded / trimmed to that length and an explicit
+              // -t. "apad + -shortest" alone never ended on the server's ffmpeg 5.1 and hung the whole stitch.
+              const len = vd ? ["-t", vd.toFixed(3)] : ["-shortest"];
+              const a1 = `[1:a]atempo=${tempo.toFixed(3)},${vd ? `apad=whole_dur=${vd.toFixed(3)},atrim=0:${vd.toFixed(3)}` : "apad"}[a1]`;
               const fc = audio
                 ? `[0:v]${vf}[v];[0:a]volume=0.25[a0];${a1};[a0][a1]amix=inputs=2:duration=first:dropout_transition=0[a]`
                 : `[0:v]${vf}[v];${a1.replace("[a1]", "[a]")}`;
-              args = ["-y", "-i", `raw${i}.mp4`, "-i", `nar${i}.mp3`, "-filter_complex", fc, "-map", "[v]", "-map", "[a]", "-shortest", ...enc, `n${i}.mp4`];
+              args = ["-y", "-i", `raw${i}.mp4`, "-i", `nar${i}.mp3`, "-filter_complex", fc, "-map", "[v]", "-map", "[a]", ...len, ...enc, `n${i}.mp4`];
             }
           } else {
             args = audio
               ? ["-y", "-i", `raw${i}.mp4`, "-vf", vf, ...enc, `n${i}.mp4`]
-              : ["-y", "-i", `raw${i}.mp4`, "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-vf", vf, "-shortest", ...enc, `n${i}.mp4`];
+              : await (async () => { // silent clip: add a silent track exactly as long as the clip
+                const vd = await mediaDuration(path.join(dir, `raw${i}.mp4`));
+                return ["-y", "-i", `raw${i}.mp4`, "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-vf", vf, ...(vd ? ["-t", vd.toFixed(3)] : ["-shortest"]), ...enc, `n${i}.mp4`];
+              })();
           }
           await run(args, dir);
           list += `file 'n${i}.mp4'\n`;

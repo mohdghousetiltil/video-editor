@@ -611,7 +611,8 @@ const server = http.createServer(async (req, res) => {
         const j = await r.json().catch(() => ({}));
         if (!r.ok) return send(res, r.status, { error: j.error?.message || "The writer failed, try again." });
         logSpend("Scripts", j.usage?.cost, model);
-        const out = (j.choices?.[0]?.message?.content || "").trim();
+        // plain spaces only: models sometimes send %20, non-breaking or zero-width spaces, which paste as %20 or junk
+        const out = (j.choices?.[0]?.message?.content || "").replace(/%20/g, " ").replace(/[  -   　]/g, " ").replace(/[​-‍⁠﻿]/g, "").trim();
         return out ? send(res, 200, { reply: out, cost: j.usage?.cost || 0, model }) : send(res, 502, { error: "The writer returned nothing, try again." });
       } catch (e) { return send(res, 502, { error: e.name === "TimeoutError" ? "The writer took too long, try again." : e.message }); }
     }

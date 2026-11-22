@@ -126,7 +126,11 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:200;op
 
   .radial-open .radial-scrim{opacity:1;pointer-events:auto;transition:opacity .22s ease-out}
   .radial-open .radial{pointer-events:auto}
-  .radial-open .radial-ring{transform:scale(1) rotate(0);opacity:1;transition:transform .45s var(--ease),opacity .2s ease-out}
+  .radial-open .radial{touch-action:none;cursor:grab}
+  .radial.spin{cursor:grabbing}
+  .radial.spin a,.radial.spin .radial-ring{transition:none !important}
+  .radial.spin a .ro{box-shadow:0 0 0 1px rgba(0,229,255,.45),0 0 24px -2px rgba(0,229,255,.8),0 10px 20px -8px #000}
+  .radial-open .radial-ring{transform:scale(1) rotate(var(--rot,0deg));opacity:1;transition:transform .45s var(--ease),opacity .2s ease-out}
   .radial-open .radial a{opacity:1;transform:translate(var(--x),var(--y)) scale(1);
     transition:transform .32s cubic-bezier(.3,1.4,.5,1) var(--d),opacity .18s ease-out var(--d)}
 }

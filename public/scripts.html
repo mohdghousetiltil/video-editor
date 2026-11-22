@@ -41,7 +41,19 @@
   @media(hover:hover){.idea:hover{transform:translateY(-2px);border-color:var(--n);box-shadow:0 0 18px -6px var(--n)}}
   .idea:focus-visible{outline:2px solid var(--n);outline-offset:2px}
   @media(max-width:520px){.ideas{grid-template-columns:1fr 1fr}.idea{padding:10px}.idea .ic{width:20px;height:20px}.idea b{font-size:14px}}
-  .ideas.small{display:flex;flex-wrap:wrap}.ideas.small .idea{grid-template-rows:auto;padding:7px 12px}.ideas.small small{display:none}.ideas.small .ic{grid-row:auto;width:18px;height:18px}
+  .ideas-head{display:flex;align-items:center;gap:8px;margin:14px 0 0;padding-top:10px;border-top:1px solid var(--line)}
+  .ideas-head button{background:none;border:0;color:var(--text);font:600 14px/1 var(--font-ui,Rajdhani,sans-serif);letter-spacing:.08em;text-transform:uppercase;display:inline-flex;align-items:center;gap:6px;padding:8px 4px;cursor:pointer;min-height:36px}
+  .ideas-head .ic{width:16px;height:16px}
+  #ideasTog .ic{transition:transform .2s;transform:rotate(90deg)}
+  #ideasTog[aria-expanded="false"] .ic{transform:rotate(0)}
+  #ideasTog .n{color:var(--mute);font-weight:500;letter-spacing:.04em}
+  #shuffle{margin-left:auto;color:var(--acc,#00e5ff)}
+  #shuffle .ic{transition:transform .3s}#shuffle:active .ic{transform:rotate(180deg)}
+  .ideas{margin-top:6px}
+  .ideas[hidden],#shuffle[hidden]{display:none}
+  .ideas .idea{animation:idea-in .3s both}
+  @keyframes idea-in{from{opacity:0;transform:translateY(6px)}}
+  @media(prefers-reduced-motion:reduce){.ideas .idea{animation:none}}
   .chat{display:flex;flex-direction:column;gap:12px;margin-bottom:14px}
   .msg{padding:12px 14px;border:1px solid var(--line);white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6}
   .msg.user{align-self:flex-end;max-width:85%;background:rgba(124,92,255,.14);border-color:rgba(124,92,255,.4)}
@@ -74,6 +86,7 @@
       <label>Format<select id="fmt"><option value="narrated">Narrated story</option><option value="pov">POV to camera</option><option value="dialogue">Scene with dialogue</option></select></label>
       <button class="btn" id="clear" type="button" style="margin-left:auto"><svg class=ic aria-hidden=true><use href=#i-refresh></use></svg> New chat</button>
     </div>
+    <div class="ideas-head"><button type="button" id="ideasTog" aria-expanded="true" aria-controls="starters"><svg class=ic aria-hidden=true><use href=#i-chevron></use></svg> Ideas <span class="n" id="ideasN"></span></button><button type="button" id="shuffle"><svg class=ic aria-hidden=true><use href=#i-dice></use></svg> Shuffle</button></div>
     <div class="ideas" id="starters" aria-label="Ideas to start"></div>
   </div>
   <div class="chat" id="chat" aria-live="polite"></div>
@@ -85,16 +98,60 @@
 </div>
 <script>
 const $=id=>document.getElementById(id), esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-// [icon, name, one-line hook, neon colour, prompt]
-const STARTERS=[
-  ['moon','Night shift','Something walks in at 3 AM','#b18cff','Write a horror story about something that happens on a night shift, with a twist at the end.'],
-  ['target','True crime','One detail nobody noticed','#ff4d6d','Write a mystery told like a true-crime story about one small detail nobody noticed.'],
-  ['alert','Broken rule','"Never open the door after 2"','#ffb020','Write a story that opens with a strange rule the narrator broke.'],
-  ['zap','Sci-fi twist','The last line flips it all','#00e5ff','Write a near-future sci-fi story where the last line changes everything.'],
-  ['brain','Mind game','Trust no narrator','#ff7ad9','Write a psychological thriller where the narrator slowly realises they are the one being watched.'],
-  ['sparkles','5 ideas first','Hooks to pick from','#c6ff00','Give me 5 suspense story ideas with a hook each.'],
+// [icon, name, one-line hook, prompt]. Six random ones are shown at a time, so every visit (and every user) gets a different set.
+const IDEAS=[
+  ['moon','Night shift','Something walks in at 3 AM','Write a horror story about something that happens on a night shift, with a twist at the end.'],
+  ['target','True crime','One detail nobody noticed','Write a mystery told like a true-crime story about one small detail nobody noticed.'],
+  ['alert','Broken rule','"Never open the door after 2"','Write a story that opens with a strange rule the narrator broke.'],
+  ['zap','Sci-fi twist','The last line flips it all','Write a near-future sci-fi story where the last line changes everything.'],
+  ['brain','Mind game','Trust no narrator','Write a psychological thriller where the narrator slowly realises they are the one being watched.'],
+  ['sparkles','5 ideas first','Hooks to pick from','Give me 5 suspense story ideas with a hook each.'],
+  ['camera','Found footage','The last file on the camera','Write a story told through the last video found on a missing hiker camera.'],
+  ['mic','Voicemail','A message from tomorrow','Write a story about a voicemail from the narrator own number, dated tomorrow.'],
+  ['castle','Hidden room','Not on the floor plan','Write a story about a family who finds a room in their house that is not on the floor plan.'],
+  ['waves','Deep sea','Something answers the sonar','Write a deep-sea suspense story where something answers the submarine sonar.'],
+  ['hourglass','Time loop','Same day, one change','Write a time-loop story where the narrator notices one thing is different every loop.'],
+  ['user','Doppelganger','Someone is living your life','Write a story where the narrator finds someone else living their life, and everyone believes them.'],
+  ['lock','Locked room','No way in, no way out','Write a locked-room mystery with a clue hidden in the first line.'],
+  ['footprints','Lost hiker','Tracks that just stop','Write a story about footprints in the snow that stop in the middle of a field.'],
+  ['link','Online stranger','The account knows too much','Write a story about an online stranger who knows things nobody was ever told.'],
+  ['heart','Dark romance','The perfect match is lying','Write a suspense story about a perfect first date where one small lie unravels everything.'],
+  ['flame','Urban legend','The street everyone avoids','Write a story about the urban legend every local in a small town refuses to talk about.'],
+  ['gem','Heist gone wrong','One of the crew is a fake','Write a heist story where the crew realises one of them is not who they say.'],
+  ['hand','Last confession','A deathbed secret','Write a story about a deathbed confession that changes how the narrator sees their whole family.'],
+  ['wind','Small town','Everyone leaves at sunset','Write a story about a town where everyone goes inside at sunset, and a newcomer who does not.'],
+  ['video','Livestream','Chat sees what they cannot','Write a story about a livestream where the chat sees something behind the streamer.'],
+  ['dice','The game','You cannot quit','Write a story about a game that a group of friends cannot stop playing.'],
+  ['coffee','Roommate','The new one never sleeps','Write a story about a new roommate who never seems to sleep.'],
+  ['wrench','Smart home','The house stops listening','Write a story where a smart home slowly stops obeying its owner.'],
+  ['person','Missing poster','The face is yours','Write a story where the narrator sees a missing-person poster with their own face on it.'],
+  ['surprised','Kid drawing','It draws what comes next','Write a story about a child whose drawings show things before they happen.'],
+  ['help','Survival','One rule kept them alive','Write a survival story built around a single rule that kept everyone alive.'],
+  ['clapper','Cold open','Start in the chaos','Write a story that opens in the middle of the most tense moment, then explains how we got there.'],
 ];
+const NEON=['#b18cff','#ff4d6d','#ffb020','#00e5ff','#ff7ad9','#c6ff00'];
+let shown=[];
+function dealIdeas(){
+  // 6 random ideas, none from the set on screen now
+  const pool=IDEAS.map((_,i)=>i).filter(i=>!shown.includes(i));
+  for(let i=pool.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [pool[i],pool[j]]=[pool[j],pool[i]]; }
+  shown=pool.slice(0,6);
+  $('starters').innerHTML=shown.map((k,p)=>{ const [i,l,h]=IDEAS[k]; return `<button type="button" class="idea" style="--n:${NEON[p]};animation-delay:${p*40}ms" data-k="${k}">${ic(i)}<b>${l}</b><small>${esc(h)}</small></button>`; }).join('');
+}
+// the list folds away; open by default until a chat starts, then the user's choice is remembered
+function setIdeas(open, remember){
+  $('starters').hidden=!open; $('shuffle').hidden=!open; $('ideasTog').setAttribute('aria-expanded',open);
+  $('ideasN').textContent=open?'':IDEAS.length;
+  if(remember) try{ localStorage.setItem('ideasOpen',open?'1':'0'); }catch{}
+}
 let msgs=[]; try{ msgs=JSON.parse(localStorage.getItem('scriptsChat')||'[]'); }catch{}
+// copied text is plain text with normal spaces (no %20, non-breaking or zero-width spaces, no page styling)
+const plain=t=>String(t).replace(/%20/g,' ').replace(/[  -   　]/g,' ').replace(/[​-‍⁠﻿]/g,'');
+msgs=msgs.map(m=>({...m,content:plain(m.content)}));
+document.addEventListener('copy',e=>{
+  const sel=String(getSelection()||''); if(!sel||!e.clipboardData) return;
+  e.clipboardData.setData('text/plain',plain(sel)); e.preventDefault();
+});
 const save=()=>{ try{ localStorage.setItem('scriptsChat',JSON.stringify(msgs.slice(-30))); }catch{} };
 // only the spoken lines go to Story mode (drops the TITLE / VISUAL / TWIST labels)
 function spoken(t){
@@ -124,7 +181,6 @@ function typeOut(el, text){
   });
 }
 function render(typeLast){
-  $('starters').classList.toggle('small',msgs.length>0);
   $('chat').innerHTML=msgs.length?msgs.map((m,i)=>`<div class="msg ${m.role}"><span class="txt">${typeLast&&i===msgs.length-1?'':esc(m.content)}</span>${m.role==='assistant'?`<div class="tools"><button class="btn" data-story="${i}">${ic('film')} Use in Story mode</button><button class="btn" data-copy="${i}">${ic('check')} Copy</button><button class="btn" data-more="${i}">Make it scarier</button><button class="btn" data-twist="${i}">Different twist</button></div>`:''}</div>`).join('')
     :'<div class="empty">Tap an idea or describe your own below.</div>';
 }
@@ -137,7 +193,7 @@ async function send(text){
   try{
     const r=await fetch('/api/scripts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:msgs,length:+$('len').value,format:$('fmt').value})});
     const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.error||'The writer failed, try again.');
-    msgs.push({role:'assistant',content:j.reply}); save(); render(true);
+    j.reply=plain(j.reply); msgs.push({role:'assistant',content:j.reply}); save(); render(true);
     $('meta').textContent='Last reply cost '+(j.cost?'$'+j.cost.toFixed(4):'under a cent')+'.';
     const all=$('chat').querySelectorAll('.msg.assistant'), last=all[all.length-1];
     last?.scrollIntoView({behavior:'smooth',block:'start'});
@@ -145,15 +201,18 @@ async function send(text){
   }catch(e){ msgs.pop(); save(); render(); $('input').value=text; $('err').textContent=e.message; }
   $('send').disabled=false;
 }
-$('starters').innerHTML=STARTERS.map(([i,l,h,c],k)=>`<button type="button" class="idea" style="--n:${c}" data-k="${k}">${ic(i)}<b>${l}</b><small>${esc(h)}</small></button>`).join('');
+dealIdeas();
+{ let saved=null; try{ saved=localStorage.getItem('ideasOpen'); }catch{} setIdeas(saved===null?!msgs.length:saved==='1'); }
+$('ideasTog').onclick=()=>setIdeas($('starters').hidden,true);
+$('shuffle').onclick=dealIdeas;
 $('send').onclick=()=>send($('input').value);
 $('input').addEventListener('keydown',e=>{ if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)) send($('input').value); });
-$('starters').onclick=e=>{ const b=e.target.closest('[data-k]'); if(b) send(STARTERS[b.dataset.k][4]); };
-$('clear').onclick=()=>{ if(msgs.length&&!confirm('Start a new chat? This one will be cleared.')) return; msgs=[]; save(); render(); $('err').textContent=''; };
+$('starters').onclick=e=>{ const b=e.target.closest('[data-k]'); if(b){ setIdeas(false); send(IDEAS[b.dataset.k][3]); } };
+$('clear').onclick=()=>{ if(msgs.length&&!confirm('Start a new chat? This one will be cleared.')) return; msgs=[]; save(); render(); $('err').textContent=''; setIdeas(true,true); dealIdeas(); };
 $('chat').onclick=async e=>{
   const b=e.target.closest('button'); if(!b) return;
   if(b.dataset.story){ try{ sessionStorage.setItem('scriptToStory',spoken(msgs[b.dataset.story].content)); }catch{} location.href='/story'; }
-  else if(b.dataset.copy){ try{ await navigator.clipboard.writeText(msgs[b.dataset.copy].content); b.innerHTML=ic('check')+' Copied'; }catch{ b.textContent='Copy failed'; } }
+  else if(b.dataset.copy){ try{ await navigator.clipboard.writeText(plain(msgs[b.dataset.copy].content)); b.innerHTML=ic('check')+' Copied'; }catch{ b.textContent='Copy failed'; } }
   else if(b.dataset.more) send('Rewrite it scarier: more dread, a tighter ticking clock, and a nastier final twist.');
   else if(b.dataset.twist) send('Keep the setup, but give it a completely different, more surprising twist ending.');
 };
