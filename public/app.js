@@ -215,7 +215,7 @@
   //  · type "glitch" anywhere outside a text box → the screen tears
   //  · phones: hold the centre orb 1.5 s without moving → OVERDRIVE; shake hard → tear (Android)
   //  · touch: 2-finger tap, 3-finger tap, hold the title, pull down 3 times, turn sideways and back (see below)
-  //  · iPhone home-screen app: a boot screen once a day
+  //  · iPhone home-screen app: a boot screen at most once an hour
   //  · after midnight the server light says NETRUNNER ONLINE
   (() => {
     let on = true;
@@ -311,7 +311,7 @@
     //  · two-finger tap → RGB split flash   · three-finger tap → the nav gets hacked
     //  · hold the page title 1 s → hologram title   · pull down hard at the top 3 times → SYSTEM REBOOT sweep
     //  · turn the phone sideways and back within 2 s → barrel roll
-    //  · home-screen app: a short boot screen the first time you open it each day (tap to skip)
+    //  · home-screen app: a boot screen for 3.756 s, at most once an hour (tap to skip)
     const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
     if (matchMedia('(pointer: coarse)').matches) {
       const rgb = () => { document.body.classList.remove('eg-rgb'); void document.body.offsetWidth; document.body.classList.add('eg-rgb'); setTimeout(() => document.body.classList.remove('eg-rgb'), 650); };
@@ -352,16 +352,22 @@
       so && so.addEventListener ? so.addEventListener('change', onTurn) : addEventListener('orientationchange', onTurn);
     }
     if (standalone) {
-      const day = new Date().toDateString();
-      let seen = null; try { seen = localStorage.getItem('egBoot'); localStorage.setItem('egBoot', day); } catch {}
-      if (seen !== day) {
+      // at most once an hour
+      const HOUR = 3600000, now = Date.now();
+      let last = 0; try { last = Number(localStorage.getItem('egBootAt')) || 0; } catch {}
+      if (now - last >= HOUR) {
+        try { localStorage.setItem('egBootAt', String(now)); } catch {}
         const boot = document.createElement('div');
         boot.className = 'eg-boot'; boot.setAttribute('aria-hidden', 'true');
-        const lines = ['VIDEO//STUDIO OS v3.1', 'LINKING NEURAL RENDER CORE ......... OK', 'LOADING DIRECTOR ........................ OK', 'CALIBRATING LOOKS ...................... OK', new Date().getHours() < 4 ? 'NETRUNNER MODE ...................... ON' : 'WELCOME BACK, CREATOR'];
-        boot.innerHTML = lines.map((l, i) => `<div style="--d:${i * 160}ms">${l}</div>`).join('');
+        // a different crew each boot
+        const CREWS = ['NETRUNNER', 'FIXER', 'TECHIE', 'NOMAD', 'SOLO', 'ROCKERBOY', 'MEDTECH', 'MEDIA'];
+        const crew = new Date().getHours() < 4 ? 'NETRUNNER' : CREWS[Math.floor(Math.random() * CREWS.length)];
+        const lines = ['VIDEO//STUDIO OS v3.1', 'LINKING NEURAL RENDER CORE ......... OK', `JACKING IN ${crew} CREW .............. OK`, 'CALIBRATING LOOKS ...................... OK', `WELCOME BACK, ${crew}`];
+        // on screen for 3.756 s: the lines type in over the first ~2.4 s, then it holds and fades
+        boot.innerHTML = lines.map((l, i) => `<div style="--d:${i * 600}ms">${l}</div>`).join('');
         const end = () => { boot.classList.add('out'); setTimeout(() => boot.remove(), 300); };
         boot.addEventListener('click', end);
-        document.body.append(boot); setTimeout(end, 1500);
+        document.body.append(boot); setTimeout(end, 3756);
       }
     }
 
