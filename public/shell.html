@@ -22,6 +22,12 @@
      home-screen app, leaving dead space under the tab bar. */
   #stage{position:fixed;top:0;right:0;bottom:0;left:0;background:#05060d}
   #app{position:absolute;top:0;left:0;width:100%;height:100%;border:0;display:block;background:#05060d}
+  /* measuring boxes (invisible): #vp is pinned to all four edges of the viewport, the others are 100vh / 100lvh / 100dvh tall */
+  #vp,#vh,#lvh,#dvh{position:fixed;left:0;top:0;width:0;visibility:hidden;pointer-events:none}
+  #vp{bottom:0}
+  #vh{height:100vh}
+  #lvh{height:100lvh}
+  #dvh{height:100dvh}
   /* measures the safe areas (notch, home bar): a frame may not be given them, so the pages ask for these numbers */
   #probe{position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;
     padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)}
@@ -33,6 +39,8 @@
 </head>
 <body data-shell>
 <div id="probe"></div>
+<div id="vp" aria-hidden="true"></div>
+<div id="vh" aria-hidden="true"></div><div id="lvh" aria-hidden="true"></div><div id="dvh" aria-hidden="true"></div>
 <div id="stage"><iframe id="app" title="Video Studio"
   allow="clipboard-write; clipboard-read; fullscreen; web-share; autoplay; camera; microphone; picture-in-picture"
   allowfullscreen></iframe></div>
@@ -50,7 +58,7 @@
   // An iPhone can report the notch / home-bar spacing as small or zero while the app is still starting, and the shell
   // never reloads. So the numbers are measured again a few times at launch, whenever a page finishes loading, and
   // whenever the phone could have changed them; the page is told only when they really changed.
-  function remeasure() { var was = JSON.stringify(window.__shell.insets); measure(); if (JSON.stringify(window.__shell.insets) !== was) push(); }
+  function remeasure() { var was = JSON.stringify(window.__shell.insets); measure(); if (JSON.stringify(window.__shell.insets) !== was) push(); if (window.__shell.fit) window.__shell.fit(); }
   [100, 400, 1000, 2500, 6000].forEach(function (t) { setTimeout(remeasure, t); });
   frame.addEventListener('load', function () { remeasure(); push(); setTimeout(remeasure, 300); });
   document.addEventListener('visibilitychange', remeasure); addEventListener('pageshow', remeasure); addEventListener('focus', remeasure);
@@ -66,18 +74,34 @@
   var to = new URLSearchParams(location.search).get('to') || '/';
   frame.src = /^\/(?![\/\\])/.test(to) ? to : '/';
   // the frame is given the box's real height in pixels (the box is pinned to the screen edges, so this is the whole screen)
-  var stage = document.getElementById('stage');
-  function fit() { var h = stage.getBoundingClientRect().height; if (h > 0) frame.style.height = Math.round(h) + 'px'; }
-  fit(); addEventListener('resize', fit); addEventListener('orientationchange', function () { setTimeout(fit, 300); });
+  var stage = document.getElementById('stage'), vp = document.getElementById('vp'), vhB = document.getElementById('vh'), lvhB = document.getElementById('lvh'), dvhB = document.getElementById('dvh');
+  // How tall the app is. Normally that is the viewport the browser reports. On an iPhone home-screen app the viewport can
+  // be shorter than the screen by exactly the top notch spacing (e.g. 879 of 926), which leaves dead space under the tab
+  // bar. There (and only there: navigator.standalone exists only on iOS) the app takes the tallest of what the browser
+  // offers, and the screen height when that is only a little taller.
+  function fit() {
+    var base = vp.getBoundingClientRect().height, H = base;
+    if (navigator.standalone === true) {
+      var best = Math.max(base, innerHeight, vhB.offsetHeight, lvhB.offsetHeight, dvhB.offsetHeight);
+      var portrait = innerHeight >= innerWidth, scr = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
+      if (scr > best && scr - best <= 64) best = scr;
+      H = best;
+    }
+    H = Math.round(H); window.__shell.height = H;
+    if (H > 0) { stage.style.bottom = 'auto'; stage.style.height = H + 'px'; frame.style.height = H + 'px'; }
+  }
+  window.__shell.fit = fit; fit(); addEventListener('resize', fit); addEventListener('orientationchange', function () { setTimeout(fit, 300); });
   if (window.ResizeObserver) new ResizeObserver(fit).observe(stage);
   // The screen numbers: a small readout that says which shell version this is and where the frame ends. Turn it on with
   // /shell?debug, or from Settings > "Show screen numbers" (inside the home-screen app there is no address bar).
-  var VERSION = 'shell 4', pre = null, timer = 0;
+  var VERSION = 'shell 5', pre = null, timer = 0;
   function readout() {
     var r = frame.getBoundingClientRect(), st = stage.getBoundingClientRect(), c = frame.contentWindow, doc = c && c.document, tb = doc && doc.querySelector('.tabbar');
     var tr = tb ? tb.getBoundingClientRect() : null;
     pre.textContent = [VERSION, 'inner ' + innerWidth + 'x' + innerHeight, 'client ' + document.documentElement.clientWidth + 'x' + document.documentElement.clientHeight, 'screen ' + screen.width + 'x' + screen.height,
       'insets ' + JSON.stringify(window.__shell.insets), 'stage ' + Math.round(st.top) + '..' + Math.round(st.bottom), 'frame ' + Math.round(r.top) + '..' + Math.round(r.bottom),
+      'vp box ' + Math.round(vp.getBoundingClientRect().height) + '  100vh ' + vhB.offsetHeight + '  lvh ' + lvhB.offsetHeight + '  dvh ' + dvhB.offsetHeight,
+      'outer ' + outerHeight + '  visual ' + (window.visualViewport ? Math.round(visualViewport.height) + ' @' + Math.round(visualViewport.offsetTop) : '?') + '  app height ' + window.__shell.height,
       'frame viewport ' + (c ? c.innerWidth + 'x' + c.innerHeight : '?'), 'tab bar ' + (tr ? Math.round(tr.top) + '..' + Math.round(tr.bottom) : '?'),
       '--sat ' + (doc ? doc.documentElement.style.getPropertyValue('--sat') || '(none)' : '?') + '  --sab ' + (doc ? doc.documentElement.style.getPropertyValue('--sab') || '(none)' : '?'),
       'home-screen app: ' + !!(navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches))].join(String.fromCharCode(10));
