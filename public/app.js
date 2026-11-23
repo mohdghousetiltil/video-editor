@@ -576,7 +576,7 @@
 
 // Hinglish mode: a hidden gesture, touch and hold the page title for 2 seconds (the same on iPhone and Android; at 1 second the
 // title shimmers, that is its own older easter egg, keep holding). The same gesture turns the mode off again. There is no button
-// for it anywhere, and it is called "Hindi mode" on screen. See studio.js for what the mode does.
+// for it anywhere, and the screen says "Diving in. Location: South Asia" when it switches on and "Public server reinstated" when it switches off. See studio.js for what the mode does.
 // While the title is held, nothing on the page can be selected (a phone starts a text selection on a long press and picks up
 // the text below the finger): the lock goes on the moment the finger lands and comes off a moment after it lifts.
 (function () {
@@ -591,8 +591,8 @@
     // a short neon flash in the middle of the screen, then the page reloads in the new mode
     h.classList.remove('eg-holo'); h.classList.add('eg-glitch'); setTimeout(() => h.classList.remove('eg-glitch'), 500);
     const d = document.createElement('div');
-    d.textContent = on ? 'HINDI MODE ON' : 'HINDI MODE OFF';
-    d.style.cssText = 'position:fixed;left:0;right:0;top:42%;z-index:2147483000;text-align:center;font:700 22px/1.2 var(--font-hud,Orbitron,sans-serif);letter-spacing:.18em;color:#00e5ff;text-shadow:0 0 12px #00e5ff,0 0 28px #ff2e93;pointer-events:none;animation:eg-glitch .5s steps(2) 2';
+    d.textContent = on ? 'DIVING IN. LOCATION: SOUTH ASIA' : 'PUBLIC SERVER REINSTATED';
+    d.style.cssText = 'position:fixed;left:0;right:0;top:42%;z-index:2147483000;text-align:center;font:700 17px/1.5 var(--font-hud,Orbitron,sans-serif);letter-spacing:.14em;padding:0 22px;box-sizing:border-box;color:#00e5ff;text-shadow:0 0 12px #00e5ff,0 0 28px #ff2e93;pointer-events:none;animation:eg-glitch .5s steps(2) 2';
     document.body.appendChild(d);
     setTimeout(() => location.reload(), 1100);
   }
