@@ -17,7 +17,9 @@
   // icons and buttons never open the copy / share callout on a long press.
   ['gesturestart', 'gesturechange'].forEach((t) => document.addEventListener(t, (e) => e.preventDefault(), { passive: false }));
   document.addEventListener('touchmove', (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
-  document.addEventListener('contextmenu', (e) => { if (e.target.closest && e.target.closest('.sb,.tabbar,.radial,.btn,button,.chip,svg,.look-card,.pagehead h1')) e.preventDefault(); });
+  document.addEventListener('contextmenu', (e) => { if (e.target.closest && e.target.closest('.sb,.tabbar,.radial,.btn,button,.chip,svg,.look-card,.pagehead')) e.preventDefault(); });
+  // starting a text selection inside the page heading (a long press) is refused as well
+  document.addEventListener('selectstart', (e) => { const n = e.target && (e.target.nodeType === 3 ? e.target.parentElement : e.target); if (n && n.closest && n.closest('.pagehead')) e.preventDefault(); }, true);
   document.addEventListener('dragstart', (e) => { if (e.target.closest && e.target.closest('.sb,.tabbar,.radial,svg')) e.preventDefault(); });
 
   const items = [
