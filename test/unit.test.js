@@ -420,3 +420,35 @@ test("story sound design: known ambiences and effects, nothing to mix without th
   assert.strictEqual(await mixStory(async () => { called = true; }, ".", { input: "a.mp4", output: "b.mp4", total: 10, music: "none", ambience: "none", cues: [] }), false);
   assert.strictEqual(called, false);
 });
+
+test("video limits: daily and weekly, counted in the user's time zone, videos only", () => {
+  const fs = require("fs"), os = require("os"), path = require("path");
+  const { createSpend, localDay, weekStart } = require("../lib/spend");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "spend-"));
+  let lim = { dailyCap: 1.5, weeklyCap: 10, tz: "Australia/Sydney" }, pending = 0;
+  const sp = createSpend({ DATA: dir, API: "x", getKey: () => "", getCap: () => 0, getLimits: () => lim, getPending: () => pending });
+  // Monday 23 Nov 2026, 14:00 in Sydney (UTC+11)
+  const now = Date.parse("2026-11-23T03:00:00Z");
+  assert.strictEqual(localDay(now, "Australia/Sydney"), "2026-11-23");
+  assert.strictEqual(weekStart(now, "Australia/Sydney"), "2026-11-23");
+  assert.strictEqual(weekStart(Date.parse("2026-11-29T12:00:00Z"), "Australia/Sydney"), "2026-11-23"); // 23:00 Sunday there: still last week
+  assert.strictEqual(weekStart(Date.parse("2026-11-29T13:30:00Z"), "Australia/Sydney"), "2026-11-30"); // 00:30 Monday there: a new week
+  fs.writeFileSync(path.join(dir, "spend-2026-11.json"), JSON.stringify([
+    { t: Date.parse("2026-11-23T01:00:00Z"), feature: "Story", cost: 0.9, id: "gen-vid-a", kind: "video" },       // today
+    { t: Date.parse("2026-11-22T13:30:00Z"), feature: "Single clips", cost: 0.3, id: "gen-vid-b" },              // 00:30 Monday in Sydney: today (an older row without kind)
+    { t: Date.parse("2026-11-22T10:00:00Z"), feature: "UGC", cost: 2, id: "gen-vid-c", kind: "video" },          // Sunday in Sydney: last week
+    { t: Date.parse("2026-11-23T01:00:00Z"), feature: "Story", cost: 5 },                                         // pictures / text: not video
+    { t: Date.parse("2026-11-23T01:00:00Z"), feature: "Shorts", cost: 4, id: "short-x" },                        // a Short: not video generation
+  ]));
+  const u = sp.limits(now);
+  assert.strictEqual(u.today, 1.2); assert.strictEqual(u.week, 1.2);
+  assert.strictEqual(sp.videoBlock(0.2, 0, now), null);                                   // 1.2 + 0.2 fits under 1.5
+  assert.match(sp.videoBlock(0.4, 0, now), /Daily video limit reached: \$1\.20 of \$1\.50 used today/);
+  pending = 0.2; assert.match(sp.videoBlock(0.15, 0, now), /plus about \$0\.20 for videos still being made/); pending = 0;
+  assert.match(sp.videoBlock(0.15, 0.2, now), /Daily/);                                    // a video being submitted right now counts too
+  assert.match(sp.videoBlock(2, 0, now), /more than the whole daily video limit/);
+  lim = { dailyCap: 0, weeklyCap: 1.3, tz: "Australia/Sydney" };                          // weekly only
+  assert.match(sp.videoBlock(0.2, 0, now), /Weekly video limit reached.*resets on Monday \(Sydney time\)/);
+  lim = { dailyCap: 0, weeklyCap: 0, tz: "Australia/Sydney" };                            // 0 = no limit
+  assert.strictEqual(sp.videoBlock(50, 0, now), null);
+});

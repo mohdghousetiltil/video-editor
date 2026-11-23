@@ -101,9 +101,13 @@
     <div class="grid">
       <label>Monthly cap in $ ($10 by default, 0 = no cap)<input id="monthlyCap" type="number" min="0" step="1" inputmode="decimal"></label>
       <div><div class="meta" id="spendNow">This month: …</div><div class="meta" id="capNote" style="margin-top:6px"></div></div>
+      <label>Daily video limit in $ (1.50 by default, 0 = none)<input id="dailyVideoCap" type="number" min="0" step="0.1" inputmode="decimal"></label>
+      <label>Weekly video limit in $ (10 by default, 0 = none)<input id="weeklyVideoCap" type="number" min="0" step="1" inputmode="decimal"></label>
+      <label>Time zone for "today" and the week<input id="tz" placeholder="Australia/Sydney" autocomplete="off"></label>
+      <div class="meta" id="videoNote"></div>
       <label>Skip the cost confirmation below<select id="confirmUnder"><option value="0">Never: always ask</option><option value="0.1">$0.10</option><option value="0.25">$0.25</option><option value="0.5">$0.50</option></select></label>
     </div>
-    <p class="meta">Paid steps stop once the cap is reached.</p>
+    <p class="meta">Paid steps stop once the monthly cap is reached. Making videos also stops at the daily and weekly video limits.</p>
   </div>
 
   <div class="panel">
@@ -131,7 +135,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 let S = null;
 function paint() {
   document.querySelectorAll('.prov').forEach((b) => b.classList.toggle('on', b.dataset.p === S.provider));
-  for (const k of ['textModel', 'visionModel', 'imageModel', 'directorModel', 'monthlyCap', 'keepDays', 'keepShortsDays']) if (document.activeElement !== $(k)) $(k).value = S[k];
+  for (const k of ['textModel', 'visionModel', 'imageModel', 'directorModel', 'monthlyCap', 'dailyVideoCap', 'weeklyVideoCap', 'tz', 'keepDays', 'keepShortsDays']) if (document.activeElement !== $(k)) $(k).value = S[k];
   document.querySelectorAll('[data-db]').forEach((el) => { if (document.activeElement !== el) el.value = (+((S.directorBudget || {})[el.dataset.db] || 0)).toFixed(2); });
   if ($('voice').options.length) $('voice').value = S.voice;
   $('eggs').checked = !!S.eggs;
@@ -159,12 +163,14 @@ fetch('/api/shorts/voices').then((r) => r.json()).then((j) => {
 fetch('/api/spend').then((r) => r.json()).then((j) => {
   const m = j.openrouter && j.openrouter.month != null ? j.openrouter.month : j.local.total;
   $('spendNow').textContent = 'This month so far: $' + m.toFixed(2);
+  const L = j.limits; if (L) $('videoNote').textContent = 'Video today: $' + (L.today + L.pending).toFixed(2) + (L.dailyCap > 0 ? ' of $' + L.dailyCap.toFixed(2) : '') + ' · this week: $' + (L.week + L.pending).toFixed(2) + (L.weeklyCap > 0 ? ' of $' + L.weeklyCap.toFixed(2) : '');
 }).catch(() => {});
 fetch('/api/queue').then((r) => r.json()).then((q) => { $('queue').textContent = `Render queue: ${q.active} running, ${q.waiting} waiting (${q.slots} at a time).`; }).catch(() => {});
 document.querySelectorAll('.prov').forEach((b) => b.onclick = () => save({ provider: b.dataset.p }));
 document.querySelectorAll('[data-db]').forEach((el) => el.addEventListener('change', () => save({ directorBudget: { [el.dataset.db]: parseFloat(el.value) || 0 } })));
 for (const k of ['textModel', 'visionModel', 'imageModel', 'directorModel', 'voice']) $(k).addEventListener('change', () => save({ [k]: $(k).value }));
-for (const k of ['monthlyCap', 'keepDays', 'keepShortsDays']) $(k).addEventListener('change', () => save({ [k]: +$(k).value }));
+for (const k of ['monthlyCap', 'dailyVideoCap', 'weeklyVideoCap', 'keepDays', 'keepShortsDays']) $(k).addEventListener('change', () => save({ [k]: +$(k).value }));
+$('tz').addEventListener('change', () => save({ tz: $('tz').value.trim() }));
 $('eggs').addEventListener('change', () => save({ eggs: $('eggs').checked }));
 $('confirmUnder').addEventListener('change', () => save({ confirmUnder: +$('confirmUnder').value }));
 fetch('/api/models').then((r) => r.json()).then((j) => {

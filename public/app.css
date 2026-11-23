@@ -247,7 +247,7 @@ video{border-radius:0}
 
 /* ---------- smooth page switches ---------- */
 /* Cross-document view transitions (Chrome/Edge 126+, Safari 18.2+): quick fade, nav stays put. */
-@view-transition{navigation:auto}
+@view-transition{navigation:none} /* replaced by the pixel screen in studio.js */
 .sb{view-transition-name:sidebar}
 .tabbar{view-transition-name:tabbar}
 body::after{view-transition-name:scan} /* keeps the scanlines on top of the nav during a switch (no flicker) */
@@ -602,7 +602,7 @@ img,svg,a{-webkit-user-drag:none}
 .btn,button,.chip{transition:transform .12s ease,filter .15s ease,background .15s,border-color .15s,box-shadow .15s}
 .btn:active:not(:disabled),.chip:active{transform:scale(.97)}
 /* smooth fade between pages (Chrome, Edge, Safari 18+) */
-@view-transition{navigation:auto}
+@view-transition{navigation:none} /* replaced by the pixel screen in studio.js */
 ::view-transition-old(root){animation:vt-out .14s ease-in both}
 ::view-transition-new(root){animation:vt-in .2s ease-out both}
 @keyframes vt-out{to{opacity:0}}
@@ -654,3 +654,35 @@ html{scroll-behavior:smooth}
 textarea{line-height:1.55;resize:vertical;overflow-y:auto}
 #script,#prompt,#mPrompt,#pdesc,#desc,#animPrompt,#bible{height:150px;min-height:110px !important}
 #notes,#input,[data-f="prompt"]{height:110px;min-height:80px !important}
+
+/* ---------- radio player: Play / Pause in the middle of the More menu (phone), sidebar player (desktop), pulse on the More button ---------- */
+@keyframes orb-beat{0%,100%{box-shadow:0 0 0 0 rgba(0,229,255,0),0 0 14px 0 rgba(0,229,255,.55)}50%{box-shadow:0 0 0 5px rgba(0,229,255,.18),0 0 26px 2px rgba(0,229,255,.85)}}
+@keyframes m-spin{to{transform:rotate(360deg)}}
+@keyframes scrim-l{from{box-shadow:inset 70px 0 50px -34px rgba(0,229,255,.65)}to{box-shadow:inset 0 0 0 0 rgba(0,229,255,0)}}
+@keyframes scrim-r{from{box-shadow:inset -70px 0 50px -34px rgba(0,229,255,.65)}to{box-shadow:inset 0 0 0 0 rgba(0,229,255,0)}}
+.m-play[data-s="loading"] svg,.radial-x[data-s="loading"] svg{animation:m-spin .9s linear infinite}
+.sb-music button{touch-action:manipulation;cursor:pointer;display:grid;place-items:center;border-radius:50%;color:var(--acc);background:rgba(3,6,16,.6);border:1px solid var(--line2);padding:0;font:inherit;width:30px;height:30px;flex:none}
+.sb-music button:active{transform:scale(.92)}
+.sb-music button:focus-visible{outline:none;box-shadow:0 0 0 2px var(--acc)}
+.sb-music svg{width:16px;height:16px}
+.m-name{font-family:var(--font-ui);font-weight:700;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+.sb-music{display:flex;align-items:center;gap:8px;margin-top:auto;padding:9px 10px;border:1px solid var(--line2);background:rgba(8,11,24,.9)}
+.sb-music+.sb-foot{margin-top:0}
+.sb-music .sm-play{border-color:var(--acc);box-shadow:0 0 10px rgba(0,229,255,.45)}
+.sb-music .m-name{order:3;flex:1;min-width:0;font-size:11px;line-height:1.25}
+.sb-music .m-prev{order:0}.sb-music .m-play{order:1}.sb-music .m-next{order:2}
+.radial-station{display:none}
+@media(max-width:900px){
+  .sb-music{display:none}
+  .radial-scrim.flash-l{animation:scrim-l .4s ease-out}.radial-scrim.flash-r{animation:scrim-r .4s ease-out}
+  /* the station name sits under the Play / Pause button, inside the dial */
+  .radial-station{display:block;position:absolute;left:-70px;width:140px;top:50px;text-align:center;pointer-events:none;opacity:0;transition:opacity .2s}
+  body.radial-open .radial-station.show{opacity:1} /* only while the menu is open */
+  .radial-station b{display:block;font:700 11px/1.2 var(--font-ui);letter-spacing:.08em;text-transform:uppercase;color:var(--text);text-shadow:0 1px 6px #000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .radial-station span{display:block;font:600 10px/1.2 var(--font-ui);letter-spacing:.08em;text-transform:uppercase;color:var(--acc);opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  body.music-on .radial-x{box-shadow:0 0 16px rgba(0,229,255,.8),inset 0 0 12px rgba(0,229,255,.45)}
+  .radial-x svg{width:22px;height:22px}
+  body.music-on .tb-orb{animation:orb-beat 1.8s ease-in-out infinite}
+  body.radial-open .tb-orb{animation:none}
+}
+@media(prefers-reduced-motion:reduce){body.music-on .tb-orb,.m-play[data-s="loading"] svg,.radial-x[data-s="loading"] svg,.radial-scrim.flash-l,.radial-scrim.flash-r{animation:none !important}}

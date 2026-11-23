@@ -1,6 +1,57 @@
 // Shared page helpers (loaded in <head>, before each page's own script): model table, total-cost lines, the
 // "this costs money" confirmation, form memory, job progress (stage + elapsed time, no fake countdown), presets,
 // templates and the Help / About / Privacy / Spend texts. Everything hangs off window.studio.
+// ---------- page changes: a quick blur between pages, about 0.008 s in all. Tapping a tab blurs the screen (0.004 s), the
+// next page opens under the same blur and it clears (0.004 s). It is a screen overlay (a filter on the page itself
+// would make the fixed tab bar jump) and runs first, in <head>, so the new page is blurred before its first paint.
+// Nothing happens on a first visit, with reduced motion, or for outside links. ----------
+(function () {
+  const doc = document.documentElement;
+  if (!doc || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const OUT_MS = 4, IN_MS = 4, BLUR = 9, FLAG = 'pxNav';
+  const flag = (v) => { try { v ? sessionStorage.setItem(FLAG, String(Date.now())) : sessionStorage.removeItem(FLAG); } catch {} };
+  const flagged = () => { try { return Date.now() - Number(sessionStorage.getItem(FLAG) || 0) < 6000; } catch { return false; } };
+  let el = null, safety = 0;
+  const set = (blur, ms) => {
+    const f = `blur(${blur}px)`, bg = blur ? 'rgba(5,6,13,.22)' : 'rgba(5,6,13,0)';
+    el.style.transition = ms ? `backdrop-filter ${ms}ms linear,-webkit-backdrop-filter ${ms}ms linear,background-color ${ms}ms linear` : 'none';
+    el.style.backdropFilter = el.style.webkitBackdropFilter = f; el.style.backgroundColor = bg;
+  };
+  function make(blur) {
+    if (el) return;
+    el = document.createElement('div'); el.setAttribute('aria-hidden', 'true');
+    el.style.cssText = 'position:fixed;inset:0;z-index:2147483000;pointer-events:none;';
+    set(blur, 0); doc.appendChild(el); void el.offsetWidth; // painted at this strength before any change
+  }
+  function remove() { clearTimeout(safety); if (el) { el.remove(); el = null; } }
+
+  // arriving after a tab change: start blurred, then clear
+  if (flagged()) {
+    flag(false); make(BLUR);
+    const clear = () => { if (!el) return; set(0, IN_MS); setTimeout(remove, IN_MS + 30); };
+    const go = () => (document.readyState === 'loading' ? addEventListener('DOMContentLoaded', clear, { once: true }) : clear());
+    if (document.prerendering) document.addEventListener('prerenderingchange', go, { once: true }); else go();
+    safety = setTimeout(remove, 2500); // never leave the screen blurred
+  }
+  // coming back from the back/forward cache: never show a stale blur
+  addEventListener('pageshow', (e) => { if (e.persisted) { remove(); flag(false); } });
+
+  // leaving: a tap on an inside link blurs the screen first, then the page changes
+  document.addEventListener('click', (e) => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const a = e.target.closest && e.target.closest('a[href]');
+    if (!a || a.target === '_blank' || a.hasAttribute('download')) return;
+    let u; try { u = new URL(a.href, location.href); } catch { return; }
+    if (u.origin !== location.origin || /^\/api\//.test(u.pathname)) return;
+    if (u.pathname === location.pathname && u.search === location.search) return; // same page / #anchor
+    if (el) return; // already going somewhere
+    e.preventDefault();
+    flag(true); make(0); set(BLUR, OUT_MS);
+    setTimeout(() => { location.href = u.href; }, OUT_MS + 1);
+    safety = setTimeout(() => { remove(); flag(false); }, 5000); // navigation didn't happen: clear the blur
+  }, false);
+})();
+
 (function () {
   const S = (window.studio = {});
   const esc = (S.esc = window.escH = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])));

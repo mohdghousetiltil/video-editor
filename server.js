@@ -126,7 +126,12 @@ const PORT = process.env.PORT || 3000;
 const ENHANCE_MODEL = process.env.ENHANCE_MODEL || "nvidia/nemotron-3-super-120b-a12b";
 const API = "https://openrouter.ai/api/v1";
 const settings = require("./lib/settings")(DATA);
-const spend = createSpend({ DATA, API, getKey: () => KEY, getCap: () => settings.get().monthlyCap });
+const spend = createSpend({ DATA, API, getKey: () => KEY, getCap: () => settings.get().monthlyCap,
+  getLimits: () => ({ dailyCap: settings.get().dailyVideoCap, weeklyCap: settings.get().weeklyVideoCap, tz: settings.get().tz }),
+  getPending: () => pendingVideoCost() });
+// price of videos that were submitted but are not finished yet (they are only logged as spend once they complete)
+const pendingVideoCost = () => { let s = 0; for (const j of jobs.values()) if (j && j.estimate > 0 && !["completed", "failed", "cancelled", "expired"].includes(j.status) && Date.now() - j.startedAt < 3 * 3600000) s += j.estimate; return s; };
+let videoReserved = 0; // being submitted right now (a few seconds), so two quick requests cannot both slip under the limit
 const logSpend = spend.log;
 const prices = createPrices({ API, getKey: () => KEY });
 const history = createHistory(DATA);
@@ -404,6 +409,14 @@ const server = http.createServer(async (req, res) => {
       // end frame (Kling, Seedance, Veo, Wan…): the clip ends on this picture, so the next scene can start from it
       if (typeof b.last_frame_image === "string" && /^data:image\/(jpeg|png|webp);base64,/.test(b.last_frame_image) && (live.frames || []).includes("last_frame"))
         body.frame_images = [...(body.frame_images || []), { type: "image_url", image_url: { url: b.last_frame_image }, frame_type: "last_frame" }];
+      // Daily and weekly video limits (Settings): refused here, before anything is charged
+      {
+        const perSec = (live.price && live.price[body.resolution || (live.res || [])[0]] || [0, 0])[body.generate_audio === false ? 1 : 0] || 0;
+        const est = perSec * (body.duration || modelsLib.defaultDur(live) || 0);
+        const lim = spend.videoBlock(est, videoReserved);
+        if (lim) return send(res, 429, { error: lim, limit: true });
+        videoReserved += est; res.once("close", () => { videoReserved = Math.max(0, videoReserved - est); });
+      }
       const route = providers.pickRoute(model, { orAvailable: live.live !== false });
       let extJob = null;
       const submit = async () => {
@@ -787,7 +800,7 @@ const server = http.createServer(async (req, res) => {
       if (j.videoUrl) job.videoUrl = j.videoUrl;
       if (j.status === "failed") job.error = typeof j.error === "string" ? j.error : j.error?.message || "Generation failed";
       const cost = j.usage?.cost ?? (j.status === "completed" && job.provider ? job.estimate : undefined);
-      if (j.status === "completed") logSpend(job.feature || "Video clips", cost, job.model, id, job.provider);
+      if (j.status === "completed") logSpend(job.feature || "Video clips", cost, job.model, id, job.provider, "video");
       jobs.set(id, job);
       if (history.get(id) || j.status === "completed") history.put(id, { kind: history.get(id)?.kind || FEATURE_KIND[job.feature] || "clip", model: job.model, status: j.status, error: job.error, cost, url: `/api/video/${id}`, thumb: `/api/video/${id}/thumb.jpg`, ...(history.get(id) ? {} : { title: "Fetched job " + id.slice(-8) }) });
       const ty = MODELS[job.model]?.typical;

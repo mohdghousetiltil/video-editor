@@ -73,7 +73,10 @@
     return `<a role="menuitem" href="${i[0]}" draggable="false" class="${i[0] === here ? 'on' : ''}" style="--x:${(Math.cos(a) * R).toFixed(1)}px;--y:${(Math.sin(a) * R).toFixed(1)}px;--d:${k * 40}ms">` +
       `<span class="ro">${i[2]}</span><b>${i[1]}</b></a>`;
   }).join('');
+  radial.style.setProperty('--r', R + 'px');
   document.body.append(scrim, radial);
+  // radio player (controls under the dial and in the sidebar)
+  { const m = document.createElement('script'); m.src = '/music.js'; m.defer = true; document.head.appendChild(m); }
 
   // drag anywhere on the dial to spin it: the pages orbit the centre (labels stay upright), the dashed ring turns
   // with them, and a flick keeps it coasting for a moment. A tap without movement still opens the page.
@@ -139,7 +142,18 @@
   };
   const isOpen = () => document.body.classList.contains('radial-open');
   moreBtn.onclick = (e) => setOpen(!isOpen(), false, e.detail === 0);
-  scrim.onclick = () => setOpen(false);
+  // Outside the dial: a tap on the left or right of the screen changes the music station (previous / next) while music
+  // plays, and does nothing when it is off. A tap straight above or below the dial closes the menu (so does the More button).
+  scrim.onclick = (e) => {
+    const dx = e.clientX - radial.getBoundingClientRect().left;
+    if (Math.abs(dx) <= 60) return setOpen(false);
+    const r = window.studioRadio;
+    if (!r || !r.on) return;
+    dx < 0 ? r.prev() : r.next();
+    const c = dx < 0 ? 'flash-l' : 'flash-r';
+    scrim.classList.remove('flash-l', 'flash-r'); void scrim.offsetWidth; scrim.classList.add(c);
+    setTimeout(() => scrim.classList.remove(c), 400);
+  };
   radial.querySelector('.radial-x').onclick = () => setOpen(false, true);
   document.addEventListener('keydown', (e) => {
     if (!isOpen()) return;
@@ -242,6 +256,7 @@
           : '<p class="sd-note">No monthly cap set. <a href="/settings">Set one in Settings</a> so paid calls stop at a limit you choose.</p>') +
         (lim ? `<div class="sd-lim"><div class="sd-lim-t"><span>API key limit (set at openrouter.ai)</span><span>${money(used, 2)} of ${money(lim, 2)} used · ${money(or.keyRemaining, 2)} left on key</span></div><div class="spend-bar${used / lim > .85 ? ' hot' : ''}"><i style="width:${Math.min(100, (used / lim) * 100)}%"></i></div></div>` : '') +
         `<p class="sd-note">The month total and credit come straight from OpenRouter (calendar month, UTC) and include everything this key spent, also outside this app. They are the numbers that count.</p>` : '') +
+      (j.current && j.limits && (j.limits.dailyCap > 0 || j.limits.weeklyCap > 0) ? (() => { const Lm = j.limits, row = (label, used, cap, tail) => cap > 0 ? `<div class="sd-lim"><div class="sd-lim-t"><span>${label}</span><span>${money(used, 2)} of ${money(cap, 2)} · ${money(Math.max(0, cap - used), 2)} left${tail}</span></div><div class="spend-bar${used / cap > .85 ? ' hot' : ''}"><i style="width:${Math.min(100, (used / cap) * 100)}%"></i></div></div>` : ''; return row('Video limit today', Lm.today + Lm.pending, Lm.dailyCap, ' · <a href="/settings">change</a>') + row('Video limit this week', Lm.week + Lm.pending, Lm.weeklyCap, ''); })() : '') +
       `<h3>App log (estimate) <small>${money(L.total)} recorded by this app</small></h3>` +
       (L.byProvider && Object.keys(L.byProvider).length > 1 ? `<p class="sd-note">By provider: ${Object.entries(L.byProvider).map(([k, v]) => `${k === 'fal' ? 'fal.ai' : k === 'byteplus' ? 'BytePlus' : 'OpenRouter'} ${money(v)}`).join(' · ')}</p>` : '') +
       (j.current && or.month != null && Math.abs(or.month - ((L.byProvider || {}).openrouter ?? L.total)) >= 0.01 ? `<p class="sd-note">${money(Math.abs(or.month - L.total), 2)} ${or.month > L.total ? 'not in the app log: calls made elsewhere with this key, or before the log started' : 'more in the app log than OpenRouter reports: voice costs are estimates and OpenRouter can lag a few minutes'}.</p>` : '') +

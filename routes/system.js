@@ -47,7 +47,7 @@ module.exports = function systemRoutes(ctx) {
       const or = current && getKey() ? await spend.openrouter(url.searchParams.has("fresh")) : null;
       const cap = Number(settings.get().monthlyCap) || 0;
       const fal = current && process.env.FAL_KEY ? await falCredit(url.searchParams.has("fresh")) : null;
-      return send(res, 200, { month: m, current, openrouter: or, fal, local: spend.summarise(spend.read(m)), months, cap, capUsed: current ? await spend.monthTotal() : null }), true;
+      return send(res, 200, { month: m, current, openrouter: or, fal, local: spend.summarise(spend.read(m)), months, cap, capUsed: current ? await spend.monthTotal() : null, limits: current ? spend.limits() : null }), true;
     }
     if (req.method === "GET" && url.pathname === "/api/prices") return send(res, 200, { prices: await prices() }), true;
     // what's running and waiting: render slots (Story stitches, Shorts) plus video generations still in progress
