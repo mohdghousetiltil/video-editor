@@ -47,6 +47,14 @@
   }
   function push() { try { frame.contentWindow.postMessage({ shell: 'insets', insets: window.__shell.insets }, location.origin); } catch (e) {} }
   measure();
+  // An iPhone can report the notch / home-bar spacing as small or zero while the app is still starting, and the shell
+  // never reloads. So the numbers are measured again a few times at launch, whenever a page finishes loading, and
+  // whenever the phone could have changed them; the page is told only when they really changed.
+  function remeasure() { var was = JSON.stringify(window.__shell.insets); measure(); if (JSON.stringify(window.__shell.insets) !== was) push(); }
+  [100, 400, 1000, 2500, 6000].forEach(function (t) { setTimeout(remeasure, t); });
+  frame.addEventListener('load', function () { remeasure(); push(); setTimeout(remeasure, 300); });
+  document.addEventListener('visibilitychange', remeasure); addEventListener('pageshow', remeasure); addEventListener('focus', remeasure);
+  if (window.visualViewport) visualViewport.addEventListener('resize', remeasure);
   addEventListener('resize', function () { measure(); push(); });
   addEventListener('orientationchange', function () { setTimeout(function () { measure(); push(); }, 300); });
   // a page reports its address and title: the address bar and the app switcher follow the page, not "/shell"
@@ -64,14 +72,14 @@
   if (window.ResizeObserver) new ResizeObserver(fit).observe(stage);
   // The screen numbers: a small readout that says which shell version this is and where the frame ends. Turn it on with
   // /shell?debug, or from Settings > "Show screen numbers" (inside the home-screen app there is no address bar).
-  var VERSION = 'shell 3', pre = null, timer = 0;
+  var VERSION = 'shell 4', pre = null, timer = 0;
   function readout() {
     var r = frame.getBoundingClientRect(), st = stage.getBoundingClientRect(), c = frame.contentWindow, doc = c && c.document, tb = doc && doc.querySelector('.tabbar');
     var tr = tb ? tb.getBoundingClientRect() : null;
     pre.textContent = [VERSION, 'inner ' + innerWidth + 'x' + innerHeight, 'client ' + document.documentElement.clientWidth + 'x' + document.documentElement.clientHeight, 'screen ' + screen.width + 'x' + screen.height,
       'insets ' + JSON.stringify(window.__shell.insets), 'stage ' + Math.round(st.top) + '..' + Math.round(st.bottom), 'frame ' + Math.round(r.top) + '..' + Math.round(r.bottom),
       'frame viewport ' + (c ? c.innerWidth + 'x' + c.innerHeight : '?'), 'tab bar ' + (tr ? Math.round(tr.top) + '..' + Math.round(tr.bottom) : '?'),
-      '--sab ' + (doc ? doc.documentElement.style.getPropertyValue('--sab') || '(none)' : '?'),
+      '--sat ' + (doc ? doc.documentElement.style.getPropertyValue('--sat') || '(none)' : '?') + '  --sab ' + (doc ? doc.documentElement.style.getPropertyValue('--sab') || '(none)' : '?'),
       'home-screen app: ' + !!(navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches))].join(String.fromCharCode(10));
   }
   window.__shell.debug = function (on) {
