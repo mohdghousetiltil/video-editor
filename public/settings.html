@@ -125,6 +125,7 @@
     <p class="meta">Download anything you want to keep.</p>
     <label class="toggle" style="margin-top:10px"><input type="checkbox" id="eggs"> Little easter-egg glitches around the app</label>
     <p class="meta" id="queue" style="margin-top:10px"></p>
+    <div style="margin-top:10px"><button class="btn" id="screenCheck" type="button">Show screen numbers</button> <span class="meta" id="screenMsg">For support: shows where the app ends on your screen.</span></div>
   </div>
   <div class="saved"><span id="saved"><svg class=ic aria-hidden=true><use href=#i-check></use></svg> Saved</span></div>
 </div>
@@ -172,6 +173,14 @@ for (const k of ['textModel', 'visionModel', 'imageModel', 'directorModel', 'voi
 for (const k of ['monthlyCap', 'dailyVideoCap', 'weeklyVideoCap', 'keepDays', 'keepShortsDays']) $(k).addEventListener('change', () => save({ [k]: +$(k).value }));
 $('tz').addEventListener('change', () => save({ tz: $('tz').value.trim() }));
 $('eggs').addEventListener('change', () => save({ eggs: $('eggs').checked }));
+$('screenCheck').addEventListener('click', () => {
+  const sh = window.parent !== window && window.parent.__shell;
+  if (!sh) { $('screenMsg').textContent = 'This page is open on its own (no frame), so there is nothing to show.'; return; }
+  if (!sh.debug) { $('screenMsg').textContent = 'The app is still running an old version in memory. Close it completely (swipe it away in the app switcher), open it again, then press this button.'; return; }
+  const on = sh.debug();
+  $('screenCheck').textContent = on ? 'Hide screen numbers' : 'Show screen numbers';
+  $('screenMsg').textContent = on ? 'The numbers are on the top left of every page. Take a screenshot, then come back here to hide them.' : 'Hidden.';
+});
 $('confirmUnder').addEventListener('change', () => save({ confirmUnder: +$('confirmUnder').value }));
 fetch('/api/models').then((r) => r.json()).then((j) => {
   const p = j.providers || {}, routed = (j.models || []).filter((m) => m.route !== 'openrouter');

@@ -62,19 +62,30 @@
   function fit() { var h = stage.getBoundingClientRect().height; if (h > 0) frame.style.height = Math.round(h) + 'px'; }
   fit(); addEventListener('resize', fit); addEventListener('orientationchange', function () { setTimeout(fit, 300); });
   if (window.ResizeObserver) new ResizeObserver(fit).observe(stage);
-  // /shell?debug&to=/ shows the screen numbers, to find out where the frame ends on a particular phone
-  if (/[?&]debug(=|&|$)/.test(location.search)) {
-    var d = document.createElement('pre');
-    d.style.cssText = 'position:fixed;z-index:9;left:6px;top:calc(env(safe-area-inset-top,0px) + 6px);margin:0;padding:6px;background:rgba(0,0,0,.85);color:#7df3ff;font:11px/1.35 monospace;pointer-events:none;white-space:pre';
-    document.body.appendChild(d);
-    var show = function () {
-      var r = frame.getBoundingClientRect(), st = stage.getBoundingClientRect();
-      d.textContent = ['inner ' + innerWidth + 'x' + innerHeight, 'client ' + document.documentElement.clientWidth + 'x' + document.documentElement.clientHeight, 'screen ' + screen.width + 'x' + screen.height,
-        'insets ' + JSON.stringify(window.__shell.insets), 'stage ' + Math.round(st.top) + '..' + Math.round(st.bottom), 'frame ' + Math.round(r.top) + '..' + Math.round(r.bottom),
-        'home-screen app: ' + !!(navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches))].join(String.fromCharCode(10));
-    };
-    show(); setInterval(show, 1000);
+  // The screen numbers: a small readout that says which shell version this is and where the frame ends. Turn it on with
+  // /shell?debug, or from Settings > "Show screen numbers" (inside the home-screen app there is no address bar).
+  var VERSION = 'shell 3', pre = null, timer = 0;
+  function readout() {
+    var r = frame.getBoundingClientRect(), st = stage.getBoundingClientRect(), c = frame.contentWindow, doc = c && c.document, tb = doc && doc.querySelector('.tabbar');
+    var tr = tb ? tb.getBoundingClientRect() : null;
+    pre.textContent = [VERSION, 'inner ' + innerWidth + 'x' + innerHeight, 'client ' + document.documentElement.clientWidth + 'x' + document.documentElement.clientHeight, 'screen ' + screen.width + 'x' + screen.height,
+      'insets ' + JSON.stringify(window.__shell.insets), 'stage ' + Math.round(st.top) + '..' + Math.round(st.bottom), 'frame ' + Math.round(r.top) + '..' + Math.round(r.bottom),
+      'frame viewport ' + (c ? c.innerWidth + 'x' + c.innerHeight : '?'), 'tab bar ' + (tr ? Math.round(tr.top) + '..' + Math.round(tr.bottom) : '?'),
+      '--sab ' + (doc ? doc.documentElement.style.getPropertyValue('--sab') || '(none)' : '?'),
+      'home-screen app: ' + !!(navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches))].join(String.fromCharCode(10));
   }
+  window.__shell.debug = function (on) {
+    if (on === undefined) on = !pre;
+    if (on && !pre) {
+      pre = document.createElement('pre');
+      pre.style.cssText = 'position:fixed;z-index:2147483647;left:6px;top:calc(env(safe-area-inset-top,0px) + 6px);margin:0;padding:6px;background:rgba(0,0,0,.85);color:#7df3ff;font:11px/1.35 monospace;pointer-events:none;white-space:pre';
+      document.body.appendChild(pre); readout(); timer = setInterval(readout, 1000);
+    } else if (!on && pre) { clearInterval(timer); pre.remove(); pre = null; }
+    try { localStorage.setItem('shellDebug', on ? '1' : '0'); } catch (e) {}
+    return !!pre;
+  };
+  var wantDebug = /[?&]debug(=|&|$)/.test(location.search); try { wantDebug = wantDebug || localStorage.getItem('shellDebug') === '1'; } catch (e) {}
+  if (wantDebug) window.__shell.debug(true);
 })();
 </script>
 </body>
