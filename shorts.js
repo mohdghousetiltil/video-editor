@@ -25,6 +25,7 @@ const VOICES = [
 ];
 
 const { MOOD_EXPR, MOODS, renderMood } = require("./lib/music");
+const hing = require("./lib/hinglish"); // Hinglish mode
 
 module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, serveMp4, tts, logSpend = () => {}, orFetch = fetch, renderSlot = (fn) => fn(), getModel = () => null, serveThumb, history = null }) {
   const hist = (id, rec) => { try { history && history.put("short-" + id, { kind: "short", url: `/api/shorts/${id}/short.mp4`, thumb: `/api/shorts/${id}/thumb.jpg`, ...rec }); } catch {} };
@@ -206,6 +207,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
   };
   // Models now and then send JSON with a stray character in it; ask once more (stricter) before giving up.
   async function askVideo(job, file, prompt, maxTokens = 3000, retry = true) {
+    if (job && job.lang) prompt += "\n\n" + hing.RULE + " Here that means the JSON text fields hook, title, description, thumbnail_text, captions and voiceover are Hinglish (hashtags are short words in English letters). This replaces any instruction above about the language of the text: captions of Hindi speech are written in Roman letters too, never Devanagari.";
     try { return await askVideoOnce(job, file, prompt, maxTokens, 0.4); }
     catch (e) {
       if (!retry || !e.badJson) throw e;
@@ -239,7 +241,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       throw new Error("Video analysis failed: " + msg);
     }
     job.cost = (job.cost || 0) + (j.usage?.cost || 0);
-    try { return parseJson(j.choices?.[0]?.message?.content); }
+    try { const out = parseJson(j.choices?.[0]?.message?.content); return job && job.lang ? hing.scrubDeep(out) : out; }
     catch (e) { throw Object.assign(new Error("The AI's answer couldn't be read (" + e.message + "). Try again."), { badJson: true }); }
   }
 
@@ -354,6 +356,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
   // ---------- the pipeline ----------
   async function runShort(id, opts) {
     const job = jobs.get(id), dir = dirOf(id);
+    job.lang = opts.lang || ""; // Hinglish mode: every question to the AI carries the Hinglish rule
     let [min, max] = opts.len === "30-60" ? [30, 60] : [15, 30];
     try {
       setStep(job, 0, 1);
@@ -555,7 +558,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
         const voice = opts.voice || VOICES[0].voice, model = (VOICES.find((v) => v.voice === voice) || VOICES[0]).model;
         await pool(lines, 3, async (l, i) => {
           try {
-            fs.writeFileSync(path.join(dir, `vo${i}.mp3`), await tts({ model, voice, text: l.text }));
+            fs.writeFileSync(path.join(dir, `vo${i}.mp3`), await tts({ model, voice, text: l.text, lang: opts.lang }));
             l.file = `vo${i}.mp3`; l.dur = await audioLen(path.join(dir, l.file));
           } catch (e) { job.warning = "Voiceover partly skipped: " + e.message.slice(0, 160); }
         });
@@ -703,6 +706,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       `Structure: the first line is a hook that makes people stay; then one clear point per picture, each building on the last; end with a takeaway or payoff. Natural spoken language, short sentences, about ${words} words in total. Never say "this picture", "this image" or "in the photo": talk about the subject itself.`,
       "Use every picture once, in the order that explains best (skip one only if it is a duplicate).",
       `Return ONLY JSON: {"title":"","hook":"on-screen hook, max 6 words","thumbnail_text":"max 4 words","description":"","hashtags":["",""],"mood":"one of ${MOODS.join(", ")}","slides":[{"image":1,"narration":""}]}`,
+      ...(opts.lang ? [hing.RULE + " Here that means title, hook, thumbnail_text, description and every narration line are Hinglish."] : []),
     ].join("\n");
     const content = [{ type: "text", text: prompt }, ...files.map((f) => ({ type: "image_url", image_url: { url: `data:image/jpeg;base64,${fs.readFileSync(f).toString("base64")}` } }))];
     const model = modelNow();
@@ -713,7 +717,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
     const j = await r.json().catch(() => ({}));
     if (!r.ok || j.error) throw new Error("Picture analysis failed: " + (j.error?.message || r.status));
     job.cost = (job.cost || 0) + (j.usage?.cost || 0);
-    const plan = parseJson(j.choices?.[0]?.message?.content);
+    const plan = opts.lang ? hing.scrubDeep(parseJson(j.choices?.[0]?.message?.content)) : parseJson(j.choices?.[0]?.message?.content);
     const seen = new Set();
     plan.slides = (Array.isArray(plan.slides) ? plan.slides : [])
       .map((s) => ({ image: Math.round(+s.image) - 1, narration: String(s.narration || "").trim() }))
@@ -724,6 +728,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
 
   async function runPictures(id, opts) {
     const job = jobs.get(id), dir = dirOf(id);
+    job.lang = opts.lang || "";
     const W = 1080, H = 1920, X = 0.35; // X = crossfade length
     try {
       const files = opts.images.map((_, i) => path.join(dir, `pic${i}.jpg`));
@@ -738,7 +743,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       for (let i = 0; i < plan.slides.length; i++) {
         Object.assign(job, { step: `Voicing ${i + 1}/${plan.slides.length}`, pct: 20 + Math.round((i / plan.slides.length) * 25) });
         const s = plan.slides[i];
-        fs.writeFileSync(path.join(dir, `vo${i}.mp3`), await tts({ model: v.model, voice: v.voice, text: s.narration }));
+        fs.writeFileSync(path.join(dir, `vo${i}.mp3`), await tts({ model: v.model, voice: v.voice, text: s.narration, lang: opts.lang }));
         try { await run(["-y", "-i", `vo${i}.mp3`, "-af", "silenceremove=start_periods=1:start_threshold=-45dB,areverse,silenceremove=start_periods=1:start_threshold=-45dB,areverse", `vt${i}.wav`], dir); } catch {}
         const vf = fs.existsSync(path.join(dir, `vt${i}.wav`)) ? `vt${i}.wav` : `vo${i}.mp3`;
         const vd = await audioDuration(path.join(dir, vf));
@@ -898,7 +903,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       await new Promise((r) => ws.end(r));
       if (!size) { jobs.delete(id); fs.rm(dirOf(id), { recursive: true, force: true }, () => {}); return send(res, 400, { error: "Empty upload." }), true; }
       const name = decodeURIComponent(req.headers["x-filename"] || "").replace(/\.[a-z0-9]+$/i, "").slice(0, 120);
-      start(id, { ...readOpts((k) => url.searchParams.get(k)), file, title: name });
+      start(id, { ...readOpts((k) => url.searchParams.get(k)), file, title: name, lang: hing.isHinglish(req) ? "hinglish" : "" });
       return send(res, 200, { id }), true;
     }
     // pictures -> explainer Short: JSON {images:[data URLs], hint, voice, len, captions, capStyle, music, sfx}
@@ -920,7 +925,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
         else { try { await run(["-y", "-i", path.basename(raw), "-frames:v", "1", "-q:v", "2", `pic${i}.jpg`], dir); } finally { fs.rm(raw, { force: true }, () => {}); } }
       }
       const get = (k) => (body[k] == null ? null : String(body[k]));
-      const opts = { ...readOpts(get), images: imgs.map(() => 1), title: String(body.title || "").slice(0, 120) };
+      const opts = { ...readOpts(get), images: imgs.map(() => 1), title: String(body.title || "").slice(0, 120), lang: hing.isHinglish(req) ? "hinglish" : "" };
       const q = renderSlot.stats ? renderSlot.stats() : null, ahead = q ? q.waiting + (q.active >= q.slots ? 1 : 0) : 0;
       const job = jobs.get(id);
       job.step = ahead ? `Waiting for ${ahead} other video${ahead > 1 ? "s" : ""} to finish rendering` : "Starting";
@@ -951,7 +956,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       const link = safeLink(String(body.url || "").trim());
       if (!link) return send(res, 400, { error: "Paste a full video link starting with https://" }), true;
       const id = newJob();
-      start(id, { ...readOpts((k) => (body[k] == null ? null : String(body[k]))), link });
+      start(id, { ...readOpts((k) => (body[k] == null ? null : String(body[k]))), link, lang: hing.isHinglish(req) ? "hinglish" : "" });
       return send(res, 200, { id }), true;
     }
     if (req.method === "POST" && url.pathname === "/api/shorts/music") { // a music track to mix under the Short
@@ -974,7 +979,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       start(id, { ...o, link: null, file: src, reusePlan: true });
       return send(res, 200, { id }), true;
     }
-    if (req.method === "GET" && url.pathname === "/api/shorts/voices") return send(res, 200, { voices: VOICES.map(({ voice, label, model }) => ({ voice, label, model, perSec: TTS_RATE[model] ?? 0.0005 })), vision: modelNow() }), true;
+    if (req.method === "GET" && url.pathname === "/api/shorts/voices") return send(res, 200, { voices: VOICES.filter((v) => !hing.isHinglish(req) || /eleven/.test(v.model)).map((v) => (hing.isHinglish(req) ? { ...v, model: hing.HINGLISH_TTS, label: v.label.replace("ElevenLabs", "ElevenLabs v3") } : v)).map(({ voice, label, model }) => ({ voice, label, model, perSec: TTS_RATE[model] ?? 0.0005 })), vision: modelNow() }), true;
     if (req.method === "GET" && url.pathname === "/api/shorts") {
       const ids = fs.readdirSync(DIR).filter((d) => /^\w+$/.test(d)).sort().reverse().slice(0, 30);
       return send(res, 200, { shorts: ids.map(publicView).filter(Boolean) }), true;

@@ -32,6 +32,69 @@
   }, true);
 })();
 
+// ---------- Hinglish mode (hidden: a gesture in app.js switches it on or off) ----------
+// When it is on, every call this app makes to its own /api/ says so (header X-Lang: hinglish), and the server then writes,
+// speaks and captions everything in modern Hinglish (never Devanagari) and turns off the models and voices that can't.
+// A few subtitles and hint lines get a Hinglish version here; buttons, labels, headings and tab names never change.
+(function () {
+  let on = false; try { on = localStorage.getItem('hinglish') === '1'; } catch {}
+  window.__hinglish = on;
+  if (!on) return;
+  const sameApi = (u) => { try { const x = new URL(u, location.href); return x.origin === location.origin && x.pathname.indexOf('/api/') === 0; } catch { return false; } };
+  const realFetch = window.fetch.bind(window);
+  window.fetch = (input, init) => {
+    if (sameApi(typeof input === 'string' ? input : input && input.url)) {
+      const h = new Headers((init && init.headers) || (typeof input !== 'string' && input && input.headers) || {});
+      h.set('X-Lang', 'hinglish'); init = Object.assign({}, init, { headers: h });
+    }
+    return realFetch(input, init);
+  };
+  const realOpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function (method, url) {
+    const r = realOpen.apply(this, arguments);
+    if (sameApi(url)) { try { this.setRequestHeader('X-Lang', 'hinglish'); } catch {} }
+    return r;
+  };
+  const HING = {
+    'The details behind each tool, in one place.': 'Har tool ki details, ek hi jagah.',
+    'Everything you made.': 'Jo bhi tumne banaya, sab yahin.',
+    'One prompt, one video.': 'Ek prompt, ek video.',
+    'Your AI influencers.': 'Tumhare AI influencers.',
+    'Poses for TikTok, or copy any motion.': 'TikTok ke liye poses, ya koi bhi motion copy karo.',
+    'Suspense scripts with real hooks.': 'Real hooks wale suspense scripts.',
+    'Models, spending cap and storage.': 'Models, spending cap aur storage.',
+    'A video or a few pictures in, ready-to-post Short out.': 'Video ya kuch pictures daalo, post-ready Short nikalo.',
+    'Paste a story, get one finished video.': 'Story paste karo, ek ready video le jao.',
+    'Your influencer reviews your product.': 'Tumhara influencer tumhare product ka review karega.',
+    'The Director picks the best model for your budget': 'Director tumhare budget ke hisaab se best model chun leta hai',
+    'Clips are silent; narration and music are added when stitching.': 'Clips silent hain; narration aur music stitching ke time add hote hain.',
+    'Tap an idea or describe your own below.': 'Koi idea tap karo ya neeche apna idea likho.',
+    'Pick an influencer and poses, then generate. One short clip per pose.': 'Influencer aur poses chuno, phir generate karo. Har pose ka ek chhota clip.',
+    'Add a description, or the video comes back unchanged.': 'Ek description daalo, warna video waisa hi wapas aayega.',
+    'Video models block real photos, so this makes a new AI character with your look.': 'Video models real photos block karte hain, isliye ye tumhare look ka naya AI character banata hai.',
+    'Hook, story voiceover and music.': 'Hook, story voiceover aur music.',
+    'Use only footage you have the rights to.': 'Sirf wahi footage use karo jiske rights tumhare paas hain.',
+    'If a link fails, upload the file instead.': 'Link na chale to file upload kar do.',
+    'Paid steps stop once the monthly cap is reached. Making videos also stops at the daily and weekly video limits.': 'Monthly cap poora hote hi paid steps ruk jaate hain. Video banana daily aur weekly limit pe bhi ruk jaata hai.',
+  };
+  const SKIP = 'button,a,label,h1,h2,h3,h4,summary,option,select,textarea,input,script,style,.chip,.btn,.tabbar,.sb,.radial,.radial-scrim,.model b';
+  function walk(root) {
+    const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let n = w.nextNode(); n; n = w.nextNode()) {
+      const t = n.nodeValue.trim(), h = HING[t];
+      if (!h) continue;
+      const p = n.parentElement;
+      if (!p || p.closest(SKIP)) continue;
+      n.nodeValue = n.nodeValue.replace(t, h);
+    }
+  }
+  document.addEventListener('DOMContentLoaded', () => {
+    walk(document.body);
+    new MutationObserver((ms) => { for (const m of ms) for (const a of m.addedNodes) walk(a.nodeType === 1 ? a : a.parentElement || document.body); })
+      .observe(document.body, { childList: true, subtree: true });
+  });
+})();
+
 // ---------- page changes: a quick blur between pages, about 0.03 s in all. Tapping a tab blurs the screen (0.015 s), the
 // next page opens under the same blur and it clears (0.015 s). It is a screen overlay (a filter on the page itself
 // would make the fixed tab bar jump) and runs first, in <head>, so the new page is blurred before its first paint.
@@ -95,7 +158,7 @@
 
   // ---------- models (GET /api/models: live lengths, resolutions and prices per model) ----------
   let modelsP = null;
-  S.models = () => (modelsP ||= fetch('/api/models').then((r) => r.json()).then((j) => {
+  S.models = () => (modelsP ||= fetch('/api/models' + (window.__hinglish && /^\/(?:ugc|index)?(?:\.html)?$/.test(location.pathname) ? '?speech=1' : '')).then((r) => r.json()).then((j) => {
     const map = {};
     for (const m of j.models || []) map[m.id] = m;
     return { map, list: j.models || [], def: j.default, providers: j.providers || {} };

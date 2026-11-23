@@ -466,3 +466,51 @@ test("every page runs inside the shell: studio.js on each page, the shell holds 
   const css = fs.readFileSync(path.join(pub, "app.css"), "utf8");
   assert.strictEqual((css.match(/env\(safe-area-inset/g) || []).length, 4, "only the four :root defaults may use env(); everything else reads the variables");
 });
+
+test("Hinglish mode: Devanagari is banned, voices and models that can't do Hinglish are switched off", () => {
+  const h = require("../lib/hinglish"), { VIDEO } = require("../lib/models"), { candidates } = require("../lib/director");
+  // the header that switches the mode on
+  assert.strictEqual(h.isHinglish({ headers: { "x-lang": "hinglish" } }), true);
+  assert.strictEqual(h.isHinglish({ headers: { "x-lang": "Hinglish" } }), true);
+  assert.strictEqual(h.isHinglish({ headers: {} }), false);
+  // the AI is told, in plain words, to use English letters only
+  assert.match(h.RULE, /ONLY in English \(Roman\) letters/); assert.match(h.RULE, /NEVER use Devanagari/);
+  assert.match(h.SPEECH_RULE, /Hinglish/); assert.match(h.SPEECH_RULE, /never Devanagari/);
+  // and whatever still slips through is turned into Roman letters, anywhere in a JSON answer
+  assert.strictEqual(h.hasDevanagari("plan ekdum perfect tha"), false);
+  assert.ok(h.hasDevanagari("ये वीडियो"));
+  assert.doesNotMatch(h.scrub("नमस्ते दोस्तों, ये वीडियो बहुत मज़ेदार है।"), /[ऀ-ॿ]/);
+  assert.strictEqual(h.scrub("kamal aur sundar"), "kamal aur sundar");
+  assert.strictEqual(h.devanagariToRoman("कमल और सुंदर बच्चे"), "kamal aur sundar bachche");
+  const plan = h.scrubDeep({ title: "प्लान", scenes: [{ narration: "मैं ठीक हूँ", prompt: "A man walks" }], n: 3 });
+  assert.doesNotMatch(JSON.stringify(plan), /[ऀ-ॿ]/); assert.strictEqual(plan.scenes[0].prompt, "A man walks"); assert.strictEqual(plan.n, 3);
+  // voices: only multilingual ElevenLabs v3 speaks Hinglish; Kokoro is English-only
+  assert.strictEqual(h.hingVoice({ model: "hexgrad/kokoro-82m", voice: "af_heart" }).voice, "jessica");
+  assert.strictEqual(h.hingVoice({ model: "hexgrad/kokoro-82m", voice: "am_adam" }).voice, "brian");
+  const v = h.hingVoice({ model: "elevenlabs/eleven-turbo-v2.5", voice: "george", instructions: "calm" });
+  assert.strictEqual(v.model, "elevenlabs/eleven-v3"); assert.strictEqual(v.voice, "george"); assert.match(v.instructions, /calm.*Hinglish/);
+  // video models: only Google's can speak Hindi inside a clip
+  assert.ok(h.hindiSpeech("google/veo-3.1-lite")); assert.ok(!h.hindiSpeech("bytedance/seedance-2.0")); assert.ok(!h.hindiSpeech("kwaivgi/kling-v3.0-pro"));
+  const catalog = Object.fromEntries(Object.entries(VIDEO).map(([id, m]) => [id, { id, tags: [], q: 5, ...m }]));
+  const talks = candidates(catalog, { page: "clip", aspect: "9:16", hinglish: true });
+  assert.ok(talks.length > 0 && talks.every((m) => !m.audio || m.id.startsWith("google/")), "a talking clip keeps only Hindi-capable sound models");
+  assert.ok(talks.some((m) => !m.audio), "silent models stay (they make no speech)");
+  assert.ok(candidates(catalog, { page: "story", aspect: "9:16", hinglish: true }).some((m) => m.id.startsWith("bytedance/seedance")), "Story clips are silent (narration is a separate voice), so nothing is switched off there");
+  assert.ok(candidates(catalog, { page: "clip", aspect: "9:16" }).some((m) => m.id.startsWith("bytedance/seedance")), "outside Hinglish mode nothing changes");
+});
+
+test("Hinglish mode: no Devanagari in the app's own files, the secret gesture is a hold on the title, and the tab names are never translated", () => {
+  const fs = require("fs"), path = require("path"), root = path.join(__dirname, "..");
+  const files = [];
+  const walk = (d) => { for (const f of fs.readdirSync(d)) { const p = path.join(d, f); if (/^(node_modules|\.git|work|data|videos)$/.test(f)) continue; const s = fs.statSync(p); if (s.isDirectory()) walk(p); else if (/\.(js|html|css)$/.test(f)) files.push(p); } };
+  walk(path.join(root, "public")); walk(path.join(root, "lib")); walk(path.join(root, "routes")); files.push(path.join(root, "server.js"), path.join(root, "shorts.js"));
+  // (lib/hinglish.js holds the Devanagari letters it converts FROM; nothing else may contain any)
+  for (const f of files) if (!/hinglish\.js$/.test(f)) assert.doesNotMatch(fs.readFileSync(f, "utf8"), /[ऀ-ॿ]/, path.relative(root, f) + " must not contain Devanagari");
+  const app = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
+  const gesture = app.slice(app.indexOf("// Hinglish mode: a hidden gesture"));
+  assert.match(gesture, /\.pagehead h1/); assert.match(gesture, /2000/, "it is a 2 second hold");
+  // the Hinglish word list never touches buttons, labels, headings or the navigation
+  const studio = fs.readFileSync(path.join(root, "public", "studio.js"), "utf8");
+  const skip = studio.match(/const SKIP = '([^']+)'/)[1];
+  for (const sel of ["button", "a", "label", "h1", "h2", ".tabbar", ".sb", ".radial"]) assert.ok(skip.split(",").includes(sel), sel + " must be skipped");
+});

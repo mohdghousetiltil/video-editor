@@ -17,7 +17,7 @@
   // icons and buttons never open the copy / share callout on a long press.
   ['gesturestart', 'gesturechange'].forEach((t) => document.addEventListener(t, (e) => e.preventDefault(), { passive: false }));
   document.addEventListener('touchmove', (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
-  document.addEventListener('contextmenu', (e) => { if (e.target.closest && e.target.closest('.sb,.tabbar,.radial,.btn,button,.chip,svg,.look-card')) e.preventDefault(); });
+  document.addEventListener('contextmenu', (e) => { if (e.target.closest && e.target.closest('.sb,.tabbar,.radial,.btn,button,.chip,svg,.look-card,.pagehead h1')) e.preventDefault(); });
   document.addEventListener('dragstart', (e) => { if (e.target.closest && e.target.closest('.sb,.tabbar,.radial,svg')) e.preventDefault(); });
 
   const items = [
@@ -570,4 +570,33 @@
     }
     box.querySelector(".share-go").onclick = () => shareVideo({ url, name, title, thumb, text: getText ? getText() : cap.value });
   };
+})();
+
+// Hinglish mode: a hidden gesture, touch and hold the page title for 2 seconds (the same on iPhone and Android; at 1 second the
+// title shimmers, that is its own older easter egg, keep holding). The same gesture turns the mode off again. There is no button
+// for it anywhere, and it is called "Hindi mode" on screen. See studio.js for what the mode does.
+(function () {
+  let timer = 0, sx = 0, sy = 0;
+  const cancel = () => { clearTimeout(timer); timer = 0; };
+  function toggle(h) {
+    let on = false;
+    try { on = localStorage.getItem('hinglish') !== '1'; localStorage.setItem('hinglish', on ? '1' : '0'); } catch { return; }
+    try { navigator.vibrate && navigator.vibrate(40); } catch {}
+    // a short neon flash in the middle of the screen, then the page reloads in the new mode
+    h.classList.remove('eg-holo'); h.classList.add('eg-glitch'); setTimeout(() => h.classList.remove('eg-glitch'), 500);
+    const d = document.createElement('div');
+    d.textContent = on ? 'HINDI MODE ON' : 'HINDI MODE OFF';
+    d.style.cssText = 'position:fixed;left:0;right:0;top:42%;z-index:2147483000;text-align:center;font:700 22px/1.2 var(--font-hud,Orbitron,sans-serif);letter-spacing:.18em;color:#00e5ff;text-shadow:0 0 12px #00e5ff,0 0 28px #ff2e93;pointer-events:none;animation:eg-glitch .5s steps(2) 2';
+    document.body.appendChild(d);
+    setTimeout(() => location.reload(), 1100);
+  }
+  document.addEventListener('pointerdown', (e) => {
+    const h = e.target.closest && e.target.closest('.pagehead h1');
+    if (!h || e.button) return;
+    sx = e.clientX; sy = e.clientY; cancel();
+    timer = setTimeout(() => { timer = 0; toggle(h); }, 2000);
+  }, true);
+  // letting go or sliding the finger away cancels the hold (a finger that starts scrolling the page is cancelled by the browser itself)
+  document.addEventListener('pointermove', (e) => { if (timer && Math.hypot(e.clientX - sx, e.clientY - sy) > 12) cancel(); }, true);
+  ['pointerup', 'pointercancel'].forEach((t) => document.addEventListener(t, cancel, true));
 })();

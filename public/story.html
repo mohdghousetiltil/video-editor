@@ -432,8 +432,11 @@ $('auto').onclick=async()=>{
   if(scenes.length) render();
 }));
 
+// Hinglish mode: only ElevenLabs v3 (multilingual) can speak it; the cheap English-only voices are switched off
+if(window.__hinglish) Object.keys(TTS).forEach(k=>{ if(k!=='elevenlabs/eleven-v3') delete TTS[k]; });
 $('ttsModel').innerHTML=Object.entries(TTS).map(([id,m])=>'<option value="'+id+'">'+m.label+'</option>').join('');
 function fillVoices(){
+  if(!TTS[$('ttsModel').value]) $('ttsModel').selectedIndex=0; // a saved story may name a voice model that is switched off
   const m=TTS[$('ttsModel').value]; $('ttsVoice').innerHTML=m.voices.map(v=>'<option>'+v+'</option>').join('');
   $('ttsTone').disabled=!m.tone; if(scenes.length) totals();
 }

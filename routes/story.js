@@ -5,6 +5,7 @@ const path = require("path");
 const crypto = require("crypto");
 const { mixStory, AMBIENCES, EFFECTS } = require("../lib/sound");
 const { MOODS } = require("../lib/music");
+const hing = require("../lib/hinglish"); // Hinglish mode (X-Lang: hinglish)
 
 // How a scene fits its narration (vd = clip seconds, ad = narration seconds). Nothing is ever cut off: the voice is
 // sped up a touch first, then the clip slowed a little, and only then does the last frame hold. D = scene length.
@@ -61,7 +62,7 @@ module.exports = function storyRoutes(ctx) {
     if (req.method === "POST" && url.pathname === "/api/plan") {
       const b = await readBody(req);
       if (!b.script || !b.script.trim()) return send(res, 400, { error: "Paste a script first." }), true;
-      const total = Number(b.total) || 30, model = settings.get().textModel;
+      const H = hing.isHinglish(req), total = Number(b.total) || 30, model = H ? settings.get().directorModel || "google/gemini-3.5-flash" : settings.get().textModel;
       const sys = [
         "You are a feature-film director and cinematographer planning a short narrated film for an AI text-to-video model. Plan it shot by shot so it looks and feels like a real movie scene, not a slideshow.",
         `LENGTH: about ${total} seconds in total; each scene 3 to 5 seconds (integers; short shots look better on Reels and Shorts and hide the drift of faces and hands that long AI clips show; use several shots for one narration beat). The seconds must add up to about ${total}.`,
@@ -73,19 +74,20 @@ module.exports = function storyRoutes(ctx) {
         "CONTINUITY: continues:true only when a scene directly continues the previous one in the same place with the same characters and uninterrupted action (it starts from the previous scene's last frame); continues:false for the first scene and any cut to a new place or time. key:true ONLY for the roughly 30% that matter most visually (hook, reveal, twist, emotional peak); the rest key:false.",
         "NARRATION: for every scene write \"narration\", what a calm narrator says during it, natural spoken language, at most 2.3 words per second of the scene length, so all the lines read as one continuous story (empty string only for a deliberately silent beat).",
         `SOUND: pick "music" for the whole film from ${MOODS.join(", ")} or none, and "ambience" (the place sound under everything) from ${AMBIENCES.join(", ")} or none. For each scene pick "sfx", a sound effect on its cut, from ${EFFECTS.join(", ")} or none: use effects sparingly (about one scene in three), on reveals, shocks and transitions; riser builds into the scene, impact lands on it.`,
+        ...(H ? [hing.RULE + " In the JSON, each scene's \"narration\" is the Hinglish part; \"title\", \"bible\" and every scene \"prompt\" (what the video model reads) stay plain English, and nobody speaks on screen."] : []),
         `Aspect ratio ${b.aspect || "9:16"}.` + (b.style ? " Visual style: " + b.style : ""),
         'Reply with ONLY valid JSON, no markdown: {"bible":"...","sound":{"music":"suspense","ambience":"night"},"scenes":[{"title":"...","prompt":"...","seconds":4,"key":true,"continues":false,"narration":"...","sfx":"none"}]}',
       ].join("\n");
       const r = await orFetch(`${API}/chat/completions`, {
         method: "POST", headers: orHeaders(),
-        body: JSON.stringify({ model, max_tokens: 7000, reasoning: { enabled: false }, messages: [{ role: "system", content: sys }, { role: "user", content: b.script.trim() }] }),
+        body: JSON.stringify({ model, max_tokens: 7000, reasoning: H ? { effort: "low" } : { enabled: false }, messages: [{ role: "system", content: sys }, { role: "user", content: b.script.trim() }] }),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) return send(res, r.status, { error: j.error?.message || "Planning failed" }), true;
       spend.log("Story", j.usage?.cost, model);
       const txt = j.choices?.[0]?.message?.content || "";
       try {
-        const plan = JSON.parse(txt.slice(txt.indexOf("{"), txt.lastIndexOf("}") + 1));
+        const plan = (H ? hing.scrubDeep : (x) => x)(JSON.parse(txt.slice(txt.indexOf("{"), txt.lastIndexOf("}") + 1)));
         if (!Array.isArray(plan.scenes) || !plan.scenes.length) throw new Error("no scenes");
         // only sounds this server can make
         const s = plan.sound || {};
@@ -190,7 +192,7 @@ module.exports = function storyRoutes(ctx) {
       const b = await readBody(req);
       if (!b.text || !b.model) return send(res, 400, { error: "text and model required" }), true;
       try {
-        const buf = await tts({ model: b.model, voice: b.voice, text: String(b.text).slice(0, 600), instructions: b.instructions });
+        const buf = await tts({ model: b.model, voice: b.voice, text: String(b.text).slice(0, 600), instructions: b.instructions, lang: hing.isHinglish(req) ? "hinglish" : undefined });
         res.writeHead(200, { "Content-Type": "audio/mpeg", "Content-Length": buf.length });
         return res.end(buf), true;
       } catch (e) { return send(res, 502, { error: e.message }), true; }
@@ -205,6 +207,7 @@ module.exports = function storyRoutes(ctx) {
       const q = renderSlot.stats ? renderSlot.stats() : null, ahead = q ? q.waiting + (q.active >= q.slots ? 1 : 0) : 0;
       const st = { status: "running", step: ahead ? `Waiting for ${ahead} other video${ahead > 1 ? "s" : ""} to finish rendering…` : "Starting…", warnings: [], createdAt: Date.now() };
       const nar = b.narration && Array.isArray(b.narration.lines) && b.narration.model ? b.narration : null;
+      const lang = hing.isHinglish(req) ? "hinglish" : undefined;
       // budget mode: clips shorter than their narration are slowed down (up to 1.5x) and then hold their last
       // frame, instead of cutting the narration off
       const extend = !!b.extend;
@@ -234,7 +237,7 @@ module.exports = function storyRoutes(ctx) {
           let args;
           if (line) {
             step(`Voicing scene ${i + 1}/${ids.length}`);
-            fs.writeFileSync(path.join(dir, `nar${i}.mp3`), await tts({ model: nar.model, voice: nar.voice, text: line, instructions: nar.instructions }));
+            fs.writeFileSync(path.join(dir, `nar${i}.mp3`), await tts({ model: nar.model, voice: nar.voice, text: line, instructions: nar.instructions, lang }));
             // the voice service adds silence before and after a line; trimmed, the lines flow from scene to scene
             try {
               await run(["-y", "-i", `nar${i}.mp3`, "-af", "silenceremove=start_periods=1:start_threshold=-45dB,areverse,silenceremove=start_periods=1:start_threshold=-45dB,areverse,adelay=60|60", "-c:a", "libmp3lame", "-q:a", "2", `nart${i}.mp3`], dir);

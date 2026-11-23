@@ -19,6 +19,7 @@ const providers = require("./lib/providers");
 const director = require("./lib/director");
 const directorCache = new Map(); // same request within 10 minutes = same plan
 const { createThemes, themeText, qualityText, NEGATIVE, MOTION_RULE } = require("./lib/themes");
+const hing = require("./lib/hinglish"); // Hinglish mode (X-Lang: hinglish)
 
 // Tiny .env loader (first, so every setting below can come from .env)
 try {
@@ -91,7 +92,8 @@ async function lastFrame(id) {
   return "data:image/jpeg;base64," + fs.readFileSync(path.join(dir, `${id}.jpg`)).toString("base64");
 }
 // Text-to-speech through OpenRouter's /audio/speech (returns mp3 bytes)
-async function tts({ model, voice, text, instructions }) {
+async function tts({ model, voice, text, instructions, lang }) {
+  if (lang === "hinglish") { const v = hing.hingVoice({ model, voice, instructions }); model = v.model; voice = v.voice; instructions = v.instructions; text = hing.scrub(String(text)); }
   const body = { model, input: text, response_format: "mp3" };
   if (voice) body.voice = voice;
   if (instructions) body.instructions = instructions;
@@ -144,6 +146,9 @@ const fileDataUrl = (f) => `data:image/${path.extname(f).slice(1).replace("jpg",
 // every video model with live capabilities and prices merged in (see lib/models.js)
 const liveModels = async () => modelsLib.merge(await prices.live().catch(() => null), await prices().catch(() => ({})));
 const textModel = () => settings.get().textModel || ENHANCE_MODEL;
+// Gemini (the Hinglish writer) will not run with reasoning switched off, so it gets a little, and room to think
+const reasoningFor = (req) => (hing.isHinglish(req) ? { effort: "low" } : { enabled: false });
+const textModelFor = (req) => (hing.isHinglish(req) ? settings.get().directorModel || "google/gemini-3.5-flash" : textModel());
 // Backend locked to the Cloudflare proxy: a public server (PUBLIC_URL) without PROXY_KEY would let anyone who finds
 // its address spend your OpenRouter credit, so then every /api call is refused until PROXY_KEY is set.
 const PROXY_KEY = (process.env.PROXY_KEY || "").trim().replace(/^["']|["']$/g, "");
@@ -347,7 +352,10 @@ const server = http.createServer(async (req, res) => {
       const theme = b.no_theme ? null : themes.get(typeof b.theme_id === "string" ? b.theme_id : st.themeId);
       const charDesc = b.no_theme ? "" : typeof b.character === "string" ? b.character : st.character;
       const extra = MODELS[model]?.bare ? "" : themeText(theme, charDesc) + qualityText({ booster: b.quality !== false, negative: b.negative });
-      const body = { model, prompt: b.prompt.trim() + (MODELS[model]?.bare ? "" : frameRule) + extra };
+      // Hinglish mode: a clip with sound needs a model that can speak Hindi (Story clips are silent: narration is a separate voice)
+      const hingSpeech = hing.isHinglish(req) && b.generate_audio !== false && !!(live && live.audio);
+      if (hingSpeech && !hing.hindiSpeech(model)) return send(res, 400, { error: `${live.name || model} can't speak Hindi / Hinglish. Pick a Google Veo model, or turn the sound off.` });
+      const body = { model, prompt: b.prompt.trim() + (MODELS[model]?.bare ? "" : frameRule) + extra + (hingSpeech ? hing.SPEECH_RULE : "") };
       if (b.duration) body.duration = Number(b.duration);
       if (b.resolution) body.resolution = b.resolution;
       if (b.aspect_ratio) body.aspect_ratio = b.aspect_ratio;
@@ -619,6 +627,7 @@ const server = http.createServer(async (req, res) => {
         "TITLE: ...\nHOOK (0-2 s): the first spoken line\nSCRIPT:\n[0-3 s] spoken line | VISUAL: what we see\n[3-8 s] spoken line | VISUAL: what we see\n... (one beat per 3-6 seconds, to the end)\nTWIST: one line on why the ending lands\nTITLE IDEAS: 3 short alternative titles",
         "If the user asks for ideas, give 5 one-line premises with a hook each instead of a full script. If they ask for changes, rewrite the whole script with the changes. If the request is unclear, make a bold choice instead of asking questions.",
         "Keep it suitable for YouTube and TikTok: suspense and dread are fine, no graphic gore or sexual content.",
+        ...(hing.isHinglish(req) ? [hing.RULE + " The layout labels (TITLE, HOOK, SCRIPT, VISUAL, TWIST, TITLE IDEAS) and the [0-3 s] times stay exactly as shown."] : []),
       ].join("\n");
       try {
         const r = await orFetch(`${API}/chat/completions`, { method: "POST", headers: orHeaders(), signal: AbortSignal.timeout(90000),
@@ -627,7 +636,7 @@ const server = http.createServer(async (req, res) => {
         if (!r.ok) return send(res, r.status, { error: j.error?.message || "The writer failed, try again." });
         logSpend("Scripts", j.usage?.cost, model);
         // plain spaces only: models sometimes send %20, non-breaking or zero-width spaces, which paste as %20 or junk
-        const out = (j.choices?.[0]?.message?.content || "").replace(/%20/g, " ").replace(/[  -   　]/g, " ").replace(/[​-‍⁠﻿]/g, "").trim();
+        const out = hing.scrub(j.choices?.[0]?.message?.content || "").replace(/%20/g, " ").replace(/[  -   　]/g, " ").replace(/[​-‍⁠﻿]/g, "").trim();
         return out ? send(res, 200, { reply: out, cost: j.usage?.cost || 0, model }) : send(res, 502, { error: "The writer returned nothing, try again." });
       } catch (e) { return send(res, 502, { error: e.name === "TimeoutError" ? "The writer took too long, try again." : e.message }); }
     }
@@ -700,15 +709,15 @@ const server = http.createServer(async (req, res) => {
       const sys = "You write captions for short vertical videos posted on TikTok, Instagram Reels and YouTube Shorts. " +
         "The user gives you the prompt that was used to generate the video. Write: one or two short, punchy sentences that make people want to watch (a hook, not a description of the prompt; max 1 emoji), " +
         "then a blank line, then 4 to 6 relevant hashtags on one line (always include #shorts). Write in the language of the prompt. " +
-        "Never mention AI prompts, models or 'this video was generated'. Output ONLY the caption text.";
+        "Never mention AI prompts, models or 'this video was generated'. Output ONLY the caption text." + (hing.isHinglish(req) ? " " + hing.RULE + " (This replaces the line about writing in the language of the prompt.)" : "");
       const r = await orFetch(`${API}/chat/completions`, {
         method: "POST", headers: orHeaders(),
-        body: JSON.stringify({ model: textModel(), max_tokens: 400, reasoning: { enabled: false }, messages: [{ role: "system", content: sys }, { role: "user", content: p }] }),
+        body: JSON.stringify({ model: textModelFor(req), max_tokens: hing.isHinglish(req) ? 1500 : 400, reasoning: reasoningFor(req), messages: [{ role: "system", content: sys }, { role: "user", content: p }] }),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) return send(res, r.status, { error: j.error?.message || "Caption failed" });
       logSpend("Captions", j.usage?.cost, textModel());
-      const caption = (j.choices?.[0]?.message?.content || "").replace(/^["']|["']$/g, "").trim();
+      const caption = hing.scrub((j.choices?.[0]?.message?.content || "").replace(/^["']|["']$/g, "").trim());
       if (!caption) return send(res, 502, { error: "No caption came back, write your own." });
       return send(res, 200, { caption });
     }
@@ -751,15 +760,16 @@ const server = http.createServer(async (req, res) => {
         "Never describe split screens, comic panels, multiple frames or a storyboard: the whole frame shows one scene. " +
         "End with a short 'Sound:' line (ambience, effects, any short spoken line in quotes). Keep under " + (Number(b.max_words) || 140) + " words. " +
         lenRule + "Aspect ratio: " + (b.aspect_ratio || "9:16") + ". " +
-        (b.style ? "Visual style to respect: " + b.style + " " : look ? `Visual style to respect (${look.name} look): ${look.style}. ` : "") + charNote + (b.extra || "");
+        (b.style ? "Visual style to respect: " + b.style + " " : look ? `Visual style to respect (${look.name} look): ${look.style}. ` : "") + charNote + (b.extra || "") +
+        (hing.isHinglish(req) ? " Every line a person SAYS inside the prompt (spoken dialogue in quotes, or a voiceover) is written in Hinglish: modern Hindi mixed with English, in English letters only, never Devanagari. Everything else in the prompt stays in English." : "");
       const r = await orFetch(`${API}/chat/completions`, {
         method: "POST", headers: orHeaders(),
-        body: JSON.stringify({ model: textModel(), max_tokens: 2000, reasoning: { enabled: false }, messages: [{ role: "system", content: sys }, { role: "user", content: b.prompt.trim() }] }),
+        body: JSON.stringify({ model: textModelFor(req), max_tokens: hing.isHinglish(req) ? 4000 : 2000, reasoning: reasoningFor(req), messages: [{ role: "system", content: sys }, { role: "user", content: b.prompt.trim() }] }),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) return send(res, r.status, { error: j.error?.message || "Enhance failed" });
       logSpend("Prompt writing", j.usage?.cost, textModel());
-      const out = j.choices?.[0]?.message?.content?.trim();
+      const out = hing.scrub(j.choices?.[0]?.message?.content?.trim());
       if (!out) return send(res, 502, { error: "Enhancer returned nothing, try again." });
       if (!auto) return send(res, 200, { prompt: out });
       const raw = out.replace(/```(json)?/g, "").trim();
@@ -826,7 +836,7 @@ const server = http.createServer(async (req, res) => {
       const reqD = {
         page, prompt: String(b.prompt || "").slice(0, 2000), aspect: ["9:16", "16:9", "1:1"].includes(b.aspect) ? b.aspect : "9:16",
         duration: Number(b.duration) || null, resolution: ["480p", "720p", "1080p"].includes(b.resolution) ? b.resolution : "720p",
-        audio: b.audio === false ? false : b.audio === true ? true : undefined, startPicture: !!b.startPicture, budget,
+        audio: b.audio === false ? false : b.audio === true ? true : undefined, startPicture: !!b.startPicture, budget, hinglish: hing.isHinglish(req),
         theme: [theme ? `${theme.name} look: ${theme.style}` : typeof b.style === "string" ? b.style.slice(0, 200) : "", ["clip", "story"].includes(page) && st.character ? "main character: " + st.character.slice(0, 200) : ""].filter(Boolean).join("; ") || null,
         scenes: Array.isArray(b.scenes) ? b.scenes.slice(0, 40).map((s) => ({ title: String(s.title || "").slice(0, 80), prompt: String(s.prompt || "").slice(0, 600), seconds: Number(s.seconds) || 4, key: !!s.key })) : undefined,
       };
@@ -872,10 +882,11 @@ const server = http.createServer(async (req, res) => {
       const out = Object.values(all).filter((x) => !x.hidden).map((x) => {
         const rt = providers.pickRoute(x.id, { orAvailable: x.live !== false });
         const price = rt.price != null ? Object.fromEntries(x.res.map((r) => [r, [rt.price, rt.price]])) : rt.factor !== 1 ? Object.fromEntries(Object.entries(x.price).map(([r, p]) => [r, p.map((v) => +(v * rt.factor).toFixed(4))])) : x.price;
-        return { ...x, price, defaultDur: modelsLib.defaultDur(x), notes: modelsLib.notes(x), route: rt.provider };
+        return { ...x, price, defaultDur: modelsLib.defaultDur(x), notes: modelsLib.notes(x), route: rt.provider, hindi: hing.hindiSpeech(x.id) };
       })
         // a model OpenRouter no longer lists (and no other provider has a key for) can't be generated: leave it out
-        .filter((x) => x.live !== false || x.route !== "openrouter");
+        .filter((x) => x.live !== false || x.route !== "openrouter")
+        .filter((x) => !(hing.isHinglish(req) && url.searchParams.has("speech")) || !x.audio || x.hindi); // Hinglish + a page where the clip talks
       return send(res, 200, { models: out, default: modelsLib.DEFAULT_MODEL, providers: providers.configured() });
     }
 
