@@ -1,5 +1,6 @@
 // Shared shell: sidebar (desktop), tab bar (mobile), page heading, server status, toasts.
 (function () {
+  if (window.__shellRedirect) return; // this page is being replaced by the shell right now
   const svg = (d) => `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
   const ICON = {
     clip: svg('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9.5 5 2.5-5 2.5z"/>'),

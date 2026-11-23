@@ -452,3 +452,17 @@ test("video limits: daily and weekly, counted in the user's time zone, videos on
   lim = { dailyCap: 0, weeklyCap: 0, tz: "Australia/Sydney" };                            // 0 = no limit
   assert.strictEqual(sp.videoBlock(50, 0, now), null);
 });
+
+test("every page runs inside the shell: studio.js on each page, the shell holds the music, safe areas come from variables", () => {
+  const fs = require("fs"), path = require("path"), pub = path.join(__dirname, "..", "public");
+  const pages = fs.readdirSync(pub).filter((f) => f.endsWith(".html") && f !== "shell.html");
+  assert.ok(pages.length >= 10);
+  for (const p of pages) assert.match(fs.readFileSync(path.join(pub, p), "utf8"), /<script src="\/studio\.js"/, p + " must load studio.js (it sends the page into the shell)");
+  const shell = fs.readFileSync(path.join(pub, "shell.html"), "utf8");
+  assert.match(shell, /<html[^>]*data-shell/);
+  assert.match(shell, /<iframe id="app"/);
+  assert.match(shell, /src="\/music\.js"/);
+  assert.doesNotMatch(shell, /studio\.js/, "the shell must not send itself into the shell");
+  const css = fs.readFileSync(path.join(pub, "app.css"), "utf8");
+  assert.strictEqual((css.match(/env\(safe-area-inset/g) || []).length, 4, "only the four :root defaults may use env(); everything else reads the variables");
+});

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en" data-shell>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#05060d">
+<meta name="apple-mobile-web-app-title" content="Video Studio">
+<title>Video Studio</title>
+<style>
+  /* The shell: one page that never reloads. It owns the music (so it keeps playing between pages) and shows every
+     page of the app in a full-screen frame. */
+  html,body{margin:0;height:100%;background:#05060d;overflow:hidden;overscroll-behavior:none}
+  #app{position:fixed;inset:0;width:100%;height:100%;border:0;background:#05060d;display:block}
+  /* measures the safe areas (notch, home bar): a frame may not be given them, so the pages ask for these numbers */
+  #probe{position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;
+    padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)}
+</style>
+<script>
+  // published to the pages inside the frame (same origin): the safe-area numbers, and where they report their address
+  window.__shell = { insets: { t: 0, r: 0, b: 0, l: 0 }, page: function () {} };
+</script>
+</head>
+<body data-shell>
+<div id="probe"></div>
+<iframe id="app" title="Video Studio"
+  allow="clipboard-write; clipboard-read; fullscreen; web-share; autoplay; camera; microphone; picture-in-picture"
+  allowfullscreen></iframe>
+<noscript>This app needs JavaScript. <a href="/?noshell">Open it without the frame</a>.</noscript>
+<script src="/music.js"></script>
+<script>
+(function () {
+  var frame = document.getElementById('app'), probe = document.getElementById('probe');
+  function measure() {
+    var c = getComputedStyle(probe), px = function (v) { return Math.round(parseFloat(v) || 0); };
+    window.__shell.insets = { t: px(c.paddingTop), r: px(c.paddingRight), b: px(c.paddingBottom), l: px(c.paddingLeft) };
+  }
+  function push() { try { frame.contentWindow.postMessage({ shell: 'insets', insets: window.__shell.insets }, location.origin); } catch (e) {} }
+  measure();
+  addEventListener('resize', function () { measure(); push(); });
+  addEventListener('orientationchange', function () { setTimeout(function () { measure(); push(); }, 300); });
+  // a page reports its address and title: the address bar and the app switcher follow the page, not "/shell"
+  window.__shell.page = function (url, title) {
+    try { if (url && url !== location.pathname + location.search + location.hash) history.replaceState(null, '', url); } catch (e) {}
+    if (title) document.title = title;
+  };
+  // /shell?to=/story opens that page (inside this site only)
+  var to = new URLSearchParams(location.search).get('to') || '/';
+  frame.src = /^\/(?![\/\\])/.test(to) ? to : '/';
+})();
+</script>
+</body>
+</html>

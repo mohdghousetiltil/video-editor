@@ -1,14 +1,45 @@
 // Shared page helpers (loaded in <head>, before each page's own script): model table, total-cost lines, the
 // "this costs money" confirmation, form memory, job progress (stage + elapsed time, no fake countdown), presets,
 // templates and the Help / About / Privacy / Spend texts. Everything hangs off window.studio.
-// ---------- page changes: a quick blur between pages, about 0.008 s in all. Tapping a tab blurs the screen (0.004 s), the
-// next page opens under the same blur and it clears (0.004 s). It is a screen overlay (a filter on the page itself
+// ---------- the shell: every page runs inside /shell, a page that never reloads, so the radio keeps playing when you
+// change tabs. A page opened on its own sends itself into the shell (add ?noshell to the address to skip that). Inside
+// the shell a page reports its address and title to it, takes the safe-area padding it measured (a frame may not be
+// given the notch / home-bar numbers), and opens outside links in a new tab (they refuse to be framed). ----------
+(function () {
+  const root = document.documentElement;
+  let sh = null;
+  try { sh = window.parent !== window && window.parent.__shell && window.parent.document.body.hasAttribute('data-shell') ? window.parent.__shell : null; } catch {}
+  if (!sh) {
+    if (window.parent === window && !root.hasAttribute('data-shell') && !/[?&]noshell(=|&|$)/.test(location.search)) {
+      window.__shellRedirect = true; // app.js stands down, the page is about to be replaced
+      root.style.visibility = 'hidden';
+      try { location.replace('/shell?to=' + encodeURIComponent(location.pathname + location.search + location.hash)); } catch { root.style.visibility = ''; window.__shellRedirect = false; }
+    }
+    return;
+  }
+  window.__inShell = true;
+  const setInsets = (i) => { if (!i) return; root.style.setProperty('--sat', i.t + 'px'); root.style.setProperty('--sar', i.r + 'px'); root.style.setProperty('--sab', i.b + 'px'); root.style.setProperty('--sal', i.l + 'px'); };
+  setInsets(sh.insets); // before the first paint
+  addEventListener('message', (e) => { if (e.origin === location.origin && e.data && e.data.shell === 'insets') setInsets(e.data.insets); });
+  const report = () => { try { sh.page(location.pathname + location.search + location.hash, document.title); } catch {} };
+  addEventListener('DOMContentLoaded', report); addEventListener('hashchange', report); addEventListener('pageshow', report);
+  document.addEventListener('click', (e) => {
+    if (e.defaultPrevented) return;
+    const a = e.target.closest && e.target.closest('a[href]');
+    if (!a || a.target || a.hasAttribute('download')) return;
+    let u; try { u = new URL(a.href, location.href); } catch { return; }
+    if (u.origin !== location.origin) { e.preventDefault(); window.open(u.href, '_blank', 'noopener'); }
+  }, true);
+})();
+
+// ---------- page changes: a quick blur between pages, about 0.03 s in all. Tapping a tab blurs the screen (0.015 s), the
+// next page opens under the same blur and it clears (0.015 s). It is a screen overlay (a filter on the page itself
 // would make the fixed tab bar jump) and runs first, in <head>, so the new page is blurred before its first paint.
 // Nothing happens on a first visit, with reduced motion, or for outside links. ----------
 (function () {
   const doc = document.documentElement;
   if (!doc || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  const OUT_MS = 4, IN_MS = 4, BLUR = 9, FLAG = 'pxNav';
+  const OUT_MS = 15, IN_MS = 15, BLUR = 9, FLAG = 'pxNav';
   const flag = (v) => { try { v ? sessionStorage.setItem(FLAG, String(Date.now())) : sessionStorage.removeItem(FLAG); } catch {} };
   const flagged = () => { try { return Date.now() - Number(sessionStorage.getItem(FLAG) || 0) < 6000; } catch { return false; } };
   let el = null, safety = 0;
@@ -47,7 +78,7 @@
     if (el) return; // already going somewhere
     e.preventDefault();
     flag(true); make(0); set(BLUR, OUT_MS);
-    setTimeout(() => { location.href = u.href; }, OUT_MS + 1);
+    setTimeout(() => { location.href = u.href; }, OUT_MS + 3);
     safety = setTimeout(() => { remove(); flag(false); }, 5000); // navigation didn't happen: clear the blur
   }, false);
 })();

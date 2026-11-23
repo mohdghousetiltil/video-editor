@@ -1,5 +1,5 @@
 /* Shared design layer: "neon HUD" gaming theme. Loaded after each page's own styles, so it wins on conflicts. */
-:root{
+:root{--sat:env(safe-area-inset-top,0px);--sar:env(safe-area-inset-right,0px);--sab:env(safe-area-inset-bottom,0px);--sal:env(safe-area-inset-left,0px);
   --bg:#05060d;--panel:#0b0e1a;--panel2:#10142a;--line:#1d2542;--line2:#2b3768;--text:#e8f1ff;--mute:#8793b8;
   --acc:#00e5ff;--acc2:#7df3ff;--pink:#ff2e93;--violet:#8b5cff;--ok:#39ff9c;--err:#ff4d6d;--warn:#ffd23f;
   --radius:4px;--sbw:248px;--cut:12px;
@@ -64,7 +64,7 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:200;op
 @media(max-width:900px){
   body{padding-left:0;padding-bottom:78px}
   .sb{display:none}
-  .tabbar{display:grid;grid-template-columns:repeat(5,1fr);align-items:end;position:fixed;left:0;right:0;bottom:0;z-index:40;padding:8px 8px calc(8px + env(safe-area-inset-bottom));
+  .tabbar{display:grid;grid-template-columns:repeat(5,1fr);align-items:end;position:fixed;left:0;right:0;bottom:0;z-index:40;padding:8px 8px calc(8px + var(--sab));
     background:rgba(6,8,17,.94);backdrop-filter:blur(14px);border-top:1px solid var(--line2);box-shadow:0 -10px 30px -18px rgba(0,229,255,.5)}
   .tabbar a{margin:0;border:0;border-radius:0;display:flex;flex-direction:column;align-items:center;gap:3px;min-height:48px;padding:6px 2px;color:var(--mute);text-decoration:none;
     font-family:var(--font-ui);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;transition:color .15s,background .15s}
@@ -273,9 +273,9 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
   :root{--g:16px}
   html,body{overflow-x:hidden}
   body{font-size:16px;min-height:100dvh;-webkit-tap-highlight-color:transparent;
-    padding-bottom:calc(78px + env(safe-area-inset-bottom))}
+    padding-bottom:calc(78px + var(--sab))}
   /* 16px gutters, plus the notch / Dynamic Island / home-indicator insets */
-  .wrap{padding:calc(var(--g) + env(safe-area-inset-top)) calc(var(--g) + env(safe-area-inset-right)) calc(var(--g) * 5) calc(var(--g) + env(safe-area-inset-left)) !important;max-width:100% !important}
+  .wrap{padding:calc(var(--g) + var(--sat)) calc(var(--g) + var(--sar)) calc(var(--g) * 5) calc(var(--g) + var(--sal)) !important;max-width:100% !important}
   .pagehead{margin-bottom:var(--g);padding-bottom:var(--g)}
   .pagehead h1{font-size:22px}
   .pagehead p{font-size:16px}
@@ -299,8 +299,8 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
   .stage video{max-height:70dvh}
   img,video,canvas{max-width:100%}
   /* tab bar and toasts respect the side insets in landscape */
-  .tabbar{padding-left:calc(8px + env(safe-area-inset-left));padding-right:calc(8px + env(safe-area-inset-right))}
-  #toasts{left:var(--g);right:var(--g);bottom:calc(88px + env(safe-area-inset-bottom))}
+  .tabbar{padding-left:calc(8px + var(--sal));padding-right:calc(8px + var(--sar))}
+  #toasts{left:var(--g);right:var(--g);bottom:calc(88px + var(--sab))}
   .toast{font-size:16px;padding:12px var(--g)}
   /* the scanline overlay costs paint time on phones */
   body::after{display:none}
@@ -625,7 +625,7 @@ html{scroll-behavior:smooth}
 .eg-roll .wrap{animation:eg-roll 1s cubic-bezier(.6,0,.3,1) both}
 @keyframes eg-roll{to{transform:rotate(360deg)}}
 .eg-boot{position:fixed;inset:0;z-index:300;background:#03040a;color:var(--acc);font:600 13px/1.9 ui-monospace,Menlo,monospace;letter-spacing:.06em;
-  display:flex;flex-direction:column;justify-content:center;padding:24px calc(24px + env(safe-area-inset-left));transition:opacity .3s}
+  display:flex;flex-direction:column;justify-content:center;padding:24px calc(24px + var(--sal));transition:opacity .3s}
 .eg-boot div{opacity:0;animation:eg-line .2s var(--d) forwards}
 .eg-boot div:first-child{font-family:var(--font-hud);font-size:18px;color:#fff;margin-bottom:10px}
 .eg-boot.out{opacity:0}
