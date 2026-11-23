@@ -690,3 +690,5 @@ textarea{line-height:1.55;resize:vertical;overflow-y:auto}
 .pagehead p{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
 /* the page heading (title and subtitle) is held for a hidden gesture: a long press must never select its text or open the copy callout */
 .pagehead,.pagehead *,.pagehead *::before,.pagehead *::after{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+/* while the page title is held for the hidden gesture, nothing on the page can be selected */
+html.hold-gesture,html.hold-gesture *{-webkit-user-select:none !important;user-select:none !important;-webkit-touch-callout:none !important}

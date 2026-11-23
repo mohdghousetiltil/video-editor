@@ -577,9 +577,13 @@
 // Hinglish mode: a hidden gesture, touch and hold the page title for 2 seconds (the same on iPhone and Android; at 1 second the
 // title shimmers, that is its own older easter egg, keep holding). The same gesture turns the mode off again. There is no button
 // for it anywhere, and it is called "Hindi mode" on screen. See studio.js for what the mode does.
+// While the title is held, nothing on the page can be selected (a phone starts a text selection on a long press and picks up
+// the text below the finger): the lock goes on the moment the finger lands and comes off a moment after it lifts.
 (function () {
-  let timer = 0, sx = 0, sy = 0;
+  let timer = 0, sx = 0, sy = 0, holding = false, releaseT = 0;
+  const root = document.documentElement;
   const cancel = () => { clearTimeout(timer); timer = 0; };
+  const release = () => { clearTimeout(releaseT); releaseT = setTimeout(() => { holding = false; root.classList.remove('hold-gesture'); }, 500); };
   function toggle(h) {
     let on = false;
     try { on = localStorage.getItem('hinglish') !== '1'; localStorage.setItem('hinglish', on ? '1' : '0'); } catch { return; }
@@ -595,10 +599,14 @@
   document.addEventListener('pointerdown', (e) => {
     const h = e.target.closest && e.target.closest('.pagehead h1');
     if (!h || e.button) return;
+    holding = true; clearTimeout(releaseT); root.classList.add('hold-gesture');
+    try { getSelection().removeAllRanges(); } catch {}
     sx = e.clientX; sy = e.clientY; cancel();
     timer = setTimeout(() => { timer = 0; toggle(h); }, 2000);
   }, true);
   // letting go or sliding the finger away cancels the hold (a finger that starts scrolling the page is cancelled by the browser itself)
   document.addEventListener('pointermove', (e) => { if (timer && Math.hypot(e.clientX - sx, e.clientY - sy) > 12) cancel(); }, true);
-  ['pointerup', 'pointercancel'].forEach((t) => document.addEventListener(t, cancel, true));
+  ['pointerup', 'pointercancel'].forEach((t) => document.addEventListener(t, () => { cancel(); if (holding) release(); }, true));
+  // if a selection still starts while the title is held, it is cleared at once
+  document.addEventListener('selectionchange', () => { if (holding) { try { getSelection().removeAllRanges(); } catch {} } });
 })();
