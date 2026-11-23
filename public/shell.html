@@ -17,7 +17,11 @@
   /* The shell: one page that never reloads. It owns the music (so it keeps playing between pages) and shows every
      page of the app in a full-screen frame. */
   html,body{margin:0;height:100%;background:#05060d;overflow:hidden;overscroll-behavior:none}
-  #app{position:fixed;inset:0;width:100%;height:100%;border:0;background:#05060d;display:block}
+  /* The frame sits in a fixed box pinned to all four screen edges, exactly like the old bottom bar was; the pages are shown
+     inside it at 100%. A fixed frame sized with width/height 100% stopped well short of the bottom edge on an iPhone
+     home-screen app, leaving dead space under the tab bar. */
+  #stage{position:fixed;top:0;right:0;bottom:0;left:0;background:#05060d}
+  #app{position:absolute;top:0;left:0;width:100%;height:100%;border:0;display:block;background:#05060d}
   /* measures the safe areas (notch, home bar): a frame may not be given them, so the pages ask for these numbers */
   #probe{position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;
     padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)}
@@ -29,9 +33,9 @@
 </head>
 <body data-shell>
 <div id="probe"></div>
-<iframe id="app" title="Video Studio"
+<div id="stage"><iframe id="app" title="Video Studio"
   allow="clipboard-write; clipboard-read; fullscreen; web-share; autoplay; camera; microphone; picture-in-picture"
-  allowfullscreen></iframe>
+  allowfullscreen></iframe></div>
 <noscript>This app needs JavaScript. <a href="/?noshell">Open it without the frame</a>.</noscript>
 <script src="/music.js"></script>
 <script>
@@ -53,6 +57,24 @@
   // /shell?to=/story opens that page (inside this site only)
   var to = new URLSearchParams(location.search).get('to') || '/';
   frame.src = /^\/(?![\/\\])/.test(to) ? to : '/';
+  // the frame is given the box's real height in pixels (the box is pinned to the screen edges, so this is the whole screen)
+  var stage = document.getElementById('stage');
+  function fit() { var h = stage.getBoundingClientRect().height; if (h > 0) frame.style.height = Math.round(h) + 'px'; }
+  fit(); addEventListener('resize', fit); addEventListener('orientationchange', function () { setTimeout(fit, 300); });
+  if (window.ResizeObserver) new ResizeObserver(fit).observe(stage);
+  // /shell?debug&to=/ shows the screen numbers, to find out where the frame ends on a particular phone
+  if (/[?&]debug(=|&|$)/.test(location.search)) {
+    var d = document.createElement('pre');
+    d.style.cssText = 'position:fixed;z-index:9;left:6px;top:calc(env(safe-area-inset-top,0px) + 6px);margin:0;padding:6px;background:rgba(0,0,0,.85);color:#7df3ff;font:11px/1.35 monospace;pointer-events:none;white-space:pre';
+    document.body.appendChild(d);
+    var show = function () {
+      var r = frame.getBoundingClientRect(), st = stage.getBoundingClientRect();
+      d.textContent = ['inner ' + innerWidth + 'x' + innerHeight, 'client ' + document.documentElement.clientWidth + 'x' + document.documentElement.clientHeight, 'screen ' + screen.width + 'x' + screen.height,
+        'insets ' + JSON.stringify(window.__shell.insets), 'stage ' + Math.round(st.top) + '..' + Math.round(st.bottom), 'frame ' + Math.round(r.top) + '..' + Math.round(r.bottom),
+        'home-screen app: ' + !!(navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches))].join(String.fromCharCode(10));
+    };
+    show(); setInterval(show, 1000);
+  }
 })();
 </script>
 </body>
