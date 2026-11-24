@@ -149,7 +149,29 @@
 (function () {
   const S = (window.studio = {});
   const esc = (S.esc = window.escH = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])));
-  const money = (S.money = (n, d = 2) => (n == null || !isFinite(n) ? '—' : n > 0 && n < 0.5 * 10 ** -d ? '<$' + (10 ** -d).toFixed(d) : '$' + Number(n).toFixed(d)));
+  // money is shown in dollars; the credits dialog can switch the whole app to credits (1 credit = $1)
+  const asCredits = () => { try { return localStorage.getItem('units') !== 'usd'; } catch { return true; } }; // credits by default (1 credit = $1); dollars when switched in the credits dialog
+  const creditNum = (usd) => { const c = usd; return !isFinite(c) ? '—' : c > 0 && c < 0.001 ? '<0.001' : c >= 100 ? Math.round(c).toLocaleString('en-US') : c >= 10 ? String(+c.toFixed(1)) : c >= 1 ? String(+c.toFixed(2)) : String(+c.toFixed(3)); };
+  // Credits mode, the rest of the page: any "$1.50", "~$0.02/s", "($)" in text, options, placeholders and titles (also the ones the page
+  // writes later) reads in credits. 1 credit = $1, so typed numbers (caps, budgets) stay exactly the same; only the unit changes.
+  if (asCredits() && typeof document.addEventListener === 'function') {
+    const reUsd = /\$(\d[\d,]*(?:\.\d+)?)/g;
+    const fixCr = (t) => (t.indexOf('$') < 0 ? t : t.replace(/\(\$\)/g, '(credits)').replace(/ in \$( |$)/g, ' in credits$1').replace(reUsd, (m, n) => creditNum(parseFloat(n.replace(/,/g, ''))) + ' cr'));
+    const skipEl = (el) => !el || el.closest('script,style,textarea,input,code,pre,[data-keep]');
+    const fixNode = (n) => {
+      if (n.nodeType === 3) { if (!skipEl(n.parentElement)) { const t = fixCr(n.nodeValue); if (t !== n.nodeValue) n.nodeValue = t; } return; }
+      if (n.nodeType !== 1 || skipEl(n)) return;
+      for (const a of ['title', 'placeholder', 'aria-label']) { const v = n.getAttribute(a); if (v && v.indexOf('$') >= 0) n.setAttribute(a, fixCr(v)); }
+      for (const c of n.childNodes) fixNode(c);
+    };
+    const start = () => {
+      fixNode(document.body);
+      new MutationObserver((ms) => { for (const m of ms) { if (m.type === 'characterData') fixNode(m.target); else for (const n of m.addedNodes) fixNode(n); } })
+        .observe(document.body, { childList: true, subtree: true, characterData: true });
+    };
+    if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
+  }
+  const money = (S.money = (n, d = 2) => (n == null || !isFinite(n) ? '—' : asCredits() ? creditNum(n) + ' cr' : n > 0 && n < 0.5 * 10 ** -d ? '<$' + (10 ** -d).toFixed(d) : '$' + Number(n).toFixed(d)));
   const ls = {
     get: (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
     set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },

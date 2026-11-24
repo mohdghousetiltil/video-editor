@@ -44,7 +44,7 @@ const pageFeature = (req) => {
   try { p = new URL(req.headers.referer || "").pathname.replace(/\.html$/, ""); } catch {}
   return ({ "/story": "Story", "/ugc": "UGC", "/motion": "Poses & motion", "/influencers": "Influencers" })[p] || "Single clips";
 };
-const FEATURE_KIND = { "Story": "scene", "UGC": "ugc", "Poses & motion": "motion", "Influencers": "influencer", "Single clips": "clip" };
+const FEATURE_KIND = { "Story": "scene", "UGC": "ugc", "Poses & motion": "motion", "Face swap": "swap", "Influencers": "influencer", "Single clips": "clip" };
 // the request as it can be sent again from History: large pictures are dropped (a saved influencer id still works)
 const retryBody = (b) => Object.fromEntries(Object.entries(b).filter(([k, v]) => !(typeof v === "string" && v.length > 4000) && !(Array.isArray(v) && JSON.stringify(v).length > 4000)));
 // ---- ffmpeg helpers for Story mode (stitch clips from different models into one MP4) ----
@@ -167,7 +167,7 @@ const UNLOCKED = !!PROXY_KEY || !PUBLIC_URL_RAW() || process.env.ALLOW_OPEN === 
 function PUBLIC_URL_RAW() { return (process.env.PUBLIC_URL || "").trim(); }
 if (!UNLOCKED) console.error("PROXY_KEY is not set but PUBLIC_URL is: the API is locked. Set PROXY_KEY (same value as in Cloudflare).");
 // Paid endpoints are refused once the monthly cap (Settings) is reached.
-const PAID = /^\/api\/(generate|plan|cast|keyframe|tts|stitch|lookframe|startframe|describe|portraits|caption|enhance|still|director|scripts|shorts(\/upload|\/pictures)?|shorts\/\w+\/retry|influencers\/[\w-]+\/check)$/;
+const PAID = /^\/api\/(generate|swap|plan|cast|keyframe|tts|stitch|lookframe|startframe|describe|portraits|caption|enhance|still|director|scripts|shorts(\/upload|\/pictures)?|shorts\/\w+\/retry|influencers\/[\w-]+\/check)$/;
 
 const MODELS = modelsLib.VIDEO; // capabilities per model; lib/models.js
 // ---- Motion page: share uploaded driving clips with the video provider (it needs a public HTTPS link) ----
@@ -303,10 +303,11 @@ const orHeaders = () => ({ Authorization: `Bearer ${KEY}`, "Content-Type": "appl
 // Shorts maker (long video -> analysed, cut, captioned 9:16 Short + thumbnail + title); see shorts.js
 const shorts = require("./shorts")({ STORE, FFMPEG, API, getKey: () => KEY, run, send, serveMp4, tts, logSpend, orFetch, renderSlot, getModel: () => settings.get().visionModel, serveThumb, history });
 const shortsRoutes = shorts.handle;
-const ctx = { STORE, DATA, API, getKey: () => KEY, orFetch, orHeaders, send, readBody, run, tts, spend, settings, serveMp4, serveThumb, mediaDuration, hasAudio, glitchFilter, renderSlot, prices, imgFile, history, liveModels, jobs, ensureVideo, themes, themeText, readInf, STILLS, stillFile, fileDataUrl };
+const ctx = { STORE, DATA, API, getKey: () => KEY, orFetch, orHeaders, send, readBody, run, tts, spend, settings, serveMp4, serveThumb, mediaDuration, hasAudio, glitchFilter, renderSlot, prices, imgFile, history, liveModels, jobs, ensureVideo, themes, themeText, readInf, STILLS, stillFile, fileDataUrl, frameToJpeg, providers };
 const story = require("./routes/story")(ctx);
 const systemRoutes = require("./routes/system")(ctx);
 const themeRoutes = require("./routes/themes")(ctx);
+const swapRoutes = require("./routes/faceswap")(ctx);
 const enhanceRoutes = require("./lib/enhance").createEnhance({ ...ctx, FFMPEG, VIDEO_CACHE });
 startCleanup(STORE, () => settings.get(), (id) => story.busy(id) || shorts.busy(id));
 
@@ -334,6 +335,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (await systemRoutes(req, res, url)) return;
     if (await themeRoutes(req, res, url)) return;
+    if (await swapRoutes(req, res, url)) return;
     if (await enhanceRoutes(req, res, url)) return;
     if (await story.handle(req, res, url)) return;
     if (await shortsRoutes(req, res, url)) return;
@@ -449,7 +451,11 @@ const server = http.createServer(async (req, res) => {
         if (lim) return send(res, 429, { error: lim, limit: true });
         videoReserved += est; res.once("close", () => { videoReserved = Math.max(0, videoReserved - est); });
       }
-      const route = providers.pickRoute(model, { orAvailable: live.live !== false });
+      // cheapest route for this exact request, in dollars per second; when OpenRouter's credit is nearly gone, another provider is preferred
+      const orPerSec = (live.price && live.price[body.resolution || (live.res || [])[0]] || [0, 0])[body.generate_audio === false ? 1 : 0] || null;
+      const orInfo = KEY ? await spend.openrouter().catch(() => null) : null;
+      const orLow = !!orInfo && orInfo.balance != null && orInfo.balance < (orPerSec || 0) * (body.duration || modelsLib.defaultDur(live) || 5) + 0.25;
+      const route = providers.pickRoute(model, { orAvailable: live.live !== false, orPerSec, orLow });
       let extJob = null;
       const submit = async () => {
         if (route.provider !== "openrouter") {
@@ -905,8 +911,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/models") {
       const all = await liveModels();
       const out = Object.values(all).filter((x) => !x.hidden).map((x) => {
-        const rt = providers.pickRoute(x.id, { orAvailable: x.live !== false });
-        const price = rt.price != null ? Object.fromEntries(x.res.map((r) => [r, [rt.price, rt.price]])) : rt.factor !== 1 ? Object.fromEntries(Object.entries(x.price).map(([r, p]) => [r, p.map((v) => +(v * rt.factor).toFixed(4))])) : x.price;
+        const rt = providers.pickRoute(x.id, { orAvailable: x.live !== false, orPerSec: (x.price && x.price[(x.res || [])[0]] || [])[0] || null });
+        // a flat provider price only replaces OpenRouter's where it is lower (sound on / sound off are priced separately)
+        const price = rt.price != null ? Object.fromEntries(x.res.map((r) => [r, (x.price[r] || [rt.price, rt.price]).map((v) => (x.live === false ? rt.price : Math.min(v, rt.price)))])) : rt.factor !== 1 ? Object.fromEntries(Object.entries(x.price).map(([r, p]) => [r, p.map((v) => +(v * rt.factor).toFixed(4))])) : x.price;
         return { ...x, price, defaultDur: modelsLib.defaultDur(x), notes: modelsLib.notes(x), route: rt.provider, hindi: hing.hindiSpeech(x.id) };
       })
         // a model OpenRouter no longer lists (and no other provider has a key for) can't be generated: leave it out

@@ -24,8 +24,17 @@
   body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 Inter,system-ui,Segoe UI,sans-serif;min-height:100vh}
   .wrap{max-width:1150px;margin:0 auto;padding:22px 18px 60px}
   .tabs{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap}
-  .tab{padding:10px 16px;border-radius:12px;border:1px solid var(--line);background:var(--panel2);color:var(--mute);cursor:pointer;font:inherit;font-weight:600}
-  .tab.on{color:#fff;border-color:var(--acc);background:linear-gradient(135deg,rgba(124,92,255,.3),rgba(255,122,182,.12))}
+  /* page tabs: one connected control, equal tabs, the open one lit */
+  .tabs{display:grid;grid-template-columns:repeat(3,1fr);margin-bottom:18px;padding:4px;border:1px solid var(--line2);background:linear-gradient(180deg,rgba(16,20,42,.9),rgba(8,10,22,.95));clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px)}
+  .tab{display:flex;align-items:center;justify-content:center;gap:8px;min-height:46px;padding:0 8px;border:0;background:transparent;color:var(--mute);cursor:pointer;font:inherit;font-weight:600;font-size:14px;letter-spacing:.06em;text-transform:uppercase;transition:color .15s,background .15s}
+  .tab .ic{width:18px;height:18px;margin:0;opacity:.85}
+  .tab:hover{color:var(--text);background:rgba(0,229,255,.07)}
+  .tab.on{color:#03101a;background:linear-gradient(135deg,var(--acc),var(--violet));box-shadow:0 0 18px -4px rgba(0,229,255,.8);clip-path:polygon(8px 0,100% 0,calc(100% - 8px) 100%,0 100%)}
+  .tab.on .ic{opacity:1}
+  @media(max-width:520px){.tab{font-size:12px;letter-spacing:.03em;gap:6px;flex-direction:column;min-height:54px;padding:6px 4px}.tab .ic{width:16px;height:16px}}
+  .btn.sel{border-color:var(--acc);color:var(--acc2);background:rgba(0,229,255,.08)}
+  .consent{display:flex;flex-direction:row;gap:10px;align-items:flex-start;padding:12px;border:1px solid var(--line2);background:var(--panel2);border-radius:12px;color:var(--text);font-size:13px;line-height:1.45;cursor:pointer}
+  .consent input{width:auto;margin-top:3px}
   .layout{display:grid;grid-template-columns:minmax(0,.95fr) minmax(0,1.05fr);gap:18px;align-items:start}
   @media(max-width:960px){.layout{grid-template-columns:1fr}}
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:18px}
@@ -84,7 +93,8 @@
 <div class="wrap">
   <div class="tabs">
     <button class="tab on" id="tabPose" type="button"><svg class=ic aria-hidden=true><use href=#i-camera></use></svg> Pose pack</button>
-    <button class="tab" id="tabMotion" type="button"><svg class=ic aria-hidden=true><use href=#i-music></use></svg> Copy motion from a video</button>
+    <button class="tab" id="tabMotion" type="button"><svg class=ic aria-hidden=true><use href=#i-music></use></svg> Copy motion</button>
+    <button class="tab" id="tabSwap" type="button"><svg class=ic aria-hidden=true><use href=#i-user></use></svg> Face swap</button>
   </div>
 
   <!-- ===================== POSE PACK ===================== -->
@@ -136,6 +146,49 @@
         <div id="pReel" style="margin-top:12px"></div>
       </div>
       <div class="panel meta">About 4 s per pose. <a href="/guide#poses">How it works</a></div>
+    </div>
+  </div>
+
+  <!-- ===================== FACE SWAP ===================== -->
+  <div id="swapSec" class="layout hidden">
+    <div>
+      <div class="panel">
+        <h2>1 · Video</h2>
+        <label class="drop" id="swDrop"><span id="swTxt"><svg class=ic aria-hidden=true><use href=#i-video></use></svg> Click or drop a video<br><small>first 15 seconds, sound is kept, best with one clear person</small></span><input type="file" accept="video/*" id="swFile"></label>
+        <video class="pv hidden" id="swPv" controls muted loop playsinline style="width:100%;max-height:300px;border-radius:12px;margin-bottom:8px"></video>
+        <div class="meta" id="swInfo"></div>
+
+        <h2 style="margin-top:14px">2 · Face</h2>
+        <div class="row" style="margin-bottom:10px"><button class="btn sel" id="swFromInf" type="button">Saved influencer</button><button class="btn" id="swFromPic" type="button">Upload a picture</button></div>
+        <div id="swInfBox"><div class="who"><img id="swImg" alt=""><label style="margin:0;flex:1">Saved influencer (must have a picture)<select id="swInf"></select></label></div></div>
+        <div id="swPicBox" class="hidden">
+          <label class="drop" id="swFaceDrop" style="padding:14px"><span id="swFaceTxt"><svg class=ic aria-hidden=true><use href=#i-image></use></svg> Click or drop a clear picture of the face<br><small>front facing, good light, no sunglasses</small></span><input type="file" accept="image/*" id="swFaceFile"></label>
+          <img id="swFaceImg" class="hidden" alt="Face" style="width:90px;aspect-ratio:3/4;object-fit:cover;border-radius:10px;border:1px solid var(--acc);margin-bottom:10px">
+        </div>
+
+        <h2 style="margin-top:6px">3 · Engine</h2>
+        <div class="methods" id="swEngines">
+          <div class="m sel" data-e="pixverse"><b>PixVerse Swap</b><span>About $0.05 a video. Keeps the original sound. Fastest and cheapest.</span></div>
+          <div class="m" data-e="wan"><b>Wan Animate Replace</b><span>About $0.08 a second. Silent result. Follows hard motion better.</span></div>
+        </div>
+        <div class="meta" style="margin-bottom:12px">Both models replace the whole person (face, hair and body) with the person in your picture and keep the movement of the video.</div>
+
+        <label class="consent" for="swOk"><input type="checkbox" id="swOk"> <span>This face is mine, or I have that person's permission to use it, and I have the right to edit this video. I will not use the result to mislead people or pass it off as real.</span></label>
+      </div>
+    </div>
+    <div>
+      <div class="panel">
+        <div class="cost"><span class="meta">Estimated cost</span><b id="swCost">-</b></div>
+        <button class="btn primary" id="swGo" type="button">Swap the face</button>
+        <div class="err" id="swErr"></div>
+      </div>
+      <div class="panel">
+        <h2>Result</h2>
+        <div class="stage" id="swStage"><div class="meta" style="padding:30px;text-align:center">Your result appears here.</div></div>
+        <div class="meta" id="swNote" style="margin-top:8px"></div>
+        <div class="row" id="swActions" style="margin-top:10px"></div>
+      </div>
+      <div class="panel meta">Only swap in faces you own or have permission to use. The provider's safety checks are switched on.</div>
     </div>
   </div>
 
@@ -212,11 +265,11 @@ let infs=[];
 
 /* ---------------- tabs ---------------- */
 function tab(which){
-  $('poseSec').classList.toggle('hidden',which!=='pose'); $('motionSec').classList.toggle('hidden',which!=='motion');
-  $('tabPose').classList.toggle('on',which==='pose'); $('tabMotion').classList.toggle('on',which==='motion');
+  $('poseSec').classList.toggle('hidden',which!=='pose'); $('motionSec').classList.toggle('hidden',which!=='motion'); $('swapSec').classList.toggle('hidden',which!=='swap');
+  $('tabPose').classList.toggle('on',which==='pose'); $('tabMotion').classList.toggle('on',which==='motion'); $('tabSwap').classList.toggle('on',which==='swap');
   if(which==='motion') tunnelPoll();
 }
-$('tabPose').onclick=()=>tab('pose'); $('tabMotion').onclick=()=>tab('motion');
+$('tabPose').onclick=()=>tab('pose'); $('tabMotion').onclick=()=>tab('motion'); $('tabSwap').onclick=()=>tab('swap');
 
 /* ---------------- influencers ---------------- */
 async function loadInfs(){
@@ -526,7 +579,63 @@ async function mpoll(id){
   }
 }
 
-renderPoses(); loadInfs(); lookUi();
+/* ---------------- FACE SWAP ---------------- */
+let swSrc=null, swFace=null, swEngine='pixverse', swFaceFrom='inf';
+const SW_PRICE={pixverse:()=>0.05,wan:s=>0.08*Math.max(1,Math.ceil(s))}, SW_NAME={pixverse:'PixVerse Swap',wan:'Wan Animate Replace'};
+function swCost(){ const c=SW_PRICE[swEngine](swSrc?swSrc.duration:5); $('swCost').textContent=swSrc?'≈ $'+c.toFixed(2):'from $0.05'; return c; }
+function swInfo(){ const p=inf($('swInf').value); $('swImg').src=p&&p.image?p.image:''; $('swImg').style.visibility=p&&p.image?'visible':'hidden'; }
+$('swInf').onchange=swInfo;
+$('swFromInf').onclick=()=>{ swFaceFrom='inf'; $('swFromInf').classList.add('sel'); $('swFromPic').classList.remove('sel'); $('swInfBox').classList.remove('hidden'); $('swPicBox').classList.add('hidden'); };
+$('swFromPic').onclick=()=>{ swFaceFrom='pic'; $('swFromPic').classList.add('sel'); $('swFromInf').classList.remove('sel'); $('swPicBox').classList.remove('hidden'); $('swInfBox').classList.add('hidden'); };
+document.querySelectorAll('#swEngines .m').forEach(el=>el.onclick=()=>{ swEngine=el.dataset.e; document.querySelectorAll('#swEngines .m').forEach(x=>x.classList.toggle('sel',x===el)); swCost(); });
+async function swUpload(file){
+  if(!file) return; $('swErr').textContent=''; $('swTxt').textContent='Uploading and preparing…'; swSrc=null;
+  try{
+    const r=await fetch('/api/swap/source',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:file});
+    const j=await r.json(); if(!r.ok) throw new Error(j.error||'Upload failed');
+    swSrc=j; $('swTxt').innerHTML='<svg class=ic aria-hidden=true><use href=#i-circle-check></use></svg> '+file.name.replace(/</g,'&lt;')+'<br><small>click to replace</small>';
+    $('swPv').src=j.previewUrl; $('swPv').classList.remove('hidden'); $('swInfo').textContent='Prepared clip: '+j.duration.toFixed(1)+' s.'; swCost();
+  }catch(e){ $('swTxt').innerHTML='<svg class=ic aria-hidden=true><use href=#i-video></use></svg> Click or drop a video'; $('swErr').textContent=e.message; }
+}
+$('swFile').onchange=e=>swUpload(e.target.files[0]);
+['dragenter','dragover'].forEach(t=>$('swDrop').addEventListener(t,ev=>{ev.preventDefault();$('swDrop').classList.add('over')}));
+['dragleave','drop'].forEach(t=>$('swDrop').addEventListener(t,ev=>{ev.preventDefault();$('swDrop').classList.remove('over')}));
+$('swDrop').addEventListener('drop',ev=>swUpload(ev.dataTransfer.files[0]));
+$('swFaceFile').onchange=async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  try{ const url=await new Promise((res,rej)=>{const fr=new FileReader();fr.onload=()=>res(fr.result);fr.onerror=()=>rej(new Error('Could not read the picture'));fr.readAsDataURL(f);});
+    swFace=await shrinkImg(url,1024); $('swFaceImg').src=swFace; $('swFaceImg').classList.remove('hidden'); $('swFaceTxt').innerHTML='<svg class=ic aria-hidden=true><use href=#i-circle-check></use></svg> '+f.name.replace(/</g,'&lt;')+'<br><small>click to replace</small>';
+  }catch(er){ $('swErr').textContent=er.message; }
+};
+$('swGo').onclick=async()=>{
+  $('swErr').textContent=''; $('swNote').textContent=''; $('swActions').innerHTML='';
+  if(!swSrc) return $('swErr').textContent='Upload a video first.';
+  const p=inf($('swInf').value);
+  if(swFaceFrom==='inf'&&!(p&&p.image)) return $('swErr').textContent='Choose a saved influencer with a picture, or upload a face picture.';
+  if(swFaceFrom==='pic'&&!swFace) return $('swErr').textContent='Upload a clear face picture first.';
+  if(!$('swOk').checked) return $('swErr').textContent='Tick the confirmation first: the face has to be yours or used with permission.';
+  const cost=swCost();
+  if(!(await S.confirmSpend({title:'Swap the face in this video?',total:cost,rows:[['Engine',SW_NAME[swEngine]],['Length',swSrc.duration.toFixed(1)+' s'],['Face',swFaceFrom==='inf'?(p&&p.name)||'influencer':'your picture']]}))) return;
+  $('swGo').disabled=true; $('swStage').innerHTML=S.stageHTML({stage:'queued',msg:'Submitting…'});
+  try{
+    const r=await fetch('/api/swap',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({token:swSrc.token,engine:swEngine,consent:true,title:'Face swap'},swFaceFrom==='inf'?{influencer_id:p.id}:{face:swFace}))});
+    const j=await r.json(); if(!r.ok) throw new Error(j.error||'Request failed');
+    $('swNote').textContent=j.keepsSound?'The original sound is kept.':'This engine returns a silent video.';
+    for(;;){
+      await sleep(3000);
+      const d=await (await fetch('/api/jobs/'+j.id)).json();
+      if(d.status==='failed') throw new Error(d.error||'Face swap failed');
+      if(d.status!=='completed'){ $('swStage').innerHTML=S.stageHTML(d); continue; }
+      $('swStage').innerHTML='<video src="'+d.videoUrl+'" controls autoplay loop playsinline></video>';
+      $('swActions').innerHTML='<a class="btn" href="'+d.videoUrl+'?download=1"><svg class=ic aria-hidden=true><use href=#i-download></use></svg> Download MP4</a>'+(d.cost!=null?'<span class="meta">Cost $'+(+d.cost).toFixed(2)+' · job '+j.id+'</span>':'');
+      window.dispatchEvent(new Event('spend-changed')); break;
+    }
+  }catch(e){ $('swErr').textContent=e.message; $('swStage').innerHTML='<div class="meta" style="padding:30px">Failed.</div>'; }
+  $('swGo').disabled=false;
+};
+swCost();
+
+renderPoses(); loadInfs().then(()=>{ $('swInf').innerHTML=infs.filter(i=>i.image).map(i=>'<option value="'+i.id+'">'+i.name.replace(/</g,'&lt;')+'</option>').join(''); swInfo(); }); lookUi();
 S.addAutoOption($('pModel')); S.addAutoOption($('mModel'));
 S.persistForm('motion',['pModel','pDur','pRes','pExtra','mModel','mDur','mRes','drvUrl']);
 </script>

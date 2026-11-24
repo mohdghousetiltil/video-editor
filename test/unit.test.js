@@ -194,6 +194,11 @@ test("providers: OpenRouter unless a cheaper keyed route exists; fal and BytePlu
     assert.equal(providers.pickRoute("kwaivgi/kling-v3.0-pro").provider, "openrouter");
     assert.equal(providers.pickRoute("kwaivgi/kling-v3.0-pro", { orAvailable: false }).provider, "fal");
     delete process.env.FAL_KLING_FACTOR;
+    // compared in dollars per second: a flat fal.ai price is used only where it really is lower than OpenRouter's
+    assert.equal(providers.pickRoute("kwaivgi/kling-v3.0-pro", { orPerSec: 0.168 }).provider, "fal");
+    assert.equal(providers.pickRoute("kwaivgi/kling-v3.0-pro", { orPerSec: 0.112 }).provider, "openrouter", "silent Kling is cheaper on OpenRouter");
+    assert.equal(providers.pickRoute("kwaivgi/kling-v3.0-pro", { orPerSec: 0.112, orLow: true }).provider, "fal", "OpenRouter credit nearly gone: use the other provider");
+    assert.equal(providers.pickRoute("google/veo-3.1-lite", { orPerSec: 0.05, orLow: true }).provider, "openrouter", "no other route for this model");
 
     const calls = [];
     const fake = async (url, init = {}) => {
@@ -234,7 +239,8 @@ test("settings: $10 default cap, old 'no cap' files get it, a chosen 0 stays", (
 
 test("studio (page helper): total cost line with Auto, and money formatting", () => {
   const vm = require("vm");
-  const ctx = { window: {}, localStorage: { getItem: () => null, setItem() {} }, fetch: async () => ({ json: async () => ({}) }), document: {} };
+  let units = "usd"; // dollars for the old assertions; credits (the default) are tested below
+  const ctx = { window: {}, localStorage: { getItem: (k) => (k === "units" ? units : null), setItem() {} }, fetch: async () => ({ json: async () => ({}) }), document: {} };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../public/studio.js"), "utf8"), ctx);
   const S = ctx.window.studio;
   const veo = { name: "Veo", audio: true, durs: [4, 6, 8], defaultDur: 4, res: ["720p"], price: { "720p": [0.1, 0.08] } };
@@ -245,6 +251,8 @@ test("studio (page helper): total cost line with Auto, and money formatting", ()
   assert.equal(S.money(0.15000000596046448), "$0.15");
   assert.equal(S.money(0.003, 3), "$0.003");
   assert.equal(S.money(0.0001, 3), "<$0.001");
+  units = "cr"; // credits when switched: 1 credit = $1
+  assert.equal(S.money(0.4), "0.4 cr"); assert.equal(S.money(0.05), "0.05 cr"); assert.equal(S.money(0.0004), "<0.001 cr"); assert.equal(S.money(10), "10 cr"); assert.equal(S.money(1.5), "1.5 cr"); assert.equal(S.money(0.123), "0.123 cr"); assert.equal(S.money(0.035), "0.035 cr"); assert.equal(S.money(1234), "1,234 cr"); assert.equal(S.money(null), "—");
   assert.ok(S.validJobId("gen-vid-abc123def") && !S.validJobId("x") && !S.validJobId("a b c d e f g h"));
 });
 
@@ -534,4 +542,16 @@ test("system reboot: the monthly cap counts again from the reboot, the real tota
   assert.ok((await sp.monthTotal()) >= 1.5, "the real total is untouched");
   sp.log("Test", 1.2, "m");
   assert.match(await sp.capBlock(), /cap reached/, "the cap applies again to what is spent after the reboot");
+});
+
+test("face swap: consent is required, engines are priced, jobs are ordinary fal jobs", async () => {
+  const { ENGINES, estimate } = require("../routes/faceswap"), providers = require("../lib/providers");
+  assert.equal(estimate("pixverse", 12), 0.05, "PixVerse is a flat price");
+  assert.equal(estimate("wan", 10), 0.8, "Wan is priced by the second");
+  assert.ok(ENGINES.pixverse.input("v", "f").enable_safety_checker && ENGINES.wan.input("v", "f").enable_safety_checker && ENGINES.wan.input("v", "f").enable_output_safety_checker, "safety checks stay on");
+  const sent = [];
+  const out = await providers.submitFalApp("fal-ai/pixverse/swap", { a: 1 }, async (u, init) => { sent.push([u, JSON.parse(init.body)]); return { ok: true, status: 200, json: async () => ({ request_id: "r9", status_url: "s", response_url: "r" }) }; });
+  assert.match(out.id, /^fal_r9$/); assert.ok(providers.isExternal(out.id)); assert.equal(sent[0][0], "https://queue.fal.run/fal-ai/pixverse/swap");
+  const src = require("fs").readFileSync(require("path").join(__dirname, "..", "routes", "faceswap.js"), "utf8");
+  assert.match(src, /b\.consent !== true/); assert.match(src, /spend\.videoBlock/);
 });

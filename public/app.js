@@ -196,27 +196,43 @@
   }
 
   // ---------- Spend tracker: this month's AI spend (OpenRouter's own figure) + where it went (local log) ----------
-  const money = (n, d) => n == null ? '—' : n > 0 && n < 0.001 ? '<$0.001' : '$' + Number(n).toFixed(d ?? (Math.abs(n) < 1 ? 3 : 2));
+  const asCredits = () => { try { return localStorage.getItem('units') !== 'usd'; } catch { return true; } }; // credits by default (1 credit = $1); dollars when switched in the credits dialog
+  const creditNum = (usd) => { const c = usd; return !isFinite(c) ? '—' : c > 0 && c < 0.001 ? '<0.001' : c >= 100 ? Math.round(c).toLocaleString('en-US') : c >= 10 ? String(+c.toFixed(1)) : c >= 1 ? String(+c.toFixed(2)) : String(+c.toFixed(3)); };
+  const money = (n, d) => n == null ? '—' : asCredits() ? creditNum(n) + ' cr' : n > 0 && n < 0.001 ? '<$0.001' : '$' + Number(n).toFixed(d ?? (Math.abs(n) < 1 ? 3 : 2));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const sbSpend = document.createElement('button');
   sbSpend.type = 'button'; sbSpend.className = 'spend';
-  sbSpend.innerHTML = '<span class="spend-k">This month</span><b class="spend-v">…</b><span class="spend-bar"><i></i></span><small class="spend-s"></small>';
+  sbSpend.innerHTML = '<span class="spend-k">Credits left</span><b class="spend-v">…</b><span class="spend-bar"><i></i></span><small class="spend-s"></small>';
   side.querySelector('.sb-foot').before(sbSpend);
   const chipHost = () => document.querySelector('.pagehead');
   const chip = document.createElement('button'); // phones: the sidebar is hidden, so a chip sits in the page head
-  chip.type = 'button'; chip.className = 'spend-chip'; chip.innerHTML = '<span>This month</span> <b>…</b>';
+  chip.type = 'button'; chip.className = 'spend-chip';
+  chip.innerHTML = '<svg class=ic aria-hidden=true><use href=#i-zap></use></svg><b>…</b><span class="cr-u">credits</span>';
   const dlg = document.createElement('dialog');
   dlg.className = 'spend-dlg';
   dlg.setAttribute('aria-label', 'AI spend');
   document.body.append(dlg);
-  chipHost()?.append(chip);
+  // (the credits pill is no longer placed in the page head; the sidebar card and the details dialog stay)
   let spend = null;
   const paintSpend = (j) => {
     spend = j;
     // this month across every provider (OpenRouter's own figure + fal.ai), the same number the cap checks
     const or = j.openrouter, total = j.capUsed != null ? j.capUsed : or && or.month != null ? or.month : j.local.total;
-    sbSpend.querySelector('.spend-v').textContent = money(total, 2);
-    chip.querySelector('b').textContent = money(total, 2);
+    // credits available = what can still be spent: the monthly cap left, but never more than the money actually on the accounts
+    const capLeft0 = j.cap > 0 ? Math.max(0, j.cap - total) : Infinity;
+    const accounts = (or && or.balance != null ? or.balance : 0) + (j.fal && j.fal.balance != null ? j.fal.balance : 0);
+    const haveAcc = (or && or.balance != null) || (j.fal && j.fal.balance != null);
+    const avail = Math.min(capLeft0, haveAcc ? accounts : Infinity);
+    const known = isFinite(avail), shown = known ? avail : total;
+    const level = !known ? '' : avail <= 0.05 ? 'empty' : avail < 1 ? 'low' : '';
+    const numTxt = asCredits() ? creditNum(shown) : money(shown, 2);
+    sbSpend.querySelector('.spend-k').textContent = known ? (asCredits() ? 'Credits left' : 'Money left') : 'This month';
+    sbSpend.querySelector('.spend-v').textContent = numTxt;
+    chip.querySelector('b').textContent = numTxt;
+    chip.querySelector('.cr-u').textContent = asCredits() ? (known ? 'credits' : 'used') : (known ? 'left' : 'used');
+    chip.classList.toggle('low', level === 'low'); chip.classList.toggle('empty', level === 'empty');
+    chip.dataset.state = level === 'empty' ? 'Empty' : level === 'low' ? 'Low' : '';
+    chip.setAttribute('aria-label', (known ? numTxt + (asCredits() ? ' credits left' : ' left') : 'Spent this month ' + numTxt) + (level === 'empty' ? ', none left' : level === 'low' ? ', running low' : '') + '. Tap for details');
     // the bar shows the monthly cap from Settings when there is one, else the API key's own limit
     const cap = j.cap > 0 ? j.cap : 0;
     const lim = cap || (or && or.keyLimit), used = cap ? total : lim ? lim - (or.keyRemaining ?? lim) : 0;
@@ -225,8 +241,7 @@
     bar.hidden = !lim;
     if (lim) { const p = Math.min(100, (used / lim) * 100); bar.firstChild.style.width = p + '%'; bar.classList.toggle('hot', p > 85); }
     // one meaning per number, same labels as the dialog: cap left (the app's own monthly cap), else OpenRouter credit left
-    sbSpend.querySelector('.spend-s').textContent = (cap ? money(Math.max(0, cap - total), 2) + ' cap left of ' + money(cap, 0)
-      : or && or.balance != null ? money(or.balance, 2) + ' credit left' : 'tap for details') + falBal;
+    sbSpend.querySelector('.spend-s').textContent = money(total, 2) + ' used this month' + (cap ? ' · cap ' + money(cap, 0) : '') + (level ? ' · ' + (level === 'empty' ? 'none left' : 'low') : '');
     sbSpend.title = 'This month, all providers ' + money(total, 2) + (or && or.month != null ? ' · OpenRouter ' + money(or.month, 2) : '') + (or && or.balance != null ? ' · OpenRouter credit left ' + money(or.balance, 2) : '') +
       (j.fal && j.fal.balance != null ? ' · fal.ai credit left ' + money(j.fal.balance, 2) : '') + (cap ? ' · app cap ' + money(cap, 0) : '');
   };
@@ -243,6 +258,7 @@
     const maxF = Math.max(...L.byFeature.map((f) => f.cost), 0.0001), maxD = Math.max(...L.byDay.map((d) => d.cost), 0.0001);
     const lim = or.keyLimit, used = lim ? lim - (or.keyRemaining ?? lim) : 0;
     dlg.innerHTML =
+      `<div class="sd-unit"><span data-keep>${asCredits() ? '1 credit = $1 ($10 = 10 credits). A short clip is about 0.3 to 0.5 credits.' : 'Showing dollars.'}</span><button class="btn" type="button" data-unit>${asCredits() ? 'Show dollars' : 'Show credits'}</button></div>` +
       `<div class="sd-head"><h2>AI spend · ${esc(monthName)}</h2><button class="btn sd-x" data-x aria-label="Close"><svg class=ic aria-hidden=true><use href=#i-x></use></svg></button></div>` +
       (j.months.length > 1 ? `<label class="sd-month">Month<select>${j.months.map((m) => `<option ${m === j.month ? 'selected' : ''}>${m}</option>`).join('')}</select></label>` : '') +
       (j.current && j.openrouter ? `<div class="sd-tiles">
@@ -270,7 +286,10 @@
       `<p class="sd-note">The app's log covers only what this app spent since the tracker was added; the voice cost is an estimate (the voice service doesn't report it).</p>`;
     dlg.querySelector('select')?.addEventListener('change', (e) => openSpend(e.target.value));
   };
-  dlg.addEventListener('click', (e) => { if (e.target === dlg || e.target.closest('[data-x]')) dlg.close(); });
+  dlg.addEventListener('click', (e) => {
+    if (e.target === dlg || e.target.closest('[data-x]')) dlg.close();
+    if (e.target.closest('[data-unit]')) { try { localStorage.setItem('units', asCredits() ? 'usd' : 'cr'); } catch {} location.reload(); }
+  });
   sbSpend.onclick = chip.onclick = () => openSpend();
   loadSpend();
   setInterval(() => { if (!document.hidden) loadSpend(); }, 60000);

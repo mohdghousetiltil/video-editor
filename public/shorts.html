@@ -37,7 +37,14 @@
   .primary{background:linear-gradient(135deg,var(--acc),#9a6bff);border:0;color:#fff}
   .err{color:var(--err);margin-top:10px}
   .meta{color:var(--mute);font-size:13px}
-  .seg{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+  /* source picker: one connected control, three equal tabs, the chosen one lit */
+  .seg{display:grid;grid-template-columns:repeat(3,1fr);gap:0;margin-bottom:14px;padding:4px;border:1px solid var(--line2);background:linear-gradient(180deg,rgba(16,20,42,.9),rgba(8,10,22,.95));clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px)}
+  .seg .chip{display:flex;align-items:center;justify-content:center;gap:8px;min-height:46px;padding:0 8px !important;border:0 !important;background:transparent !important;color:var(--mute) !important;clip-path:none;font-size:14px;letter-spacing:.08em;text-transform:uppercase;transform:none !important;box-shadow:none}
+  .seg .chip .ic{width:18px;height:18px;margin:0;opacity:.85}
+  .seg .chip:hover{color:var(--text) !important;background:rgba(0,229,255,.07) !important}
+  .seg .chip.sel{color:#03101a !important;background:linear-gradient(135deg,var(--acc),var(--violet)) !important;box-shadow:0 0 18px -4px rgba(0,229,255,.8);clip-path:polygon(8px 0,100% 0,calc(100% - 8px) 100%,0 100%)}
+  .seg .chip.sel .ic{opacity:1}
+  @media(max-width:420px){.seg .chip{font-size:12.5px;letter-spacing:.04em;gap:6px}.seg .chip .ic{width:16px;height:16px}}
   .drop{border:2px dashed var(--line);border-radius:12px;padding:30px 16px;text-align:center;cursor:pointer;color:var(--mute)}
   .drop.over{border-color:var(--acc)}
   .drop b{color:var(--text);display:block;font-size:15px;margin-bottom:4px;word-break:break-all}
