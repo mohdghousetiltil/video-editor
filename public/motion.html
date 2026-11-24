@@ -55,6 +55,15 @@
   .hidden{display:none !important}
   .who{display:flex;gap:12px;align-items:center;margin-bottom:12px}
   .who img{width:64px;height:86px;object-fit:cover;border-radius:10px;border:1px solid var(--line);background:var(--panel2)}
+  .people{margin:10px 0 4px;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--panel2)}
+  .people .pp{display:flex;gap:8px;overflow-x:auto;padding:2px 0 6px}
+  .people .pc{all:unset;cursor:pointer;flex:0 0 78px;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11px;color:var(--mute);text-align:center}
+  .people .pc img{width:72px;height:72px;object-fit:cover;object-position:center 40%;border-radius:10px;border:2px solid var(--line);opacity:.65}
+  .people .pc.sel{color:var(--text)}
+  .people .pc.sel img{border-color:var(--acc);opacity:1;box-shadow:0 0 12px var(--acc)}
+  .people .pc:focus-visible img{outline:1px dashed var(--acc);outline-offset:2px}
+  .people .why{font-size:12px;color:var(--mute)}
+  .people .why.warn{color:#ffb86b}
   .poses{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
   .pose{padding:8px 12px;border-radius:99px;border:1px solid var(--line);background:var(--panel2);cursor:pointer;font-size:13px;user-select:none}
   .pose.sel{background:var(--acc);border-color:var(--acc);color:#fff}
@@ -157,6 +166,7 @@
         <label class="drop" id="swDrop"><span id="swTxt"><svg class=ic aria-hidden=true><use href=#i-video></use></svg> Click or drop a video<br><small>first 15 seconds, sound is kept, best with one clear person</small></span><input type="file" accept="video/*" id="swFile"></label>
         <video class="pv hidden" id="swPv" controls muted loop playsinline style="width:100%;max-height:300px;border-radius:12px;margin-bottom:8px"></video>
         <div class="meta" id="swInfo"></div>
+        <div class="people hidden" id="swPeople" aria-live="polite"></div>
         <label style="margin-top:10px">…or paste a link: Instagram, X, TikTok, YouTube or a direct MP4<span class="row" style="gap:8px;flex-wrap:nowrap"><input type="text" id="swUrl" placeholder="https://…" style="flex:1;min-width:0"><button class="btn" id="swGet" type="button">Get video</button></span></label>
 
         <h2 style="margin-top:14px">2 · Face</h2>
@@ -172,9 +182,9 @@
           <div class="m sel" data-e="pixverse"><b>PixVerse Swap</b><span>About $0.05 a second (a 5 s clip is about $0.25). Keeps the original sound. Cheapest.</span></div>
           <div class="m" data-e="wan"><b>Wan Animate Replace</b><span>About $0.08 a second. Silent result. Follows hard motion better.</span></div>
         </div>
-        <label>Voice<select id="swVoice"><option value="real">Real voice: a real woman's or man's voice to match the character, a different one each time (about 0.3 credits a minute)</option><option value="auto">Free: the same voice with its pitch moved (sounds less natural)</option><option value="female">Always higher (a woman's range)</option><option value="male">Always lower (a man's range)</option><option value="keep">Keep the original voice</option></select></label>
+        <label>Voice<select id="swVoice"><option value="real">Real voice: a real woman's or man's voice to match the character, always the same one for the same influencer (about 0.3 credits a minute)</option><option value="auto">Free: the same voice with its pitch moved (sounds less natural)</option><option value="female">Always higher (a woman's range)</option><option value="male">Always lower (a man's range)</option><option value="keep">Keep the original voice</option></select></label>
         <div class="meta" style="margin:-6px 0 12px">Either way the words, timing and lip sync stay the same: the real voice is converted from your clip's speech, nothing new is written or generated.</div>
-        <div class="meta" style="margin-bottom:12px">Both models replace the whole person (face, hair and body) with the person in your picture and keep the movement of the video.</div>
+        <div class="meta" style="margin-bottom:12px">Both models replace the whole person (face, hair and body) with the person in your picture and keep the movement of the video. When the video has more than one person, only the chosen person's part of the video is sent, and the result is put back into the original, so everyone else stays as they were.</div>
 
         <label class="consent" for="swOk"><input type="checkbox" id="swOk"> <span>This face is mine, or I have that person's permission to use it, and I have the right to edit this video. I will not use the result to mislead people or pass it off as real.</span></label>
       </div>
@@ -597,9 +607,43 @@ let swSrc=null, swFace=null, swEngine='pixverse', swFaceFrom='inf';
 const SW_PRICE={pixverse:s=>0.05*Math.max(1,Math.ceil(s)),wan:s=>0.08*Math.max(1,Math.ceil(s))}, SW_NAME={pixverse:'PixVerse Swap',wan:'Wan Animate Replace'};
 function swCost(){ const d=swSrc?swSrc.duration:5, c=SW_PRICE[swEngine](d)+($('swVoice')&&$('swVoice').value==='real'?0.005*d:0); $('swCost').textContent=swSrc?'≈ $'+c.toFixed(2):'from $0.05 a second'; return c; }
 function swInfo(){ const p=inf($('swInf').value); $('swImg').src=p&&p.image?p.image:''; $('swImg').style.visibility=p&&p.image?'visible':'hidden'; }
-$('swInf').onchange=swInfo; $('swVoice').onchange=swCost;
-$('swFromInf').onclick=()=>{ swFaceFrom='inf'; $('swFromInf').classList.add('sel'); $('swFromPic').classList.remove('sel'); $('swInfBox').classList.remove('hidden'); $('swPicBox').classList.add('hidden'); };
-$('swFromPic').onclick=()=>{ swFaceFrom='pic'; $('swFromPic').classList.add('sel'); $('swFromInf').classList.remove('sel'); $('swPicBox').classList.remove('hidden'); $('swInfBox').classList.add('hidden'); };
+$('swInf').onchange=()=>{ swInfo(); swChoose(); };
+// ---- who to swap: the people in the video (found in the browser, free), the main one of the influencer's gender pre-selected ----
+let swScan=null, swPeopleList=[], swPick=null, swByHand=false, swWhy='', swAmb=false;
+async function swFindPeople(){
+  swScan=null; swPeopleList=[]; swPick=null; swByHand=false;
+  const box=$('swPeople'); box.classList.remove('hidden'); box.innerHTML='<div class="why">Looking for people in the video…</div>';
+  try{
+    const src=swSrc.previewUrl, sc=await people.scan(src,(d,n)=>{ if(swSrc&&swSrc.previewUrl===src) box.innerHTML='<div class="why">Looking for people in the video… '+d+'/'+n+'</div>'; });
+    if(!swSrc||swSrc.previewUrl!==src) return;  // another video was picked meanwhile
+    swScan=sc; swPeopleList=people.track(sc.frames);
+    // side-on faces: their gender is checked once with a quick look (a fraction of a cent each)
+    await people.checkGenders(swPeopleList, async (image)=>{ const r=await fetch('/api/swap/gender',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image})}); const j=await r.json(); return r.ok?j.gender:null; });
+    await swChoose();
+    if(!sc.bodies) box.insertAdjacentHTML('beforeend','<div class="why warn">The body detector didn\'t load, so only people facing the camera are kept out.</div>');
+  }catch(e){ box.innerHTML='<div class="why warn">Couldn\'t look for people ('+S.esc(e.message)+'). The whole video is sent and the model chooses who to replace.</div>'; }
+}
+async function swGender(){
+  if(swFaceFrom==='pic') return swFace?people.genderOf('',swFace):null;
+  const p=inf($('swInf').value); return p?people.genderOf(p.desc,p.image):null;
+}
+async function swChoose(){
+  if(!swScan) return;
+  if(!swByHand){ const c=people.choose(swPeopleList,await swGender()); swPick=c.pick; swWhy=c.reason; swAmb=c.ambiguous; }
+  swPaintPeople();
+}
+function swPaintPeople(){
+  const box=$('swPeople'), list=swPeopleList.filter(p=>p.thumb);
+  if(!list.length){ box.innerHTML='<div class="why">'+S.esc(swWhy)+'</div>'; return; }
+  const one=list.length===1;
+  box.innerHTML='<div class="why" style="margin-bottom:6px"><b style="color:var(--text)">Who to swap</b> · '+(one?'1 person found':list.length+' people found, tap one to change')+'</div>'+
+    '<div class="pp" role="radiogroup" aria-label="Person to swap">'+list.map(p=>'<button type="button" class="pc'+(p===swPick?' sel':'')+'" role="radio" aria-checked="'+(p===swPick)+'" data-pid="'+p.id+'"><img src="'+p.thumb+'" alt=""><span>'+p.label+'</span><span>'+(p.gender==='female'?'woman':'man')+' · '+Math.round(p.presence*100)+'%</span></button>').join('')+'</div>'+
+    '<div class="why'+(swAmb&&!swByHand?' warn':'')+'">'+(swByHand?'Your choice: '+swPick.label+'.':S.esc(swWhy)+(swAmb?' Two people look equally main: check this is the right one.':''))+(one?'':' Only this person is replaced; everyone else stays as they are.')+'</div>'+
+    (()=>{ const n=swScan&&swPick?people.hideBoxes(swPick,swPeopleList,swScan.frames).length:0; return n?'<div class="why">Everyone else is kept out of what the model sees (also people facing away) and stays as they are.</div>':''; })();
+  box.querySelectorAll('[data-pid]').forEach(b=>b.onclick=()=>{ swPick=swPeopleList.find(p=>p.id===+b.dataset.pid); swByHand=true; swPaintPeople(); });
+} $('swVoice').onchange=swCost;
+$('swFromInf').onclick=()=>{ swFaceFrom='inf'; setTimeout(swChoose); $('swFromInf').classList.add('sel'); $('swFromPic').classList.remove('sel'); $('swInfBox').classList.remove('hidden'); $('swPicBox').classList.add('hidden'); };
+$('swFromPic').onclick=()=>{ swFaceFrom='pic'; setTimeout(swChoose); $('swFromPic').classList.add('sel'); $('swFromInf').classList.remove('sel'); $('swPicBox').classList.remove('hidden'); $('swInfBox').classList.add('hidden'); };
 document.querySelectorAll('#swEngines .m').forEach(el=>el.onclick=()=>{ swEngine=el.dataset.e; document.querySelectorAll('#swEngines .m').forEach(x=>x.classList.toggle('sel',x===el)); swCost(); });
 async function swUpload(file){
   if(!file) return; $('swErr').textContent=''; $('swTxt').textContent='Uploading and preparing…'; swSrc=null;
@@ -607,7 +651,7 @@ async function swUpload(file){
     const r=await fetch('/api/swap/source',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:file});
     const j=await r.json(); if(!r.ok) throw new Error(j.error||'Upload failed');
     swSrc=j; $('swTxt').innerHTML='<svg class=ic aria-hidden=true><use href=#i-circle-check></use></svg> '+file.name.replace(/</g,'&lt;')+'<br><small>click to replace</small>';
-    $('swPv').src=j.previewUrl; $('swPv').classList.remove('hidden'); $('swInfo').textContent='Prepared clip: '+j.duration.toFixed(1)+' s.'; swCost();
+    $('swPv').src=j.previewUrl; $('swPv').classList.remove('hidden'); $('swInfo').textContent='Prepared clip: '+j.duration.toFixed(1)+' s.'; swCost(); swFindPeople();
   }catch(e){ $('swTxt').innerHTML='<svg class=ic aria-hidden=true><use href=#i-video></use></svg> Click or drop a video'; $('swErr').textContent=e.message; }
 }
 $('swFile').onchange=e=>swUpload(e.target.files[0]);
@@ -617,7 +661,7 @@ $('swGet').onclick=async()=>{
   try{
     const r=await fetch('/api/swap/link',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:u})});
     const j=await r.json(); if(!r.ok) throw new Error(j.error||'Could not get that video');
-    swSrc=j; $('swPv').src=j.previewUrl; $('swPv').classList.remove('hidden'); $('swInfo').textContent='Got the video from the link: '+j.duration.toFixed(1)+' s.'; swCost();
+    swSrc=j; $('swPv').src=j.previewUrl; $('swPv').classList.remove('hidden'); $('swInfo').textContent='Got the video from the link: '+j.duration.toFixed(1)+' s.'; swCost(); swFindPeople();
   }catch(e){ $('swInfo').textContent=''; $('swErr').textContent=e.message; }
   $('swGet').disabled=false;
 };
@@ -627,7 +671,7 @@ $('swDrop').addEventListener('drop',ev=>swUpload(ev.dataTransfer.files[0]));
 $('swFaceFile').onchange=async e=>{
   const f=e.target.files[0]; if(!f) return;
   try{ const url=await new Promise((res,rej)=>{const fr=new FileReader();fr.onload=()=>res(fr.result);fr.onerror=()=>rej(new Error('Could not read the picture'));fr.readAsDataURL(f);});
-    swFace=await shrinkImg(url,1024); $('swFaceImg').src=swFace; $('swFaceImg').classList.remove('hidden'); $('swFaceTxt').innerHTML='<svg class=ic aria-hidden=true><use href=#i-circle-check></use></svg> '+f.name.replace(/</g,'&lt;')+'<br><small>click to replace</small>';
+    swFace=await shrinkImg(url,1024); swChoose(); $('swFaceImg').src=swFace; $('swFaceImg').classList.remove('hidden'); $('swFaceTxt').innerHTML='<svg class=ic aria-hidden=true><use href=#i-circle-check></use></svg> '+f.name.replace(/</g,'&lt;')+'<br><small>click to replace</small>';
   }catch(er){ $('swErr').textContent=er.message; }
 };
 $('swGo').onclick=async()=>{
@@ -637,11 +681,14 @@ $('swGo').onclick=async()=>{
   if(swFaceFrom==='inf'&&!(p&&p.image)) return $('swErr').textContent='Choose a saved influencer with a picture, or upload a face picture.';
   if(swFaceFrom==='pic'&&!swFace) return $('swErr').textContent='Upload a clear face picture first.';
   if(!$('swOk').checked) return $('swErr').textContent='Tick the confirmation first: the face has to be yours or used with permission.';
-  const cost=swCost();
-  if(!(await S.confirmSpend({title:'Swap the face in this video?',total:cost,rows:[['Engine',SW_NAME[swEngine]],['Voice',$('swVoice').selectedOptions[0].textContent.split(':')[0]],['Length',swSrc.duration.toFixed(1)+' s'],['Face',swFaceFrom==='inf'?(p&&p.name)||'influencer':'your picture']]}))) return;
+  const cost=swCost(), crop=swScan&&swPick?people.cropBox(swPick,swPeopleList.filter(p=>p.thumb),swScan.width,swScan.height):null;
+  const hide=swScan&&swPick?people.hideBoxes(swPick,swPeopleList,swScan.frames):[];
+  const text=swScan?people.captionBoxes(swScan.frames):[];
+  const key=swScan&&swPick?people.keyFrame(swPick,swScan.frames,24):null;
+  if(!(await S.confirmSpend({title:'Swap the face in this video?',total:cost,rows:[...(swPick&&swPeopleList.filter(p=>p.thumb).length>1?[['Replaces',swPick.label+(crop?' only':'')]]:[]),...(text.length?[['Captions',text.length+(text.length>1?' caption lines':' caption line')+' kept from the original']]:[]),...(hide.length?[['Kept out','everyone else (covered for the model, original kept)']]:[]),['Engine',SW_NAME[swEngine]],['Voice',$('swVoice').selectedOptions[0].textContent.split(':')[0]],['Length',swSrc.duration.toFixed(1)+' s'],['Face',swFaceFrom==='inf'?(p&&p.name)||'influencer':'your picture']]}))) return;
   $('swGo').disabled=true; $('swStage').innerHTML=S.stageHTML({stage:'queued',msg:'Submitting…'});
   try{
-    const r=await fetch('/api/swap',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({token:swSrc.token,engine:swEngine,consent:true,voice:$('swVoice').value,title:'Face swap'},swFaceFrom==='inf'?{influencer_id:p.id}:{face:swFace}))});
+    const r=await fetch('/api/swap',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({token:swSrc.token,engine:swEngine,consent:true,voice:$('swVoice').value,title:'Face swap'},crop?{crop}:{},hide.length?{hide}:{},text.length?{text}:{},key?{keyframe:key.frame}:{},swFaceFrom==='inf'?{influencer_id:p.id}:{face:swFace}))});
     const j=await r.json(); if(!r.ok) throw new Error(j.error||'Request failed');
     $('swNote').textContent='Sound: '+(j.voice||'none')+'. The voice is added as the last step, so it can take a little longer.';
     for(;;){
@@ -662,6 +709,7 @@ renderPoses(); loadInfs().then(()=>{ $('swInf').innerHTML=infs.filter(i=>i.image
 S.addAutoOption($('pModel')); S.addAutoOption($('mModel'));
 S.persistForm('motion',['pModel','pDur','pRes','pExtra','mModel','mDur','mRes','drvUrl']);
 </script>
+<script src="/people.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

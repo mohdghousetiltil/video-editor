@@ -38,6 +38,10 @@ const DB = path.join(DATA, "influencers.json");
 const readInf = () => { try { return JSON.parse(fs.readFileSync(DB, "utf8")); } catch { return []; } };
 const writeInf = (a) => { fs.mkdirSync(IMG, { recursive: true }); fs.writeFileSync(DB, JSON.stringify(a, null, 2)); };
 const imgFile = (id) => ["jpg", "png", "webp"].map((e) => path.join(IMG, `${id}.${e}`)).find((f) => fs.existsSync(f));
+// Body profiles of an influencer (front, left, right, back, half body, full body), generated from the main picture: data/img/<id>.views/<view>.<ext>
+const INF_VIEWS = ["front", "left", "right", "back", "half", "full"];
+const viewDir = (id) => path.join(IMG, `${id}.views`);
+const viewFile = (id, v) => INF_VIEWS.includes(v) ? ["jpg", "png", "webp"].map((e) => path.join(viewDir(id), `${v}.${e}`)).find((f) => fs.existsSync(f)) : undefined;
 
 // which page asked (from the Referer), so video costs can be split by feature
 const pageFeature = (req) => {
@@ -168,7 +172,7 @@ const UNLOCKED = !!PROXY_KEY || !PUBLIC_URL_RAW() || process.env.ALLOW_OPEN === 
 function PUBLIC_URL_RAW() { return (process.env.PUBLIC_URL || "").trim(); }
 if (!UNLOCKED) console.error("PROXY_KEY is not set but PUBLIC_URL is: the API is locked. Set PROXY_KEY (same value as in Cloudflare).");
 // Paid endpoints are refused once the monthly cap (Settings) is reached.
-const PAID = /^\/api\/(generate|swap|plan|cast|keyframe|tts|stitch|lookframe|startframe|describe|portraits|caption|enhance|still|director|scripts|shorts(\/upload|\/pictures)?|shorts\/\w+\/retry|influencers\/[\w-]+\/check)$/;
+const PAID = /^\/api\/(generate|swap|swap\/gender|plan|cast|keyframe|tts|stitch|lookframe|startframe|describe|portraits|caption|enhance|still|director|scripts|shorts(\/upload|\/pictures)?|shorts\/\w+\/retry|influencers\/[\w-]+\/(check|profiles))$/;
 
 const MODELS = modelsLib.VIDEO; // capabilities per model; lib/models.js
 // ---- Motion page: share uploaded driving clips with the video provider (it needs a public HTTPS link) ----
@@ -320,7 +324,7 @@ const orHeaders = () => ({ Authorization: `Bearer ${KEY}`, "Content-Type": "appl
 // Shorts maker (long video -> analysed, cut, captioned 9:16 Short + thumbnail + title); see shorts.js
 const shorts = require("./shorts")({ STORE, FFMPEG, API, getKey: () => KEY, run, send, serveMp4, tts, logSpend, orFetch, renderSlot, getModel: () => settings.get().visionModel, serveThumb, history });
 const shortsRoutes = shorts.handle;
-const ctx = { STORE, DATA, API, getKey: () => KEY, orFetch, orHeaders, send, readBody, run, tts, spend, settings, serveMp4, serveThumb, mediaDuration, hasAudio, glitchFilter, renderSlot, prices, imgFile, history, liveModels, jobs, ensureVideo, themes, themeText, readInf, STILLS, stillFile, fileDataUrl, frameToJpeg, providers, fetchLink, FFMPEG };
+const ctx = { STORE, DATA, API, getKey: () => KEY, orFetch, orHeaders, send, readBody, run, tts, spend, settings, serveMp4, serveThumb, mediaDuration, hasAudio, glitchFilter, renderSlot, prices, imgFile, viewFile, history, liveModels, jobs, ensureVideo, themes, themeText, readInf, STILLS, stillFile, fileDataUrl, frameToJpeg, providers, fetchLink, FFMPEG };
 const story = require("./routes/story")(ctx);
 const systemRoutes = require("./routes/system")(ctx);
 const themeRoutes = require("./routes/themes")(ctx);
@@ -704,7 +708,8 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ---- Influencer library (saved on disk in ./data so every page can use it) ----
-    const pub = (p) => ({ id: p.id, name: p.name, desc: p.desc, seed: p.seed, seedance: p.seedance || null, image: imgFile(p.id) ? `/api/influencers/${p.id}/image?v=${p.updated || 0}` : null });
+    const pub = (p) => ({ id: p.id, name: p.name, desc: p.desc, seed: p.seed, seedance: p.seedance || null, image: imgFile(p.id) ? `/api/influencers/${p.id}/image?v=${p.updated || 0}` : null,
+      views: Object.fromEntries(INF_VIEWS.map((v) => [v, viewFile(p.id, v)]).filter(([, f]) => f).map(([v, f]) => [v, `/api/influencers/${p.id}/view/${v}?v=${Math.round(fs.statSync(f).mtimeMs)}`])) });
     if (url.pathname === "/api/influencers" && req.method === "GET") return send(res, 200, { influencers: readInf().map(pub) });
     if (url.pathname === "/api/influencers" && req.method === "POST") {
       const b = await readBody(req);
@@ -720,9 +725,60 @@ const server = http.createServer(async (req, res) => {
       if (m) {
         const old = imgFile(p.id); if (old) fs.unlinkSync(old);
         p.seedance = null; writeInf(all); // new picture: earlier Seedance test no longer applies
+        fs.rmSync(viewDir(p.id), { recursive: true, force: true }); // and the old body profiles would show someone else now
         fs.writeFileSync(path.join(IMG, `${p.id}.${m[1] === "jpeg" ? "jpg" : m[1]}`), Buffer.from(m[2], "base64"));
       }
       return send(res, 200, pub(p));
+    }
+    // ---- Body profiles: front, left, right, back, half body and full body of the SAME person, made from the main picture ----
+    // Video models keep a character far better with these (turning around, walking away, full-body shots, replacing a whole person).
+    let pm;
+    if (req.method === "POST" && (pm = url.pathname.match(/^\/api\/influencers\/([\w-]+)\/profiles$/))) {
+      if (!KEY) return send(res, 500, { error: "OPENROUTER_API_KEY missing." });
+      const b = await readBody(req);
+      const p = readInf().find((x) => x.id === pm[1]), f = p && imgFile(p.id);
+      if (!f) return send(res, 400, { error: "Save a main picture for this influencer first." });
+      const want = (Array.isArray(b.views) ? b.views : INF_VIEWS).filter((v) => INF_VIEWS.includes(v));
+      if (!want.length) return send(res, 400, { error: "Choose which profiles to make." });
+      const FRAME_MODELS = ["google/gemini-3.1-flash-image", "openai/gpt-image-2", "bytedance-seed/seedream-5-0-lite"];
+      const model = FRAME_MODELS.includes(b.model) ? b.model : FRAME_MODELS[0];
+      const person = `data:image/${path.extname(f).slice(1).replace("jpg", "jpeg")};base64,` + fs.readFileSync(f).toString("base64");
+      const SHOT = {
+        front: "Front view, head and upper chest: facing the camera straight on, looking into the lens, neutral relaxed expression, both ears equally visible.",
+        left: "Exact side profile facing screen-left: head and shoulders turned 90 degrees so only the side of the face is seen (the nose points to the left edge of the picture), looking ahead, not at the camera.",
+        right: "Exact side profile facing screen-right: head and shoulders turned 90 degrees so only the side of the face is seen (the nose points to the right edge of the picture), looking ahead, not at the camera.",
+        back: "Back view from the waist up: the person stands with their back to the camera and the face is NOT visible, showing the back of the head, the hairstyle from behind and the back of the outfit.",
+        half: "Half-body shot from the waist up: facing the camera, arms relaxed and both hands visible, natural standing posture.",
+        full: "Full-body shot from head to toe, feet and shoes fully in frame with some space above the head and below the feet: standing facing the camera, arms relaxed at the sides, natural posture.",
+      };
+      const one = async (v) => {
+        const prompt = "Image 1 shows a character. Create a new picture of EXACTLY the same person for a character reference sheet: identical face, facial features, skin tone, age, hair colour, hair length and hairstyle, body type and proportions, and the same outfit and accessories (where image 1 does not show part of the outfit, invent it to match its style and colours). " +
+          (p.desc ? `The character: ${String(p.desc).slice(0, 600)} ` : "") + SHOT[v] + " " +
+          "Keep the same visual style as image 1 (a realistic photo stays a realistic photo; 3D, anime or illustrated stays in that style). Plain light-grey seamless studio background, soft even lighting, sharp focus, one person only, no text, no logo, no watermark. Vertical 9:16 framing.";
+        const r = await orFetch(`${API}/images`, { method: "POST", headers: orHeaders(), body: JSON.stringify({ model, prompt, n: 1, aspect_ratio: "9:16", input_references: [{ type: "image_url", image_url: { url: person } }] }) }, { safe: false });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error?.message || `failed (${r.status})`);
+        const d = j.data?.[0];
+        if (!d?.b64_json) throw new Error("no picture returned");
+        const ext = /png/.test(d.media_type || "") ? "png" : /webp/.test(d.media_type || "") ? "webp" : "jpg";
+        fs.mkdirSync(viewDir(p.id), { recursive: true });
+        const old = viewFile(p.id, v); if (old) fs.unlinkSync(old);
+        fs.writeFileSync(path.join(viewDir(p.id), `${v}.${ext}`), Buffer.from(d.b64_json, "base64"));
+        return j.usage?.cost || 0;
+      };
+      const results = await Promise.allSettled(want.map(one));
+      const cost = results.reduce((a, r) => a + (r.status === "fulfilled" ? r.value : 0), 0);
+      if (cost) logSpend("Influencers", cost, model);
+      const failed = want.map((v, i) => results[i].status === "rejected" ? { view: v, error: String(results[i].reason?.message || results[i].reason).slice(0, 200) } : null).filter(Boolean);
+      if (failed.length === want.length) return send(res, 502, { error: "No profile could be made: " + failed[0].error, failed });
+      return send(res, 200, { ...pub(p), cost, failed });
+    }
+    let vm;
+    if (req.method === "GET" && (vm = url.pathname.match(/^\/api\/influencers\/([\w-]+)\/view\/(\w+)$/))) {
+      const f = viewFile(vm[1], vm[2]);
+      if (!f) { res.writeHead(404); return res.end("No such profile"); }
+      res.writeHead(200, { "Content-Type": "image/" + path.extname(f).slice(1).replace("jpg", "jpeg"), "Cache-Control": "private, max-age=31536000, immutable" });
+      return fs.createReadStream(f).pipe(res);
     }
     // Does Seedance accept this influencer's picture? A rejection costs nothing; an acceptance makes a real 4 s clip.
     let cm;
@@ -758,6 +814,7 @@ const server = http.createServer(async (req, res) => {
         if (!all.some((x) => x.id === id)) return send(res, 404, { error: "Not found" });
         writeInf(all.filter((x) => x.id !== id));
         const f = imgFile(id); if (f) fs.unlinkSync(f);
+        fs.rmSync(viewDir(id), { recursive: true, force: true });
         return send(res, 200, { ok: true });
       }
     }
@@ -869,7 +926,7 @@ const server = http.createServer(async (req, res) => {
       } catch (e) { return send(res, e.status === 404 ? 404 : 502, { error: e.status === 404 ? "No job with that ID." : "Couldn't check the job: " + e.message }); }
       const job = known || { startedAt: j.created_at ? Date.parse(j.created_at) || Date.now() : Date.now(), status: "pending" };
       // Face swap: the clip is ready, but it still gets the right voice first; until then the job reports "in progress"
-      if (j.status === "completed" && job.voicePlan && !job.voiceDone) {
+      if (j.status === "completed" && (job.voicePlan || job.crop) && !job.voiceDone) {
         if (j.videoUrl) job.videoUrl = j.videoUrl; // the finishing step downloads the clip from here
         if (!job.voiceTask) job.voiceTask = swapRoutes.finish(id, job).catch((e) => { job.voiceError = e.message; console.error("face swap voice:", e.message); }).finally(() => { job.voiceDone = true; });
         j = { ...j, status: "in_progress" };
