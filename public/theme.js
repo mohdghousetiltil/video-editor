@@ -41,7 +41,7 @@
   };
   const markNear = (track, c) => track.querySelectorAll('.look-card').forEach((x) => x.classList.toggle('near', x === c));
   // each look is a neon icon in its own colour
-  const NEON = { real: '#00e5ff', disney: '#ffd84d', pixar: '#ff8a3d', anime: '#ff7ad9', brainrot: '#c6ff00', none: '#8a92a6' };
+  const NEON = { real: '#00e5ff', disney: '#ffd84d', pixar: '#ff8a3d', anime: '#ff7ad9', brainrot: '#c6ff00', gametrailer: '#4da3ff', horror: '#ff3b4a', fantasy: '#7dffb0', retro35: '#ffb86b', painterly: '#ff9ecb', luxury: '#e6d6a3', docu: '#9ad0ff', securitycam: '#7fff7f', estate: '#6fe3d1', toon3d: '#ffe066', indie: '#d9b38c', action: '#ff7a3d', inkpaint: '#b3a8ff', epicfilm: '#f5f5f5', none: '#8a92a6' };
   function buildTrack(bar) {
     const opts = [...state.themes.map((x) => [x.id, x.name, x.icon]), [null, 'None', 'x']];
     const wrap = bar.querySelector('.look-swipe');
@@ -116,6 +116,7 @@
     box.className = 'enh';
     box.innerHTML = `<details><summary><svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> Enhance (free, on your server)</summary>
       <div class="enh-opts"><label>Upscale<select data-o="upscale"><option value="720p">to 720p</option><option value="1080p">to 1080p</option><option value="none">keep size</option></select></label>
+      <label>Colour grade<select data-o="grade"><option value="none">none</option><option value="cinematic">Cinematic</option><option value="warm">Warm</option><option value="cool">Cool</option><option value="vivid">Vivid</option><option value="retro">Retro film</option><option value="bw">Black and white</option></select></label>
       <label class="ck"><input type="checkbox" data-o="sharpen" checked> Sharpen</label><label class="ck"><input type="checkbox" data-o="denoise" checked> Denoise</label>
       <label class="ck"><input type="checkbox" data-o="smooth"> Smooth motion <small>(fills slowed or choppy frames; slower to render)</small></label>
       <button class="btn" type="button" data-go>Enhance</button></div><div class="meta" data-st aria-live="polite"></div><div data-out></div></details>
@@ -142,7 +143,7 @@
       };
       tick();
     };
-    box.querySelector('[data-go]').onclick = () => runJob({ upscale: $o('upscale').value, sharpen: $o('sharpen').checked, denoise: $o('denoise').checked, smooth: $o('smooth').checked },
+    box.querySelector('[data-go]').onclick = () => runJob({ upscale: $o('upscale').value, sharpen: $o('sharpen').checked, denoise: $o('denoise').checked, smooth: $o('smooth').checked, grade: $o('grade').value },
       box.querySelector('[data-go]'), box.querySelector('[data-st]'), box.querySelector('[data-out]'), 'Download enhanced MP4');
     box.querySelector('[data-mgo]').onclick = () => runJob({ music: box.querySelector('[data-m]').value, musicOnly: true },
       box.querySelector('[data-mgo]'), box.querySelector('[data-mst]'), box.querySelector('[data-mout]'), 'Download with music');

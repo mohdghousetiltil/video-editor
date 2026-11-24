@@ -324,6 +324,17 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 .spend-bar[hidden]{display:none}
 .spend-bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--acc),var(--violet));box-shadow:0 0 8px var(--acc);transition:width .4s var(--ease)}
 .spend-bar.hot i{background:linear-gradient(90deg,var(--warn),var(--pink));box-shadow:0 0 8px var(--pink)}
+/* the video player (History, Play): full screen, a big Back button at the top, safe-area aware */
+.play-dlg{border:0;padding:0;margin:0;width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;background:#000;color:var(--text)}
+.play-dlg::backdrop{background:#000}
+.play-dlg[open]{display:flex;flex-direction:column}
+.pd-bar{display:flex;align-items:center;gap:12px;padding:calc(var(--sat) + 8px) 12px 8px;background:rgba(5,8,20,.92);border-bottom:1px solid var(--line2)}
+.pd-back{all:unset;box-sizing:border-box;display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 16px 0 10px;cursor:pointer;border:1px solid var(--line2);background:var(--panel2);color:var(--text);font-family:var(--font-ui);font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:13px}
+.pd-back .ic{width:18px;height:18px;transform:rotate(180deg)}
+.pd-back:hover,.pd-back:focus-visible{border-color:var(--acc);color:var(--acc2)}
+.pd-title{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--mute);font-size:13px}
+.play-dlg video{flex:1;min-height:0;width:100%;object-fit:contain;background:#000;padding-bottom:var(--sab)}
+
 /* credits pill: top right of every page head, readable at a glance; amber when low, red when empty (with a word, never colour alone) */
 .spend-chip{all:unset;box-sizing:border-box;position:absolute;top:0;right:0;z-index:5;display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 14px 0 12px;cursor:pointer;
   border:1px solid var(--line2);background:linear-gradient(180deg,rgba(16,20,42,.95),rgba(8,10,22,.95));font-family:var(--font-ui);font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:12px;color:var(--mute);
@@ -554,16 +565,16 @@ button.chip.sel{color:#04121a;background:var(--acc);border-color:var(--acc)}
 /* Look: swipe carousel, the card in the middle is the look */
 .look-swipe{position:relative;display:flex;align-items:center;gap:2px}
 .look-track{flex:1;min-width:0;display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;overscroll-behavior-x:contain;
-  padding:6px calc(50% - 44px) 8px;scrollbar-width:none;-webkit-overflow-scrolling:touch;
-  -webkit-mask-image:linear-gradient(90deg,transparent,#000 16%,#000 84%,transparent);mask-image:linear-gradient(90deg,transparent,#000 16%,#000 84%,transparent)}
+  padding:30px calc(50% - 44px) 30px;margin:-24px 0;scrollbar-width:none;-webkit-overflow-scrolling:touch;
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 14%,#000 86%,transparent);mask-image:linear-gradient(90deg,transparent,#000 14%,#000 86%,transparent)}
 .look-track::-webkit-scrollbar{display:none}
 /* each look: a neon icon (no box) and its name; the one in the middle lights up */
 .look-card{all:unset;box-sizing:border-box;flex:0 0 88px;scroll-snap-align:center;cursor:pointer;
   display:flex;flex-direction:column;align-items:center;gap:8px;padding:6px 0;color:var(--n);
   transform:scale(.8);opacity:.4;transition:transform .28s cubic-bezier(.2,.8,.2,1),opacity .28s}
-.look-card .lc-ic{display:grid;place-items:center;width:56px;height:56px}
+.look-card .lc-ic{display:grid;place-items:center;width:64px;height:64px;overflow:visible}
 .look-card .lc-ic .ic{width:40px;height:40px;stroke-width:1.5;filter:drop-shadow(0 0 2px var(--n)) drop-shadow(0 0 6px var(--n));transition:filter .28s}
-.look-card b{font-family:var(--font-ui);font-weight:700;font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--text);transition:color .28s,text-shadow .28s}
+.look-card b{font-family:var(--font-ui);font-weight:700;font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--text);transition:color .28s,text-shadow .28s;white-space:nowrap;text-align:center;max-width:100%;overflow:visible}
 .look-card.near{transform:scale(1);opacity:1}
 .look-card.sel .lc-ic .ic{filter:drop-shadow(0 0 3px var(--n)) drop-shadow(0 0 10px var(--n)) drop-shadow(0 0 22px var(--n));animation:neon-hum 3s ease-in-out infinite}
 .look-card.sel b{color:var(--n);text-shadow:0 0 8px var(--n)}
@@ -687,7 +698,7 @@ textarea{line-height:1.55;resize:vertical;overflow-y:auto}
   .sb-music{display:none}
   .radial-scrim.flash-l{animation:scrim-l .4s ease-out}.radial-scrim.flash-r{animation:scrim-r .4s ease-out}
   /* the station name sits under the Play / Pause button, inside the dial */
-  .radial-station{display:block;position:absolute;left:-70px;width:140px;top:50px;text-align:center;pointer-events:none;opacity:0;transition:opacity .2s}
+  .radial-station{display:block;position:absolute;left:-70px;width:140px;top:-68px;text-align:center;pointer-events:none;opacity:0;transition:opacity .2s}
   body.radial-open .radial-station.show{opacity:1} /* only while the menu is open */
   .radial-station b{display:block;font:700 11px/1.2 var(--font-ui);letter-spacing:.08em;text-transform:uppercase;color:var(--text);text-shadow:0 1px 6px #000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .radial-station span{display:block;font:600 10px/1.2 var(--font-ui);letter-spacing:.08em;text-transform:uppercase;color:var(--acc);opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

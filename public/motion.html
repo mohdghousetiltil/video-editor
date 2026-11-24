@@ -157,6 +157,7 @@
         <label class="drop" id="swDrop"><span id="swTxt"><svg class=ic aria-hidden=true><use href=#i-video></use></svg> Click or drop a video<br><small>first 15 seconds, sound is kept, best with one clear person</small></span><input type="file" accept="video/*" id="swFile"></label>
         <video class="pv hidden" id="swPv" controls muted loop playsinline style="width:100%;max-height:300px;border-radius:12px;margin-bottom:8px"></video>
         <div class="meta" id="swInfo"></div>
+        <label style="margin-top:10px">…or paste a link: Instagram, X, TikTok, YouTube or a direct MP4<span class="row" style="gap:8px;flex-wrap:nowrap"><input type="text" id="swUrl" placeholder="https://…" style="flex:1;min-width:0"><button class="btn" id="swGet" type="button">Get video</button></span></label>
 
         <h2 style="margin-top:14px">2 · Face</h2>
         <div class="row" style="margin-bottom:10px"><button class="btn sel" id="swFromInf" type="button">Saved influencer</button><button class="btn" id="swFromPic" type="button">Upload a picture</button></div>
@@ -168,9 +169,11 @@
 
         <h2 style="margin-top:6px">3 · Engine</h2>
         <div class="methods" id="swEngines">
-          <div class="m sel" data-e="pixverse"><b>PixVerse Swap</b><span>About $0.05 a video. Keeps the original sound. Fastest and cheapest.</span></div>
+          <div class="m sel" data-e="pixverse"><b>PixVerse Swap</b><span>About $0.05 a second (a 5 s clip is about $0.25). Keeps the original sound. Cheapest.</span></div>
           <div class="m" data-e="wan"><b>Wan Animate Replace</b><span>About $0.08 a second. Silent result. Follows hard motion better.</span></div>
         </div>
+        <label>Voice<select id="swVoice"><option value="real">Real voice: a real woman's or man's voice to match the character, a different one each time (about 0.3 credits a minute)</option><option value="auto">Free: the same voice with its pitch moved (sounds less natural)</option><option value="female">Always higher (a woman's range)</option><option value="male">Always lower (a man's range)</option><option value="keep">Keep the original voice</option></select></label>
+        <div class="meta" style="margin:-6px 0 12px">Either way the words, timing and lip sync stay the same: the real voice is converted from your clip's speech, nothing new is written or generated.</div>
         <div class="meta" style="margin-bottom:12px">Both models replace the whole person (face, hair and body) with the person in your picture and keep the movement of the video.</div>
 
         <label class="consent" for="swOk"><input type="checkbox" id="swOk"> <span>This face is mine, or I have that person's permission to use it, and I have the right to edit this video. I will not use the result to mislead people or pass it off as real.</span></label>
@@ -197,10 +200,10 @@
     <div>
       <div class="panel">
         <h2>1 · Driving video (the motion to copy)</h2>
-        <label class="drop" id="drv"><span id="drvTxt"><svg class=ic aria-hidden=true><use href=#i-video></use></svg> Click or drop a video<br><small>first 15 seconds are used, audio is removed</small></span><input type="file" accept="video/*"></label>
+        <label class="drop" id="drv"><span id="drvTxt"><svg class=ic aria-hidden=true><use href=#i-video></use></svg> Click or drop a video<br><small>first 15 seconds are used, its own sound is kept on the result</small></span><input type="file" accept="video/*"></label>
         <video class="pv hidden" id="drvPv" controls muted loop playsinline></video>
         <div class="meta" id="drvInfo"></div>
-        <label style="margin-top:10px">…or paste a direct MP4 link<input type="text" id="drvUrl" placeholder="https://example.com/clip.mp4 (a direct MP4 file, not a YouTube page)"></label>
+        <label style="margin-top:10px">…or paste a link: Instagram, X, TikTok, YouTube or a direct MP4<input type="text" id="drvUrl" placeholder="https://www.instagram.com/reel/…  or  https://x.com/…  (the app fetches the video for you)"></label>
 
         <h2 style="margin-top:6px">2 · Influencer</h2>
         <div class="who"><img id="mImg" alt=""><label style="margin:0;flex:1">Saved influencer<select id="mInf"></select></label></div>
@@ -480,7 +483,7 @@ async function upload(file){
     const r=await fetch('/api/driver',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:file});
     const j=await r.json(); if(!r.ok) throw new Error(j.error||'Upload failed');
     driver=j; $('drvTxt').innerHTML='<svg class=ic aria-hidden=true><use href=#i-circle-check></use></svg> '+file.name.replace(/</g,'&lt;')+'<br><small>click to replace</small>';
-    $('drvPv').src=j.previewUrl; $('drvPv').classList.remove('hidden'); $('drvInfo').textContent='Prepared clip: '+j.duration.toFixed(1)+'s, audio removed.';
+    $('drvPv').src=j.previewUrl; $('drvPv').classList.remove('hidden'); $('drvInfo').textContent='Prepared clip: '+j.duration.toFixed(1)+'s.'+(j.hasSound?' Its sound is kept on the result.':'');
     if(method==='seedance'){ fillDur($('mDur'),$('mModel').value,Math.round(j.duration),15); } mcost();
   }catch(e){ $('drvTxt').innerHTML='<svg class=ic aria-hidden=true><use href=#i-video></use></svg> Click or drop a video'; $('mErr').textContent=e.message; }
 }
@@ -541,7 +544,17 @@ let mTimer=null;
 function mshow(p,msg){ $('mStage').innerHTML=S.stageHTML(typeof p==='object'?p:{stage:'queued',msg}); }
 $('mGo').onclick=async()=>{
   $('mErr').textContent=''; $('mNote').textContent=''; $('mActions').innerHTML='';
-  const url=$('drvUrl').value.trim();
+  let url=$('drvUrl').value.trim();
+  // a page link (Instagram, X, TikTok, YouTube ...): the server gets the video itself, nothing to download first
+  if(url){
+    mshow(0,'Getting the video from the link…');
+    try{
+      const lr=await fetch('/api/driver/link',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});
+      const lj=await lr.json(); if(!lr.ok) throw new Error(lj.error||'Could not get a video from that link');
+      driver=lj; url=''; $('drvUrl').value=''; $('drvPv').src=lj.previewUrl; $('drvPv').classList.remove('hidden');
+      $('drvInfo').textContent='Got the video from the link: '+lj.duration.toFixed(1)+' s.'+(lj.hasSound?' Its sound is kept on the result.':'');
+    }catch(e){ $('mStage').innerHTML='<div class="meta" style="padding:30px;text-align:center">Your result appears here.</div>'; return $('mErr').textContent=e.message; }
+  }
   if(!driver&&!/^https:\/\//.test(url)) return $('mErr').textContent='Upload a driving video or paste a public https:// link.';
   if(driver&&!url){ const t=await (await fetch('/api/tunnel')).json(); if(t.status!=='ready') return $('mErr').textContent='Start the secure link first (right side), then try again.'; }
   const p=inf($('mInf').value);
@@ -581,10 +594,10 @@ async function mpoll(id){
 
 /* ---------------- FACE SWAP ---------------- */
 let swSrc=null, swFace=null, swEngine='pixverse', swFaceFrom='inf';
-const SW_PRICE={pixverse:()=>0.05,wan:s=>0.08*Math.max(1,Math.ceil(s))}, SW_NAME={pixverse:'PixVerse Swap',wan:'Wan Animate Replace'};
-function swCost(){ const c=SW_PRICE[swEngine](swSrc?swSrc.duration:5); $('swCost').textContent=swSrc?'≈ $'+c.toFixed(2):'from $0.05'; return c; }
+const SW_PRICE={pixverse:s=>0.05*Math.max(1,Math.ceil(s)),wan:s=>0.08*Math.max(1,Math.ceil(s))}, SW_NAME={pixverse:'PixVerse Swap',wan:'Wan Animate Replace'};
+function swCost(){ const d=swSrc?swSrc.duration:5, c=SW_PRICE[swEngine](d)+($('swVoice')&&$('swVoice').value==='real'?0.005*d:0); $('swCost').textContent=swSrc?'≈ $'+c.toFixed(2):'from $0.05 a second'; return c; }
 function swInfo(){ const p=inf($('swInf').value); $('swImg').src=p&&p.image?p.image:''; $('swImg').style.visibility=p&&p.image?'visible':'hidden'; }
-$('swInf').onchange=swInfo;
+$('swInf').onchange=swInfo; $('swVoice').onchange=swCost;
 $('swFromInf').onclick=()=>{ swFaceFrom='inf'; $('swFromInf').classList.add('sel'); $('swFromPic').classList.remove('sel'); $('swInfBox').classList.remove('hidden'); $('swPicBox').classList.add('hidden'); };
 $('swFromPic').onclick=()=>{ swFaceFrom='pic'; $('swFromPic').classList.add('sel'); $('swFromInf').classList.remove('sel'); $('swPicBox').classList.remove('hidden'); $('swInfBox').classList.add('hidden'); };
 document.querySelectorAll('#swEngines .m').forEach(el=>el.onclick=()=>{ swEngine=el.dataset.e; document.querySelectorAll('#swEngines .m').forEach(x=>x.classList.toggle('sel',x===el)); swCost(); });
@@ -598,6 +611,16 @@ async function swUpload(file){
   }catch(e){ $('swTxt').innerHTML='<svg class=ic aria-hidden=true><use href=#i-video></use></svg> Click or drop a video'; $('swErr').textContent=e.message; }
 }
 $('swFile').onchange=e=>swUpload(e.target.files[0]);
+$('swGet').onclick=async()=>{
+  const u=$('swUrl').value.trim(); if(!u) return $('swErr').textContent='Paste a link first.';
+  $('swErr').textContent=''; $('swGet').disabled=true; $('swInfo').textContent='Getting the video from the link…'; swSrc=null;
+  try{
+    const r=await fetch('/api/swap/link',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:u})});
+    const j=await r.json(); if(!r.ok) throw new Error(j.error||'Could not get that video');
+    swSrc=j; $('swPv').src=j.previewUrl; $('swPv').classList.remove('hidden'); $('swInfo').textContent='Got the video from the link: '+j.duration.toFixed(1)+' s.'; swCost();
+  }catch(e){ $('swInfo').textContent=''; $('swErr').textContent=e.message; }
+  $('swGet').disabled=false;
+};
 ['dragenter','dragover'].forEach(t=>$('swDrop').addEventListener(t,ev=>{ev.preventDefault();$('swDrop').classList.add('over')}));
 ['dragleave','drop'].forEach(t=>$('swDrop').addEventListener(t,ev=>{ev.preventDefault();$('swDrop').classList.remove('over')}));
 $('swDrop').addEventListener('drop',ev=>swUpload(ev.dataTransfer.files[0]));
@@ -615,12 +638,12 @@ $('swGo').onclick=async()=>{
   if(swFaceFrom==='pic'&&!swFace) return $('swErr').textContent='Upload a clear face picture first.';
   if(!$('swOk').checked) return $('swErr').textContent='Tick the confirmation first: the face has to be yours or used with permission.';
   const cost=swCost();
-  if(!(await S.confirmSpend({title:'Swap the face in this video?',total:cost,rows:[['Engine',SW_NAME[swEngine]],['Length',swSrc.duration.toFixed(1)+' s'],['Face',swFaceFrom==='inf'?(p&&p.name)||'influencer':'your picture']]}))) return;
+  if(!(await S.confirmSpend({title:'Swap the face in this video?',total:cost,rows:[['Engine',SW_NAME[swEngine]],['Voice',$('swVoice').selectedOptions[0].textContent.split(':')[0]],['Length',swSrc.duration.toFixed(1)+' s'],['Face',swFaceFrom==='inf'?(p&&p.name)||'influencer':'your picture']]}))) return;
   $('swGo').disabled=true; $('swStage').innerHTML=S.stageHTML({stage:'queued',msg:'Submitting…'});
   try{
-    const r=await fetch('/api/swap',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({token:swSrc.token,engine:swEngine,consent:true,title:'Face swap'},swFaceFrom==='inf'?{influencer_id:p.id}:{face:swFace}))});
+    const r=await fetch('/api/swap',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({token:swSrc.token,engine:swEngine,consent:true,voice:$('swVoice').value,title:'Face swap'},swFaceFrom==='inf'?{influencer_id:p.id}:{face:swFace}))});
     const j=await r.json(); if(!r.ok) throw new Error(j.error||'Request failed');
-    $('swNote').textContent=j.keepsSound?'The original sound is kept.':'This engine returns a silent video.';
+    $('swNote').textContent='Sound: '+(j.voice||'none')+'. The voice is added as the last step, so it can take a little longer.';
     for(;;){
       await sleep(3000);
       const d=await (await fetch('/api/jobs/'+j.id)).json();

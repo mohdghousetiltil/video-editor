@@ -81,7 +81,7 @@ function render(){
         <div class="mt"><span class="st ${S.esc(x.status)}">${S.esc(run?'running':x.status==='completed'?'done':x.status)}</span> · ${KIND[x.kind]||S.esc(x.kind)}${x.model?' · '+S.esc((MODELS[x.model]||{}).name||x.model):''}${x.duration?' · '+x.duration+' s':''}${x.res?' · '+S.esc(x.res):''}${x.cost!=null?' · '+S.money(x.cost,3):''}${x.provider&&x.provider!=='openrouter'?' · via '+S.esc(x.provider):''}</div>
         <div class="mt">${new Date(x.t).toLocaleString([],{dateStyle:'medium',timeStyle:'short'})} · <code>${S.esc(x.id)}</code>${x.error?`<br><span style="color:var(--err)">${S.esc(x.error).slice(0,200)}</span>`:''}</div></div>
       <div class="ac">
-        ${done&&x.url?`<a class="btn" href="${S.esc(x.url)}" target="_blank" rel="noopener">▶ Play</a><a class="btn" href="${S.esc(x.url)}${x.kind==='short'?'?dl=1':'?download=1'}"><svg class=ic aria-hidden=true><use href=#i-download></use></svg> Download</a>`:''}
+        ${done&&x.url?`<button class="btn" type="button" data-play="${S.esc(x.url)}"><svg class=ic aria-hidden=true><use href=#i-video></use></svg> Play</button><a class="btn" href="${S.esc(x.url)}${x.kind==='short'?'?dl=1':'?download=1'}"><svg class=ic aria-hidden=true><use href=#i-download></use></svg> Download</a>`:''}
         ${x.retry&&!run?`<button class="btn" data-r type="button"><svg class=ic aria-hidden=true><use href=#i-refresh></use></svg> Retry</button>`:''}
         ${!run?`<button class="btn danger" data-d type="button" aria-label="Delete ${S.esc(x.title||x.id)}"><svg class=ic aria-hidden=true><use href=#i-x></use></svg> Delete</button>`:''}
       </div>${done&&x.url?`<div class="enh-host" style="grid-column:1/-1" data-src="${S.esc(x.url)}"></div>`:''}</div>`;}).join(''):'<div class="none">Nothing here yet. Everything you make on any page shows up here.</div>';
@@ -89,6 +89,7 @@ function render(){
 $('rows').addEventListener('click',async e=>{
   const row=e.target.closest('.row'); if(!row) return;
   const x=items.find(i=>i.id===row.dataset.id);
+  const pl=e.target.closest('[data-play]'); if(pl){ S.playVideo(pl.dataset.play, x?x.title||'':''); return; }
   if(e.target.closest('[data-d]')){
     if(!confirm(`Delete "${x.title||x.id}" from history${x.kind==='short'?' and the server':''}? The video file kept on the server is removed too. This can't be undone.`)) return;
     const r=x.kind==='short'?await fetch('/api/shorts/'+x.id.replace(/^short-/,''),{method:'DELETE'}):await fetch('/api/history/'+encodeURIComponent(x.id),{method:'DELETE'});

@@ -16,6 +16,7 @@ const { startCleanup } = require("./lib/cleanup");
 const modelsLib = require("./lib/models");
 const { createHistory } = require("./lib/history");
 const providers = require("./lib/providers");
+const { fetchLink } = require("./lib/fetchlink");
 const director = require("./lib/director");
 const directorCache = new Map(); // same request within 10 minutes = same plan
 const { createThemes, themeText, qualityText, NEGATIVE, MOTION_RULE } = require("./lib/themes");
@@ -174,6 +175,22 @@ const MODELS = modelsLib.VIDEO; // capabilities per model; lib/models.js
 // A tiny separate server exposes ONLY ./work/share/<random>.mp4. A Cloudflare quick tunnel to that port is started
 // only when the user clicks the button on the Motion page, and can be stopped from there.
 const SHARE_DIR = path.join(STORE, "work", "share");
+// the original sound of a driving clip (first 15 s), kept as <token>.m4a; the clip the provider sees stays silent. No sound = no file.
+async function keepDriverSound(raw, token) {
+  try { await run(["-y", "-i", raw, "-t", "15", "-vn", "-c:a", "aac", "-b:a", "128k", path.join(SHARE_DIR, token + ".m4a")], SHARE_DIR); } catch { fs.unlink(path.join(SHARE_DIR, token + ".m4a"), () => {}); }
+}
+// puts the driving clip's sound under a finished Copy motion video (once per job)
+async function muxDriverSound(id, job) {
+  if (!job.muxAudio || job.muxed) return;
+  job.muxed = true;
+  try {
+    const vid = await ensureVideo(id), aud = path.join(SHARE_DIR, job.muxAudio + ".m4a");
+    if (!fs.existsSync(aud)) return;
+    const tmp = vid + ".mux.mp4";
+    await run(["-y", "-i", vid, "-i", aud, "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-b:a", "128k", "-shortest", "-movflags", "+faststart", tmp], path.dirname(vid));
+    fs.renameSync(tmp, vid);
+  } catch (e) { console.error("copy-motion sound:", e.message); }
+}
 const SHARE_PORT = Number(process.env.SHARE_PORT || 3101);
 fs.mkdirSync(SHARE_DIR, { recursive: true });
 // finished generations, downloaded once from OpenRouter so they can be served with proper range support
@@ -303,7 +320,7 @@ const orHeaders = () => ({ Authorization: `Bearer ${KEY}`, "Content-Type": "appl
 // Shorts maker (long video -> analysed, cut, captioned 9:16 Short + thumbnail + title); see shorts.js
 const shorts = require("./shorts")({ STORE, FFMPEG, API, getKey: () => KEY, run, send, serveMp4, tts, logSpend, orFetch, renderSlot, getModel: () => settings.get().visionModel, serveThumb, history });
 const shortsRoutes = shorts.handle;
-const ctx = { STORE, DATA, API, getKey: () => KEY, orFetch, orHeaders, send, readBody, run, tts, spend, settings, serveMp4, serveThumb, mediaDuration, hasAudio, glitchFilter, renderSlot, prices, imgFile, history, liveModels, jobs, ensureVideo, themes, themeText, readInf, STILLS, stillFile, fileDataUrl, frameToJpeg, providers };
+const ctx = { STORE, DATA, API, getKey: () => KEY, orFetch, orHeaders, send, readBody, run, tts, spend, settings, serveMp4, serveThumb, mediaDuration, hasAudio, glitchFilter, renderSlot, prices, imgFile, history, liveModels, jobs, ensureVideo, themes, themeText, readInf, STILLS, stillFile, fileDataUrl, frameToJpeg, providers, fetchLink, FFMPEG };
 const story = require("./routes/story")(ctx);
 const systemRoutes = require("./routes/system")(ctx);
 const themeRoutes = require("./routes/themes")(ctx);
@@ -490,7 +507,9 @@ const server = http.createServer(async (req, res) => {
       const feature = pageFeature(req);
       // estimated price for routes that don't report cost (OpenRouter's own figure replaces it when it does)
       const rate = route.price != null ? route.price : (live.price[body.resolution || live.res[0]] || [0, 0])[body.generate_audio === false ? 1 : 0] * (route.factor || 1);
-      jobs.set(j.id, { startedAt: Date.now(), status: j.status || "pending", polling_url: j.polling_url, model, feature, ...(extJob || {}), estimate: +(rate * (body.duration || modelsLib.defaultDur(live))).toFixed(4) });
+      // Copy motion: the provider only sees the silent copy of the driving clip; its own sound is put back when the result is ready
+      const muxAudio = /^[a-f0-9]{24}$/.test(b.driver_token || "") && fs.existsSync(path.join(SHARE_DIR, b.driver_token + ".m4a")) ? b.driver_token : undefined;
+      jobs.set(j.id, { startedAt: Date.now(), status: j.status || "pending", polling_url: j.polling_url, model, feature, ...(muxAudio ? { muxAudio, muxSeconds: body.duration } : {}), ...(extJob || {}), estimate: +(rate * (body.duration || modelsLib.defaultDur(live))).toFixed(4) });
       history.put(j.id, { kind: FEATURE_KIND[feature] || "clip", title: String(b.title || b.prompt).slice(0, 140), model, duration: body.duration, res: body.resolution, status: "pending", provider: route.provider,
         url: `/api/video/${j.id}`, thumb: `/api/video/${j.id}/thumb.jpg`, retry: { endpoint: "/api/generate", body: retryBody(b) } });
       if (theme) history.put(j.id, { theme: theme.name });
@@ -512,8 +531,21 @@ const server = http.createServer(async (req, res) => {
         // first 15 s, audio removed, upscaled so the short side is 720px (providers require a minimum resolution)
         await run(["-y", "-i", raw, "-t", "15", "-an", "-vf", "scale='if(lt(iw,ih),720,-2)':'if(lt(iw,ih),-2,720)',fps=24,format=yuv420p", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-movflags", "+faststart", path.join(SHARE_DIR, token + ".mp4")], SHARE_DIR);
       } catch (e) { fs.unlink(raw, () => {}); return send(res, 400, { error: "Couldn't read that video: " + e.message.slice(-160) }); }
+      await keepDriverSound(raw, token);
       fs.unlink(raw, () => {});
-      return send(res, 200, { token, duration: await mediaDuration(path.join(SHARE_DIR, token + ".mp4")), previewUrl: `/api/driver/${token}.mp4` });
+      return send(res, 200, { token, duration: await mediaDuration(path.join(SHARE_DIR, token + ".mp4")), previewUrl: `/api/driver/${token}.mp4`, hasSound: fs.existsSync(path.join(SHARE_DIR, token + ".m4a")) });
+    }
+    // Copy motion from a link (Instagram, X, TikTok, YouTube, a direct MP4 ...): the server fetches the video itself, then prepares it like an upload
+    if (url.pathname === "/api/driver/link" && req.method === "POST") {
+      const b = await readBody(req);
+      const token = crypto.randomBytes(12).toString("hex"), dir = path.join(SHARE_DIR, "dl-" + token);
+      try {
+        const raw = await fetchLink(b.url, dir, { maxMb: 150, ffmpeg: FFMPEG });
+        await run(["-y", "-i", raw, "-t", "15", "-an", "-vf", "scale='if(lt(iw,ih),720,-2)':'if(lt(iw,ih),-2,720)',fps=24,format=yuv420p", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-movflags", "+faststart", path.join(SHARE_DIR, token + ".mp4")], SHARE_DIR);
+        await keepDriverSound(raw, token);
+      } catch (e) { fs.rm(dir, { recursive: true, force: true }, () => {}); return send(res, e.status || 400, { error: String(e.message).slice(-300) }); }
+      fs.rm(dir, { recursive: true, force: true }, () => {});
+      return send(res, 200, { token, duration: await mediaDuration(path.join(SHARE_DIR, token + ".mp4")), previewUrl: `/api/driver/${token}.mp4`, hasSound: fs.existsSync(path.join(SHARE_DIR, token + ".m4a")) });
     }
     let dm;
     if (req.method === "GET" && (dm = url.pathname.match(/^\/api\/driver\/([a-f0-9]{24})\.mp4$/))) return serveMp4(req, res, path.join(SHARE_DIR, dm[1] + ".mp4"));
@@ -602,8 +634,8 @@ const server = http.createServer(async (req, res) => {
       if (!desc) return send(res, 400, { error: "Write a description first." });
       const IMAGE_MODELS = ["qwen/qwen-image-3", "x-ai/grok-imagine-image-2.0", "bytedance-seed/seedream-5-0-lite", "google/gemini-3.1-flash-image"];
       const model = IMAGE_MODELS.includes(b.model) ? b.model : IMAGE_MODELS[0];
-      const lead = { photo: "Realistic smartphone selfie portrait photo of ", studio: "Professional studio portrait photograph of ", cartoon3d: "High-quality 3D animated character render in a Pixar-like style of ", anime: "Anime style illustration portrait of ", stylized: "Semi-realistic digital painting portrait, clearly an illustration and not a photograph, of " }[b.style] || "Realistic smartphone selfie portrait photo of ";
-      const prompt = `${lead}${desc}. Head and shoulders, looking at the camera, front-facing, relaxed expression with a slight smile, soft natural light, clean simple background${(b.style || "photo") === "photo" ? ", natural skin texture and pores, no beauty filter" : ""}. Vertical 9:16 framing.`;
+      const lead = { photo: "Candid, unedited straight-out-of-camera front-phone portrait photo of ", studio: "Professional studio portrait photograph, 85mm lens, soft key light from the side with a subtle rim light, sharp eyes, of ", cartoon3d: "High-quality 3D animated character render in a Pixar-like style of ", anime: "Anime style illustration portrait of ", stylized: "Semi-realistic digital painting portrait, clearly an illustration and not a photograph, of " }[b.style] || "Realistic smartphone selfie portrait photo of ";
+      const prompt = `${lead}${desc}. Head and shoulders, looking at the camera, front-facing, relaxed expression with a slight smile, soft natural light, clean simple background${(b.style || "photo") === "photo" ? ", visible skin pores and fine peach fuzz, slight natural asymmetry, a few flyaway hairs, warm window light with soft falloff, none of the plastic over-retouched AI look, no beauty filter" : ""}. Vertical 9:16 framing.`;
       // from your photo: a NEW character in the chosen style that keeps your look (video models refuse real people's photos)
       const REF_STYLE = {
         real: "a photorealistic AI influencer, a new original person who is clearly inspired by the photo: same hair colour and style, skin tone, eye colour, age range, outfit vibe and overall look, but an idealised, polished, AI-generated face, not a copy of the real person. Natural skin texture, soft flattering light",
@@ -836,11 +868,17 @@ const server = http.createServer(async (req, res) => {
         }
       } catch (e) { return send(res, e.status === 404 ? 404 : 502, { error: e.status === 404 ? "No job with that ID." : "Couldn't check the job: " + e.message }); }
       const job = known || { startedAt: j.created_at ? Date.parse(j.created_at) || Date.now() : Date.now(), status: "pending" };
+      // Face swap: the clip is ready, but it still gets the right voice first; until then the job reports "in progress"
+      if (j.status === "completed" && job.voicePlan && !job.voiceDone) {
+        if (j.videoUrl) job.videoUrl = j.videoUrl; // the finishing step downloads the clip from here
+        if (!job.voiceTask) job.voiceTask = swapRoutes.finish(id, job).catch((e) => { job.voiceError = e.message; console.error("face swap voice:", e.message); }).finally(() => { job.voiceDone = true; });
+        j = { ...j, status: "in_progress" };
+      }
       job.status = j.status;
       if (j.videoUrl) job.videoUrl = j.videoUrl;
       if (j.status === "failed") job.error = typeof j.error === "string" ? j.error : j.error?.message || "Generation failed";
-      const cost = j.usage?.cost ?? (j.status === "completed" && job.provider ? job.estimate : undefined);
-      if (j.status === "completed") logSpend(job.feature || "Video clips", cost, job.model, id, job.provider, "video");
+      const cost = j.usage?.cost ?? (j.status === "completed" && job.provider ? (job.swapVideoCost ?? job.estimate) : undefined);
+      if (j.status === "completed") { logSpend(job.feature || "Video clips", cost, job.model, id, job.provider, "video"); await muxDriverSound(id, job); }
       jobs.set(id, job);
       if (history.get(id) || j.status === "completed") history.put(id, { kind: history.get(id)?.kind || FEATURE_KIND[job.feature] || "clip", model: job.model, status: j.status, error: job.error, cost, url: `/api/video/${id}`, thumb: `/api/video/${id}/thumb.jpg`, ...(history.get(id) ? {} : { title: "Fetched job " + id.slice(-8) }) });
       const ty = MODELS[job.model]?.typical;

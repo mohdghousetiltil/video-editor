@@ -260,9 +260,12 @@ test("studio (page helper): total cost line with Auto, and money formatting", ()
 const { createThemes, themeText, qualityText, PRESETS } = require("../lib/themes");
 const { enhanceFilter } = require("../lib/enhance");
 
-test("looks: five looks, old theme ids map over, look + character text, quality text", () => {
+test("looks: the built-in looks, old theme ids map over, look + character text, quality text", () => {
   const t = createThemes();
-  assert.deepEqual(PRESETS.map((x) => x.id), ["real", "disney", "pixar", "anime", "brainrot"]);
+  assert.deepEqual(PRESETS.slice(0, 5).map((x) => x.id), ["real", "disney", "pixar", "anime", "brainrot"]);
+  assert.ok(PRESETS.length >= 19 && new Set(PRESETS.map((x) => x.id)).size === PRESETS.length, "the learned looks are there, ids are unique");
+  for (const x of PRESETS) { assert.ok(x.style && x.lighting && x.camera && x.models && x.voice, x.id + " is complete"); assert.ok(["upbeat", "suspense", "cinematic", "chill", "epic", "funny", "pad", "none"].includes(x.music), x.id + " music mood"); assert.match(themeText(x, ""), /Style:/); }
+  assert.match(themeText(PRESETS.find((x) => x.id === "horror"), ""), /avoids: .*gore/);
   assert.equal(t.get("p-3dstory").id, "pixar"); // saved settings from the old themes keep working
   assert.equal(t.get("nope"), null);
   for (const x of PRESETS) assert.doesNotMatch(x.style, /disney|pixar/i); // brand names stay out of prompts
@@ -281,6 +284,8 @@ test("enhance: filter chain only upscales, in the right orientation", () => {
   assert.match(enhanceFilter({ upscale: "1080p" }, 1280, 720), /scale=-2:1080/);
   assert.doesNotMatch(enhanceFilter({ upscale: "720p" }, 1080, 1920), /scale=/); // never shrinks
   assert.equal(enhanceFilter({ upscale: "none", sharpen: false, denoise: false }, 480, 854), "format=yuv420p");
+  assert.match(enhanceFilter({ upscale: "none", sharpen: false, denoise: false, grade: "cinematic" }, 480, 854), /^eq=.*vignette=PI.6,format=yuv420p$/);
+  assert.equal(enhanceFilter({ upscale: "none", sharpen: false, denoise: false, grade: "bogus" }, 480, 854), "format=yuv420p");
 });
 
 // ---------- the Director ----------
@@ -546,7 +551,7 @@ test("system reboot: the monthly cap counts again from the reboot, the real tota
 
 test("face swap: consent is required, engines are priced, jobs are ordinary fal jobs", async () => {
   const { ENGINES, estimate } = require("../routes/faceswap"), providers = require("../lib/providers");
-  assert.equal(estimate("pixverse", 12), 0.05, "PixVerse is a flat price");
+  assert.equal(estimate("pixverse", 12), 0.6, "PixVerse is billed per second (measured against the real fal.ai balance)");
   assert.equal(estimate("wan", 10), 0.8, "Wan is priced by the second");
   assert.ok(ENGINES.pixverse.input("v", "f").enable_safety_checker && ENGINES.wan.input("v", "f").enable_safety_checker && ENGINES.wan.input("v", "f").enable_output_safety_checker, "safety checks stay on");
   const sent = [];
@@ -554,4 +559,53 @@ test("face swap: consent is required, engines are priced, jobs are ordinary fal 
   assert.match(out.id, /^fal_r9$/); assert.ok(providers.isExternal(out.id)); assert.equal(sent[0][0], "https://queue.fal.run/fal-ai/pixverse/swap");
   const src = require("fs").readFileSync(require("path").join(__dirname, "..", "routes", "faceswap.js"), "utf8");
   assert.match(src, /b\.consent !== true/); assert.match(src, /spend\.videoBlock/);
+});
+
+test("links: only public web addresses are fetched, so the server's own network stays out of reach", () => {
+  const { isPublicUrl } = require("../lib/fetchlink");
+  for (const ok of ["https://www.instagram.com/reel/abc/", "https://x.com/user/status/1", "https://example.com/a.mp4?x=1"]) assert.ok(isPublicUrl(ok), ok);
+  for (const bad of ["http://localhost:3100/api/spend", "http://127.0.0.1/x", "https://10.0.0.5/v.mp4", "http://192.168.1.2/v", "http://169.254.169.254/latest", "http://172.20.1.1/", "ftp://example.com/v.mp4", "file:///etc/passwd", "not a url", "http://[::1]/", "https://db.internal/v"]) assert.ok(!isPublicUrl(bad), bad);
+});
+
+test("face swap voice: the same voice, pitch moved for the character; free and a little different each time", () => {
+  const { genderFromText, estimateF0, pitchShift, pitchFilter, RANGE_HZ } = require("../routes/faceswap");
+  assert.equal(genderFromText("A stunning young woman with long hair"), "female");
+  assert.equal(genderFromText("He is a bearded man"), "male");
+  assert.equal(genderFromText("a person"), null);
+  assert.equal(genderFromText("a man and a woman"), null, "mixed text is not guessed");
+  // a synthetic 120 Hz voice (harmonics) is measured as about 120 Hz
+  const n = 16000 * 2, pcm = Buffer.alloc(n * 2);
+  for (let i = 0; i < n; i++) { let v = 0; for (let h = 1; h <= 6; h++) v += Math.sin((2 * Math.PI * 120 * h * i) / 16000) / h; pcm.writeInt16LE(Math.round(v * 6000), i * 2); }
+  const f0 = estimateF0(pcm); assert.ok(f0 > 110 && f0 < 132, "measured " + f0);
+  assert.equal(estimateF0(Buffer.alloc(32000)), null, "silence has no pitch");
+  // a man (about 120 Hz) becoming a woman goes up, a woman (about 210 Hz) becoming a man goes down, never past the limit
+  for (let i = 0; i < 50; i++) {
+    const up = pitchShift(120, "female"), down = pitchShift(210, "male");
+    assert.ok(up > 5 && up <= 8, "up " + up); assert.ok(down < -4 && down >= -8, "down " + down);
+    assert.ok(Math.abs(pitchShift(215, "female")) < 3.2, "a woman's voice for a woman stays close");
+  }
+  assert.ok(new Set(Array.from({ length: 30 }, () => pitchShift(120, "female").toFixed(2))).size > 10, "every video lands on a slightly different pitch");
+  assert.ok(pitchShift(null, "female") > 3.5 && pitchShift(null, "male") < -3, "an unknown voice still gets a sensible shift");
+  assert.ok(pitchFilter(5, true).startsWith("rubberband=pitch=1.3348:formant=shifted"));
+  assert.equal(pitchFilter(5, false), "asetrate=44100*1.3348,aresample=44100,atempo=0.7492");
+  assert.ok(RANGE_HZ.female[0] > RANGE_HZ.male[1], "the two ranges do not overlap");
+});
+
+test("copy motion keeps the driving clip's own sound, image prompts carry the picture craft", () => {
+  const src = require("fs").readFileSync(require("path").join(__dirname, "..", "server.js"), "utf8");
+  assert.match(src, /keepDriverSound/); assert.match(src, /muxDriverSound\(id, job\)/);
+  const { imageCraft, PHOTO_CRAFT, STYLIZED_CRAFT } = require("../lib/themes");
+  assert.equal(imageCraft("realistic live-action video, natural skin texture"), " " + PHOTO_CRAFT);
+  assert.equal(imageCraft("high-end 3D animated feature film"), " " + STYLIZED_CRAFT);
+  assert.equal(imageCraft(""), " " + PHOTO_CRAFT);
+});
+
+test("face swap real voice: a woman's pool for a woman, a man's for a man, random each time, priced per minute", () => {
+  const { VOICES, pickVoice, voiceCostFor } = require("../routes/faceswap");
+  for (let i = 0; i < 30; i++) { assert.ok(VOICES.female.includes(pickVoice("female"))); assert.ok(VOICES.male.includes(pickVoice("male"))); }
+  assert.ok(new Set(Array.from({ length: 40 }, () => pickVoice("female"))).size > 1, "not the same voice every run");
+  assert.ok(!VOICES.female.some((v) => VOICES.male.includes(v)), "no voice is in both pools");
+  assert.equal(voiceCostFor(60), 0.3); assert.equal(voiceCostFor(4), 0.02);
+  const src = require("fs").readFileSync(require("path").join(__dirname, "..", "routes", "faceswap.js"), "utf8");
+  assert.match(src, /fal-ai\/elevenlabs\/voice-changer/); assert.match(src, /voiceMode === "real"/);
 });

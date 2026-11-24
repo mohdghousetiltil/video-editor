@@ -171,6 +171,26 @@
     };
     if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
   }
+  // Play a finished video on the page itself: a full-screen player with a Back button (also Esc, and the phone's own back gesture closes it)
+  S.playVideo = (url, title = '') => {
+    let dlg = document.getElementById('play-dlg');
+    if (!dlg) {
+      dlg = document.createElement('dialog'); dlg.id = 'play-dlg'; dlg.className = 'play-dlg'; dlg.setAttribute('aria-label', 'Video player');
+      dlg.innerHTML = '<div class="pd-bar"><button type="button" class="pd-back" aria-label="Back"><svg class=ic aria-hidden=true><use href=#i-chevron></use></svg> Back</button><span class="pd-title"></span></div><video controls playsinline autoplay></video>';
+      document.body.append(dlg);
+      const v = dlg.querySelector('video');
+      const close = () => { try { v.pause(); } catch {} v.removeAttribute('src'); v.load(); if (dlg.open) dlg.close(); };
+      dlg.querySelector('.pd-back').onclick = close;
+      dlg.addEventListener('click', (e) => { if (e.target === dlg) close(); });
+      dlg.addEventListener('close', () => { try { v.pause(); } catch {} });
+      window.addEventListener('popstate', () => { if (dlg.open) close(); });
+    }
+    dlg.querySelector('.pd-title').textContent = title;
+    const v = dlg.querySelector('video'); v.src = url;
+    if (!dlg.open) dlg.showModal();
+    try { history.pushState({ player: 1 }, ''); } catch {} // so the phone's back swipe closes the player instead of leaving the page
+    v.play().catch(() => {});
+  };
   const money = (S.money = (n, d = 2) => (n == null || !isFinite(n) ? '—' : asCredits() ? creditNum(n) + ' cr' : n > 0 && n < 0.5 * 10 ** -d ? '<$' + (10 ** -d).toFixed(d) : '$' + Number(n).toFixed(d)));
   const ls = {
     get: (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },

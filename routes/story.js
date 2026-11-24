@@ -6,6 +6,7 @@ const crypto = require("crypto");
 const { mixStory, AMBIENCES, EFFECTS } = require("../lib/sound");
 const { MOODS } = require("../lib/music");
 const hing = require("../lib/hinglish"); // Hinglish mode (X-Lang: hinglish)
+const { imageCraft } = require("../lib/themes");
 
 // How a scene fits its narration (vd = clip seconds, ad = narration seconds). Nothing is ever cut off: the voice is
 // sped up a touch first, then the clip slowed a little, and only then does the last frame hold. D = scene length.
@@ -75,7 +76,7 @@ module.exports = function storyRoutes(ctx) {
         "SHOTS: plan coverage like a film editor: open with an establishing wide shot, move to medium shots for action, close-ups for emotion and reveals, and insert shots (an object, a hand, a screen) for clues. Vary the shot size from cut to cut; never two identical framings in a row. Compose with intent: rule of thirds, depth (foreground, subject, background), motivated light.",
         "CAMERA AND MOTION: the camera is locked off at one fixed angle in each shot (no zooms, pans, angle changes or shake unless one slow, motivated move is essential to the story's single biggest moment). Movement is smooth, slow and physically natural: breathing, a turn of the head, a hand reaching, a door opening. Only the characters (and the one object they interact with) move; the background stays still. No one talks on screen: the narrator tells the story, characters do not speak or mouth words.",
         "PROMPT CRAFT: write each scene prompt the way top AI-video prompters do: 45 to 70 words, concrete and physical, one single beat of action with a clear start and end pose (for example: 'the boy looks up, his eyes widen, then a slow proud smile spreads'), the emotion shown through face and body, one light source and two or three named colours, a texture or material word for the key objects. Name the characters by their bible look in every prompt, never 'he' or 'the character' alone. No abstract words (epic, amazing), no lists of effects, no on-screen text, nothing that needs a cut inside the clip.",
-        "SCENE PROMPT: self-contained, two or three vivid present-tense sentences in this order: shot size and lens feel (e.g. 'Close-up, 50mm'), the subject named by their bible appearance and the one clear action, the setting, the lighting and colours of the look, the mood. No on-screen text, no camera jargon beyond the shot size. End EVERY scene prompt with the same short style tag taken from the Look sentence (for example '3D animated film, warm golden light'), so no scene drifts to another style (for instance from cartoon to photoreal).",
+        "SCENE PROMPT: self-contained, two or three vivid present-tense sentences in this order: shot size and lens feel (e.g. 'Close-up, 50mm'), the subject named by their bible appearance and the one clear action, the setting, the lighting and colours of the look, the mood. No on-screen text, no camera jargon beyond the shot size. Keep each prompt positive: say what the viewer sees, not a list of things to avoid (the look adds its own avoid-list). End EVERY scene prompt with the same short style tag taken from the Look sentence (for example '3D animated film, warm golden light'), so no scene drifts to another style (for instance from cartoon to photoreal).",
         "CONTINUITY: continues:true only when a scene directly continues the previous one in the same place with the same characters and uninterrupted action (it starts from the previous scene's last frame); continues:false for the first scene and any cut to a new place or time. key:true ONLY for the roughly 30% that matter most visually (hook, reveal, twist, emotional peak); the rest key:false.",
         "NARRATION: for every scene write \"narration\", what a calm narrator says during it, natural spoken language, at most 2.3 words per second of the scene length, so all the lines read as one continuous story (empty string only for a deliberately silent beat).",
         `SOUND: pick "music" for the whole film from ${MOODS.join(", ")} or none, and "ambience" (the place sound under everything) from ${AMBIENCES.join(", ")} or none. For each scene pick "sfx", a sound effect on its cut, from ${EFFECTS.join(", ")} or none: use effects sparingly (about one scene in three), on reveals, shocks and transitions; riser builds into the scene, impact lands on it.`,
@@ -115,7 +116,7 @@ module.exports = function storyRoutes(ctx) {
       const prompt = "Character reference sheet for an animated or filmed story. Show every character described below standing side by side, full body, front view, neutral pose, evenly lit, on a plain light-grey studio background, " +
         "so their faces, hair, body shape and exact clothing colors are clearly visible. No text, no labels, no panels or borders. " +
         (refs.length ? `Image${refs.length > 1 ? "s 1-" + refs.length : " 1"} show${refs.length > 1 ? "" : "s"} real reference(s) for the main character(s): keep their faces identical. ` : "") +
-        "Only characters have faces and eyes; props and furniture are plain. " + `Characters and setting: ${bible}` + (b.style ? ` Visual style: ${String(b.style).slice(0, 300)}` : "");
+        "Only characters have faces and eyes; props and furniture are plain. " + `Characters and setting: ${bible}` + (b.style ? ` Visual style: ${String(b.style).slice(0, 300)}` : "") + imageCraft(b.style);
       try {
         const { d, cost } = await imageCall({ model, prompt, n: 1, aspect_ratio: "16:9", ...(refs.length ? { input_references: refs.map((f) => ({ type: "image_url", image_url: { url: dataUrl(f) } })) } : {}) });
         const id = crypto.randomBytes(8).toString("hex"), ext = /jpe?g/.test(d.media_type || "") ? "jpg" : /webp/.test(d.media_type || "") ? "webp" : "png";
@@ -142,7 +143,7 @@ module.exports = function storyRoutes(ctx) {
       const prompt = `Image 1 is the character reference sheet. Create the opening frame of this scene: ${p} ` +
         "Every character must look exactly like on the sheet: same face, hair, skin tone, body shape and the same clothes and colors. " +
         `One single full-frame cinematic film still composed for ${ar}, characters at natural size in the scene (not a lineup), no text, no panels, no borders.` +
-        " Only characters have faces and eyes; props and furniture are plain." + (b.style ? ` Visual style: ${String(b.style).slice(0, 300)}` : "");
+        " Only characters have faces and eyes; props and furniture are plain." + (b.style ? ` Visual style: ${String(b.style).slice(0, 300)}` : "") + imageCraft(b.style);
       try {
         const { d, cost } = await imageCall({ model, prompt, n: 1, aspect_ratio: ar, input_references: [{ type: "image_url", image_url: { url: dataUrl(f) } }] });
         spend.log("Story", cost, model);
@@ -168,7 +169,7 @@ module.exports = function storyRoutes(ctx) {
       if (infImg && !cast) { refs.push(dataUrl(infImg)); said.push(`Image ${refs.length} is the main character: keep the same face, hair and look.`); }
       const prompt = `${said.join(" ")} Create the opening frame of this scene as one single full-frame film still composed for ${ar}: ${p}` +
         (inf && inf.desc ? ` Main character, exactly: ${inf.desc}.` : "") + ctx.themeText(theme, (inf && inf.desc) || (b.no_theme ? "" : st.character)) +
-        (b.style ? ` Visual style: ${String(b.style).slice(0, 300)}` : "") + " Characters at natural size in the scene, no text, no panels, no borders.";
+        (b.style ? ` Visual style: ${String(b.style).slice(0, 300)}` : "") + " Characters at natural size in the scene, no text, no panels, no borders." + imageCraft(b.style || (theme && theme.style));
       try {
         const { d, cost } = await imageCall({ model, prompt, n: 1, aspect_ratio: ar, ...(refs.length ? { input_references: refs.map((u) => ({ type: "image_url", image_url: { url: u } })) } : {}) });
         const id = "s" + crypto.randomBytes(8).toString("hex"), ext = /jpe?g/.test(d.media_type || "") ? "jpg" : /webp/.test(d.media_type || "") ? "webp" : "png";

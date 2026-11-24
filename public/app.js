@@ -69,8 +69,12 @@
   radial.setAttribute('role', 'menu');
   radial.setAttribute('aria-label', 'More pages');
   // the pages fan out on a full circle in the middle of the screen (roomy on any phone), around a centre close button
-  const n = more.length, R = n > 5 ? 128 : 118;
-  radial.innerHTML = `<span class="radial-ring" aria-hidden="true" style="left:${-R - 46}px;top:${-R - 46}px;width:${2 * R + 92}px;height:${2 * R + 92}px"></span>` +
+  // as wide as the screen allows (a label is about 96 px wide, so the ring stops 54 px short of each side), never smaller than before
+  // The names sit below the icons. The ring has to hold an icon plus its name wherever the dial is spun to (the worst place is straight down:
+  // radius + 60), so the ring is R + 60 and R is as large as the screen allows, never below 104.
+  const n = more.length, RING = 60;
+  let R = 118; // set by layout() below each time the menu opens
+  radial.innerHTML = `<span class="radial-ring" aria-hidden="true"></span>` +
     `<button type="button" class="radial-x" aria-label="Close menu">${svg('<path d="M6 6l12 12M18 6L6 18"/>')}</button>` + more.map((i, k) => {
     const a = (-90 + (360 * k) / n) * Math.PI / 180;
     return `<a role="menuitem" href="${i[0]}" draggable="false" class="${i[0] === here ? 'on' : ''}" style="--x:${(Math.cos(a) * R).toFixed(1)}px;--y:${(Math.sin(a) * R).toFixed(1)}px;--d:${k * 40}ms">` +
@@ -94,6 +98,23 @@
       });
       ring.style.setProperty('--rot', rot.toFixed(1) + 'deg');
     };
+    // The dial is centred on the free area of the screen: left to right in the middle, top to bottom halfway between the top edge (below the
+    // notch) and the top of the tab bar, so there is the same gap above and below. It gets as big as that area allows (an icon plus its name
+    // needs RING px outside the radius), never smaller than 80.
+    radial.layout = () => {
+      const vv = window.visualViewport, W = document.documentElement.clientWidth || (vv && vv.width) || innerWidth, H = (vv && vv.height) || innerHeight; // clientWidth: without the scrollbar, which is what left:50% measures
+      const tb = tabs.getBoundingClientRect(), bottom = tb.height > 0 && tb.top > 0 ? Math.min(tb.top, H) : H - 70;
+      const sat = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sat')) || 0;
+      const freeH = Math.max(200, bottom - sat), cx = W / 2, cy = sat + freeH / 2;
+      R = Math.round(Math.max(80, Math.min(n > 5 ? 158 : 150, Math.min(W, 520) / 2 - 6 - RING, freeH / 2 - 6 - RING)));
+      radial.style.left = cx + 'px'; radial.style.top = cy + 'px';
+      const d = 2 * (R + RING);
+      ring.style.cssText = `left:${-d / 2}px;top:${-d / 2}px;width:${d}px;height:${d}px`;
+      place();
+    };
+    radial.layout();
+    addEventListener('resize', () => { if (document.body.classList.contains('radial-open')) radial.layout(); });
+    if (window.visualViewport) visualViewport.addEventListener('resize', () => { if (document.body.classList.contains('radial-open')) radial.layout(); });
     const angle = (e) => { const r = radial.getBoundingClientRect(); return Math.atan2(e.clientY - r.top, e.clientX - r.left) * 180 / Math.PI; };
     radial.addEventListener('pointerdown', (e) => {
       if (e.button || e.target.closest('.radial-x')) return;
@@ -133,11 +154,7 @@
 
   const moreBtn = tabs.querySelector('.tb-more');
   const setOpen = (open, refocus, kb) => {
-    if (open) { // centre of the visible screen, a little above the middle so the bottom labels clear the tab bar
-      const vv = window.visualViewport, h = vv ? vv.height : innerHeight, w = vv ? vv.width : innerWidth;
-      radial.style.left = w / 2 + 'px';
-      radial.style.top = Math.min(h / 2 - 20, h - 260) + 'px';
-    }
+    if (open && radial.layout) radial.layout(); // centred on the free area, sized to the screen as it is right now
     document.body.classList.toggle('radial-open', open);
     moreBtn.setAttribute('aria-expanded', String(open));
     if (open && kb) setTimeout(() => radial.querySelector('a')?.focus({ preventScroll: true }), 60); // keyboard only: no focus box on a tap
