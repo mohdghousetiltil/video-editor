@@ -493,13 +493,15 @@ test("Hinglish mode: Devanagari is banned, voices and models that can't do Hingl
   assert.ok(h.hindiSpeech("google/veo-3.1-lite")); assert.ok(!h.hindiSpeech("bytedance/seedance-2.0")); assert.ok(!h.hindiSpeech("kwaivgi/kling-v3.0-pro"));
   const catalog = Object.fromEntries(Object.entries(VIDEO).map(([id, m]) => [id, { id, tags: [], q: 5, ...m }]));
   const talks = candidates(catalog, { page: "clip", aspect: "9:16", hinglish: true });
-  assert.ok(talks.length > 0 && talks.every((m) => !m.audio || m.id.startsWith("google/")), "a talking clip keeps only Hindi-capable sound models");
-  assert.ok(talks.some((m) => !m.audio), "silent models stay (they make no speech)");
+  assert.ok(talks.length > 0 && talks.every((m) => !m.audio || m.id.startsWith("google/")), "a sound model must be Hindi-capable (Google)");
+  assert.ok(talks.some((m) => !m.audio), "silent models stay (the narration voice speaks for them)");
+  const storyTalk = candidates(catalog, { page: "story", aspect: "9:16", hinglish: true, speech: true });
+  assert.ok(storyTalk.length > 0 && storyTalk.every((m) => m.audio && m.id.startsWith("google/")), "a Story with narration off talks inside the clips");
   assert.ok(candidates(catalog, { page: "story", aspect: "9:16", hinglish: true }).some((m) => m.id.startsWith("bytedance/seedance")), "Story clips are silent (narration is a separate voice), so nothing is switched off there");
   assert.ok(candidates(catalog, { page: "clip", aspect: "9:16" }).some((m) => m.id.startsWith("bytedance/seedance")), "outside Hinglish mode nothing changes");
 });
 
-test("Hinglish mode: no Devanagari in the app's own files, the secret gesture is a hold on the title, and the tab names are never translated", () => {
+test("Hinglish mode: no Devanagari in the app's own files, the secret gesture is a hold on the More button, and the tab names are never translated", () => {
   const fs = require("fs"), path = require("path"), root = path.join(__dirname, "..");
   const files = [];
   const walk = (d) => { for (const f of fs.readdirSync(d)) { const p = path.join(d, f); if (/^(node_modules|\.git|work|data|videos)$/.test(f)) continue; const s = fs.statSync(p); if (s.isDirectory()) walk(p); else if (/\.(js|html|css)$/.test(f)) files.push(p); } };
@@ -508,9 +510,15 @@ test("Hinglish mode: no Devanagari in the app's own files, the secret gesture is
   for (const f of files) if (!/hinglish\.js$/.test(f)) assert.doesNotMatch(fs.readFileSync(f, "utf8"), /[ऀ-ॿ]/, path.relative(root, f) + " must not contain Devanagari");
   const app = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
   const gesture = app.slice(app.indexOf("// Hinglish mode: a hidden gesture"));
-  assert.match(gesture, /\.pagehead h1/); assert.match(gesture, /2000/, "it is a 2 second hold");
+  assert.match(gesture, /\.tb-more/); assert.match(gesture, /radial-open/, "only while the circle is open"); assert.match(gesture, /2000/, "it is a 2 second hold"); assert.doesNotMatch(gesture.replace(/\/\/[^\n]*/g, ""), /\.pagehead h1/, "the title no longer carries it");
   // the Hinglish word list never touches buttons, labels, headings or the navigation
   const studio = fs.readFileSync(path.join(root, "public", "studio.js"), "utf8");
   const skip = studio.match(/const SKIP = '([^']+)'/)[1];
   for (const sel of ["button", "a", "label", "h1", "h2", ".tabbar", ".sb", ".radial"]) assert.ok(skip.split(",").includes(sel), sel + " must be skipped");
+});
+
+test("start pictures that are not JPEG or PNG are converted before they reach a video model", () => {
+  const src = require("fs").readFileSync(require("path").join(__dirname, "..", "server.js"), "utf8");
+  assert.match(src, /async function frameToJpeg/); assert.match(src, /frame_images, body\.input_references/);
+  assert.match(src, /mustTalk/); assert.match(src, /generate_audio = true/);
 });

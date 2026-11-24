@@ -202,16 +202,33 @@ const MAX={}, DURS={};
 const S=window.studio;
 let CAT={};
 S.models().then(({map})=>{
-  CAT=map;
-  for(const [id,x] of Object.entries(map)){ if(!PRICE[id]) PRICE[id]={}; x.res.forEach(r=>{ if(x.price[r]) PRICE[id][r]=x.price[r][1]; }); if(x.durs.length){ DURS[id]=x.durs; MIN[id]=x.durs[0]; MAX[id]=x.durs[x.durs.length-1]; } }
+  CAT=map; addGoogleOptions(map);
+  for(const [id,x] of Object.entries(map)){ if(!PRICE[id]) PRICE[id]={}; x.res.forEach(r=>{ if(x.price[r]){ PRICE[id][r]=x.price[r][1]; (PRICE_SND[id]||(PRICE_SND[id]={}))[r]=x.price[r][0]; } }); if(x.durs.length){ DURS[id]=x.durs; MIN[id]=x.durs[0]; MAX[id]=x.durs[x.durs.length-1]; } }
   for(const m of Object.keys(PRICE)){ const x=map[m]; if(!x) continue;
     ['480p','720p'].forEach(r=>{ if(x.price[r]) PRICE[m][r]=x.price[r][1]; });
     if(x.durs.length){ DURS[m]=x.durs; MIN[m]=x.durs[0]; MAX[m]=x.durs[x.durs.length-1]; }
     document.querySelectorAll(`#cheap option[value="${m}"],#good option[value="${m}"]`).forEach(o=>{o.textContent=`${x.name} (${S.money(x.price['720p']?.[1]??x.price[x.res[0]][1],3)}/s @720p · ${S.tierLabel(x.tier)})`;});
   }
-  presetNote(); if(scenes.length) render();
+  presetNote(); applyHindiSpeech(); if(scenes.length) render();
 });
 const BUDGET_VIDEO='x-ai/grok-imagine-video-1.5-lite', BUDGET_RESERVE=0.005; // reserve: planning + narration voice
+// Hindi mode: a silent video model (or one that can't speak Hindi) needs the narration voice, so the narration switch is forced on and locked
+// while any chosen model is one of those. When every chosen model is Google's Veo / Gemini Omni the narration can be switched off:
+// the clips then speak Hindi themselves, with each scene's narration line as a Hinglish voiceover inside the clip.
+const GOOGLE_OK=m=>String(m||'').startsWith('google/'), PRICE_SND={};
+const HSPEECH=()=>!!window.__hinglish&&!$('narOn').checked;
+const useModel=s=>s.model;
+function addGoogleOptions(map){
+  if(!window.__hinglish) return;
+  for(const id of ['google/veo-3.1-lite','google/veo-3.1-fast','google/gemini-omni-1.2-flash']) if(map[id]) for(const sel of [$('cheap'),$('good')]) if(!sel.querySelector(`option[value="${id}"]`)) sel.insertAdjacentHTML('beforeend',`<option value="${id}">${esc(map[id].name)}</option>`);
+}
+function applyHindiSpeech(){
+  if(!window.__hinglish) return;
+  const silent=[$('cheap').value,$('good').value].some(v=>!GOOGLE_OK(v))||scenes.some(s=>!GOOGLE_OK(s.model));
+  if(silent) $('narOn').checked=true;
+  $('narOn').disabled=silent;
+  $('narGrid').style.opacity=$('narOn').checked?1:.4;
+}
 // character lock: one sheet (~$0.01) + per scene a first frame (~$0.01) and the video model reading it (~$0.01)
 const LOCK_SHEET=0.01, LOCK_SCENE=0.02;
 const STILL_COST=0.02; // one storyboard picture + the video model reading it
@@ -267,7 +284,7 @@ function narCost(){ if(!$('narOn').checked) return 0; const p=TTS[$('ttsModel').
 // a length the scene's model really accepts (e.g. Veo only 4, 6 or 8 s)
 function dur(s){const d=Math.max(minSec(s.model),Math.min(maxSec(s.model),Math.round(s.seconds)||minSec(s.model))), a=DURS[s.model]; return a&&a.length?a.reduce((b,n)=>Math.abs(n-d)<Math.abs(b-d)?n:b,a[0]):d}
 const resOf=s=>s.res&&PRICE[s.model]?.[s.res]!=null?s.res:$('res').value;
-function price(s){const p=PRICE[s.model]||{}; return (p[resOf(s)]??p['720p']??Object.values(p)[0]??0)*dur(s)}
+function price(s){const p=(HSPEECH()&&GOOGLE_OK(s.model)&&PRICE_SND[s.model])||PRICE[s.model]||{}; return (p[resOf(s)]??p['720p']??Object.values(p)[0]??0)*dur(s)}
 function totals(){
   const nc=narCost(), lc=lockCost()+stillCost(), t=scenes.reduce((a,s)=>a+price(s),0)+nc+lc, d=scenes.reduce((a,s)=>a+dur(s),0);
   budgetNote();
@@ -395,7 +412,7 @@ async function directScenes(){
   $('dirNote').hidden=false; $('dirNote').innerHTML='<svg class=ic aria-hidden=true><use href=#i-brain></use></svg> The Director is choosing a model for every scene…';
   try{
     const budget=parseFloat($('autoBudget').value)||undefined;
-    const r=await S.director({page:'story',aspect:$('aspect').value,budget,
+    const r=await S.director({page:'story',aspect:$('aspect').value,budget,speech:HSPEECH(),
       scenes:scenes.map(s=>({title:s.title,prompt:s.prompt,seconds:s.seconds,key:s.key}))});
     const p=r.plan;
     p.scenes.forEach(d=>{ const s=scenes[d.i]; if(!s) return; s.model=d.model; s.seconds=d.duration; s.res=d.resolution; s.dir=d.reason||''; if(d.picture===false) s.noPicture=true; });
@@ -440,7 +457,7 @@ function fillVoices(){
   const m=TTS[$('ttsModel').value]; $('ttsVoice').innerHTML=m.voices.map(v=>'<option>'+v+'</option>').join('');
   $('ttsTone').disabled=!m.tone; if(scenes.length) totals();
 }
-$('ttsModel').onchange=fillVoices; $('narOn').onchange=()=>{ $('narGrid').style.opacity=$('narOn').checked?1:.4; if(scenes.length) totals(); }; fillVoices();
+$('ttsModel').onchange=fillVoices; $('narOn').onchange=()=>{ $('narGrid').style.opacity=$('narOn').checked?1:.4; applyHindiSpeech(); if(scenes.length) totals(); }; $('cheap').addEventListener('change',applyHindiSpeech); $('good').addEventListener('change',applyHindiSpeech); fillVoices();
 $('ttsPrev').onclick=async()=>{
   const text=(scenes.find(s=>(s.narration||'').trim())||{}).narration||'At exactly three seventeen in the morning, my own phone number called me.';
   const b=$('ttsPrev'); b.disabled=true; $('ttsMsg').textContent='Generating preview…';
@@ -486,10 +503,11 @@ async function run(i){
       }
       if(pf) $('r'+i).innerHTML=`<img class="kf" src="${s.still.url}" alt="Scene ${i+1} picture">`;
       else if(s._frame&&!prev) $('r'+i).innerHTML=`<img class="kf" src="${s._frame}" alt="First frame">`;
+      const um=useModel(s), sm=um===s.model?s:Object.assign({},s,{model:um}); // Hindi mode, narration off: a model that can speak Hindi
       const r=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
         // narrated stories: nobody talks on screen, so the clip never brings a second voice
-        model:s.model,prompt:(bible?bible+' ':'')+s.prompt+($('narOn').checked?' No one speaks: no dialogue, no talking, no voices; only natural ambient sound.':''),duration:dur(s),
-        resolution:resOf(s),aspect_ratio:$('aspect').value,generate_audio:false,frame_from_job:prev,seed:storySeed(),title:'Scene '+(i+1)+': '+(s.title||''),
+        model:um,prompt:(bible?bible+' ':'')+s.prompt+($('narOn').checked?' No one speaks: no dialogue, no talking, no voices; only natural ambient sound.':''),duration:dur(sm),
+        resolution:resOf(sm),aspect_ratio:$('aspect').value,generate_audio:HSPEECH()&&GOOGLE_OK(um),speech:HSPEECH()&&GOOGLE_OK(um),speech_line:HSPEECH()&&GOOGLE_OK(um)?(s.narration||''):undefined,frame_from_job:prev,seed:storySeed(),title:'Scene '+(i+1)+': '+(s.title||''),
         ...(pf?{still_id:s.still.id,last_still_id:endStill}:s._frame&&!prev?{frame_image:s._frame,frame_note:'Started from the locked character frame.'}:{})})});
       const j=await r.json(); if(!r.ok) throw new Error(j.error||'failed');
       job.id=j.id; note=j.note?'<svg class=ic aria-hidden=true><use href=#i-alert></use></svg> '+j.note+' · ':(prev?'<svg class=ic aria-hidden=true><use href=#i-corner-right></use></svg> from previous last frame · ':pf?'<svg class=ic aria-hidden=true><use href=#i-image></use></svg> from its picture'+(endStill?' → next picture':'')+' · ':''); save();
@@ -592,7 +610,7 @@ function soundPlan(){
 }
 async function stitch(ids){
   $('final').textContent='Stitching…';
-  const r=await fetch('/api/stitch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids,title:($('script').value.trim().replace(/\s+/g,' ').slice(0,80))||'Story',aspect:$('aspect').value,extend:$('budget').checked,look:$('glitch').checked?'glitch':'clean',sound:soundPlan(),narration:$('narOn').checked?{model:$('ttsModel').value,voice:$('ttsVoice').value,instructions:$('ttsTone').value||undefined,lines:scenes.map(s=>s.narration||'')}:undefined})});
+  const r=await fetch('/api/stitch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids,title:($('script').value.trim().replace(/\s+/g,' ').slice(0,80))||'Story',aspect:$('aspect').value,extend:$('budget').checked,look:$('glitch').checked?'glitch':'clean',sound:soundPlan(),speech:HSPEECH(),narration:$('narOn').checked?{model:$('ttsModel').value,voice:$('ttsVoice').value,instructions:$('ttsTone').value||undefined,lines:scenes.map(s=>s.narration||'')}:undefined})});
   const j=await r.json(); if(!r.ok){ $('final').textContent=j.error; $('gen').disabled=false; return; }
   const t=setInterval(async()=>{
     let d=null; try{ d=await (await fetch('/api/stitch/'+j.id)).json(); }catch{ return; } // a network blip: just ask again

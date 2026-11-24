@@ -102,6 +102,17 @@ async function tts({ model, voice, text, instructions, lang }) {
   spend.log("Voiceover", (String(text).length / 15) * (TTS_PER_SEC[model] ?? 0.0005), model);
   return Buffer.from(await r.arrayBuffer());
 }
+// Video models take JPEG or PNG start frames: a WebP (or GIF...) picture is converted to JPEG first
+async function frameToJpeg(dataUrl) {
+  const m = /^data:image\/([a-z0-9.+-]+);base64,(.+)$/is.exec(String(dataUrl));
+  if (!m || /^(jpeg|jpg|png)$/i.test(m[1])) return dataUrl;
+  const dir = fs.mkdtempSync(path.join(require("os").tmpdir(), "frame-"));
+  try {
+    fs.writeFileSync(path.join(dir, "in.img"), Buffer.from(m[2], "base64"));
+    await run(["-y", "-i", "in.img", "-frames:v", "1", "-q:v", "2", "-pix_fmt", "yuvj420p", "out.jpg"], dir);
+    return "data:image/jpeg;base64," + fs.readFileSync(path.join(dir, "out.jpg")).toString("base64");
+  } finally { fs.rm(dir, { recursive: true, force: true }, () => {}); }
+}
 const mediaDuration = (file) =>
   new Promise((resolve) => {
     const p = spawn(FFMPEG, ["-hide_banner", "-i", file]);
@@ -353,9 +364,17 @@ const server = http.createServer(async (req, res) => {
       const charDesc = b.no_theme ? "" : typeof b.character === "string" ? b.character : st.character;
       const extra = MODELS[model]?.bare ? "" : themeText(theme, charDesc) + qualityText({ booster: b.quality !== false, negative: b.negative });
       // Hinglish mode: a clip with sound needs a model that can speak Hindi (Story clips are silent: narration is a separate voice)
+      // Where nothing else speaks (Single clip, UGC, or a Story with its narration off) the clip itself has to speak Hindi
+      const mustTalk = hing.isHinglish(req) && b.speech === true;
+      if (mustTalk) {
+        if (!(live && live.audio)) return send(res, 400, { error: `${(live && live.name) || model} makes silent clips, so it can't speak Hindi. Turn the narration on for silent models, or pick a Google Veo model.` });
+        b.generate_audio = true;
+      }
       const hingSpeech = hing.isHinglish(req) && b.generate_audio !== false && !!(live && live.audio);
       if (hingSpeech && !hing.hindiSpeech(model)) return send(res, 400, { error: `${live.name || model} can't speak Hindi / Hinglish. Pick a Google Veo model, or turn the sound off.` });
       const body = { model, prompt: b.prompt.trim() + (MODELS[model]?.bare ? "" : frameRule) + extra + (hingSpeech ? hing.SPEECH_RULE : "") };
+      // a Story with narration off: the scene's narration line is spoken by the clip itself, as a Hinglish voiceover
+      if (mustTalk && hingSpeech && typeof b.speech_line === "string" && b.speech_line.trim()) body.prompt += ` A narrator's voiceover, in Hinglish, says: "${hing.scrub(b.speech_line.trim().slice(0, 400))}"`;
       if (b.duration) body.duration = Number(b.duration);
       if (b.resolution) body.resolution = b.resolution;
       if (b.aspect_ratio) body.aspect_ratio = b.aspect_ratio;
@@ -417,6 +436,11 @@ const server = http.createServer(async (req, res) => {
       // end frame (Kling, Seedance, Veo, Wan…): the clip ends on this picture, so the next scene can start from it
       if (typeof b.last_frame_image === "string" && /^data:image\/(jpeg|png|webp);base64,/.test(b.last_frame_image) && (live.frames || []).includes("last_frame"))
         body.frame_images = [...(body.frame_images || []), { type: "image_url", image_url: { url: b.last_frame_image }, frame_type: "last_frame" }];
+      // every picture handed to the video model is JPEG or PNG
+      for (const list of [body.frame_images, body.input_references]) for (const it of list || []) {
+        const u = it && it.image_url && it.image_url.url;
+        if (typeof u === "string" && u.startsWith("data:image/")) { try { it.image_url.url = await frameToJpeg(u); } catch (e) { return send(res, 400, { error: "Couldn't prepare the start picture for the video model (" + String(e.message).slice(0, 120) + ")." }); } }
+      }
       // Daily and weekly video limits (Settings): refused here, before anything is charged
       {
         const perSec = (live.price && live.price[body.resolution || (live.res || [])[0]] || [0, 0])[body.generate_audio === false ? 1 : 0] || 0;
@@ -833,10 +857,11 @@ const server = http.createServer(async (req, res) => {
       const page = String(b.page || "clip");
       const budget = Number(b.budget) > 0 ? Math.min(50, Number(b.budget)) : (st.directorBudget || {})[page] ?? null;
       const theme = ["clip", "story"].includes(page) ? themes.get(st.themeId) : null; // the look is only used on Single clip and Story
+      const talkH = hing.isHinglish(req) && b.speech === true; // Hindi mode, Story with narration off: the clips speak
       const reqD = {
         page, prompt: String(b.prompt || "").slice(0, 2000), aspect: ["9:16", "16:9", "1:1"].includes(b.aspect) ? b.aspect : "9:16",
         duration: Number(b.duration) || null, resolution: ["480p", "720p", "1080p"].includes(b.resolution) ? b.resolution : "720p",
-        audio: b.audio === false ? false : b.audio === true ? true : undefined, startPicture: !!b.startPicture, budget, hinglish: hing.isHinglish(req),
+        audio: b.audio === false ? false : b.audio === true ? true : undefined, startPicture: !!b.startPicture, budget, hinglish: hing.isHinglish(req), speech: talkH,
         theme: [theme ? `${theme.name} look: ${theme.style}` : typeof b.style === "string" ? b.style.slice(0, 200) : "", ["clip", "story"].includes(page) && st.character ? "main character: " + st.character.slice(0, 200) : ""].filter(Boolean).join("; ") || null,
         scenes: Array.isArray(b.scenes) ? b.scenes.slice(0, 40).map((s) => ({ title: String(s.title || "").slice(0, 80), prompt: String(s.prompt || "").slice(0, 600), seconds: Number(s.seconds) || 4, key: !!s.key })) : undefined,
       };
@@ -886,7 +911,7 @@ const server = http.createServer(async (req, res) => {
       })
         // a model OpenRouter no longer lists (and no other provider has a key for) can't be generated: leave it out
         .filter((x) => x.live !== false || x.route !== "openrouter")
-        .filter((x) => !(hing.isHinglish(req) && url.searchParams.has("speech")) || !x.audio || x.hindi); // Hinglish + a page where the clip talks
+        .filter((x) => !(hing.isHinglish(req) && url.searchParams.has("speech")) || !x.audio || x.hindi); // Hindi mode + a talking clip: silent models stay, sound models must be Hindi-capable
       return send(res, 200, { models: out, default: modelsLib.DEFAULT_MODEL, providers: providers.configured() });
     }
 

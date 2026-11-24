@@ -295,7 +295,7 @@ module.exports = function storyRoutes(ctx) {
           const cues = (Array.isArray(snd.sfx) ? snd.sfx : []).map((fx, i) => ({ fx: String(fx || ""), t: starts[i] })).filter((c) => c.fx && c.fx !== "none" && c.t != null);
           const total = await mediaDuration(path.join(dir, "final.mp4"));
           try {
-            if (await mixStory(run, dir, { input: "final.mp4", output: "mixed.mp4", total, music: snd.music, ambience: snd.ambience, cues, hasVoice: !!nar }))
+            if (await mixStory(run, dir, { input: "final.mp4", output: "mixed.mp4", total, music: snd.music, ambience: snd.ambience, cues, hasVoice: !!nar || b.speech === true }))
               fs.renameSync(path.join(dir, "mixed.mp4"), path.join(dir, "final.mp4"));
           } catch (e) { st.warnings.push("Music and sound could not be added (" + e.message.slice(0, 120) + "). The video has the narration only."); }
         }

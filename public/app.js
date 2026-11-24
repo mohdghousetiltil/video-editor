@@ -574,22 +574,25 @@
   };
 })();
 
-// Hinglish mode: a hidden gesture, touch and hold the page title for 2 seconds (the same on iPhone and Android; at 1 second the
-// title shimmers, that is its own older easter egg, keep holding). The same gesture turns the mode off again. There is no button
-// for it anywhere, and the screen says "Diving in. Location: South Asia" when it switches on and "Public server reinstated" when it switches off. See studio.js for what the mode does.
-// While the title is held, nothing on the page can be selected (a phone starts a text selection on a long press and picks up
-// the text below the finger): the lock goes on the moment the finger lands and comes off a moment after it lifts.
+// Hinglish mode: a hidden gesture. Tap More (the circle opens), then touch and hold the More button, which shows an X while the
+// circle is open, for 2 seconds (the same on iPhone and Android). The same gesture turns the mode off again. There is no button for
+// it anywhere. The screen says "Diving in. Location: South Asia" when it switches on and "Public server reinstated" when it
+// switches off. See studio.js for what the mode does.
+// While the button is held, nothing on the page can be selected (a phone starts a text selection on a long press and picks up
+// the text near the finger): the lock goes on the moment the finger lands and comes off a moment after it lifts.
 (function () {
-  let timer = 0, sx = 0, sy = 0, holding = false, releaseT = 0;
+  let timer = 0, sx = 0, sy = 0, holding = false, releaseT = 0, fired = false;
   const root = document.documentElement;
   const cancel = () => { clearTimeout(timer); timer = 0; };
   const release = () => { clearTimeout(releaseT); releaseT = setTimeout(() => { holding = false; root.classList.remove('hold-gesture'); }, 500); };
-  function toggle(h) {
+  function toggle(btn) {
     let on = false;
     try { on = localStorage.getItem('hinglish') !== '1'; localStorage.setItem('hinglish', on ? '1' : '0'); } catch { return; }
+    fired = true;
     try { navigator.vibrate && navigator.vibrate(40); } catch {}
     // a short neon flash in the middle of the screen, then the page reloads in the new mode
-    h.classList.remove('eg-holo'); h.classList.add('eg-glitch'); setTimeout(() => h.classList.remove('eg-glitch'), 500);
+    const orb = btn.querySelector('.tb-orb') || btn;
+    orb.classList.add('eg-glitch'); setTimeout(() => orb.classList.remove('eg-glitch'), 500);
     const d = document.createElement('div');
     d.textContent = on ? 'DIVING IN. LOCATION: SOUTH ASIA' : 'PUBLIC SERVER REINSTATED';
     d.style.cssText = 'position:fixed;left:0;right:0;top:42%;z-index:2147483000;text-align:center;font:700 17px/1.5 var(--font-hud,Orbitron,sans-serif);letter-spacing:.14em;padding:0 22px;box-sizing:border-box;color:#00e5ff;text-shadow:0 0 12px #00e5ff,0 0 28px #ff2e93;pointer-events:none;animation:eg-glitch .5s steps(2) 2';
@@ -597,16 +600,19 @@
     setTimeout(() => location.reload(), 1100);
   }
   document.addEventListener('pointerdown', (e) => {
-    const h = e.target.closest && e.target.closest('.pagehead h1');
-    if (!h || e.button) return;
+    const btn = e.target.closest && e.target.closest('.tb-more');
+    // only the More button while the circle is open (it shows an X then)
+    if (!btn || e.button || !document.body.classList.contains('radial-open')) return;
     holding = true; clearTimeout(releaseT); root.classList.add('hold-gesture');
     try { getSelection().removeAllRanges(); } catch {}
     sx = e.clientX; sy = e.clientY; cancel();
-    timer = setTimeout(() => { timer = 0; toggle(h); }, 2000);
+    timer = setTimeout(() => { timer = 0; toggle(btn); }, 2000);
   }, true);
-  // letting go or sliding the finger away cancels the hold (a finger that starts scrolling the page is cancelled by the browser itself)
+  // letting go or sliding the finger away cancels the hold (a finger that starts scrolling is cancelled by the browser itself)
   document.addEventListener('pointermove', (e) => { if (timer && Math.hypot(e.clientX - sx, e.clientY - sy) > 12) cancel(); }, true);
   ['pointerup', 'pointercancel'].forEach((t) => document.addEventListener(t, () => { cancel(); if (holding) release(); }, true));
-  // if a selection still starts while the title is held, it is cleared at once
+  // after a completed hold, the tap that follows the release must not also close the circle
+  document.addEventListener('click', (e) => { if (fired && e.target.closest && e.target.closest('.tb-more')) { e.stopImmediatePropagation(); e.preventDefault(); fired = false; } }, true);
+  // if a selection still starts while the button is held, it is cleared at once
   document.addEventListener('selectionchange', () => { if (holding) { try { getSelection().removeAllRanges(); } catch {} } });
 })();
