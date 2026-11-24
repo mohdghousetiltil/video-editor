@@ -595,9 +595,10 @@
     orb.classList.add('eg-glitch'); setTimeout(() => orb.classList.remove('eg-glitch'), 500);
     const d = document.createElement('div');
     d.textContent = on ? 'DIVING IN. LOCATION: SOUTH ASIA' : 'PUBLIC SERVER REINSTATED';
-    d.style.cssText = 'position:fixed;left:0;right:0;top:42%;z-index:2147483000;text-align:center;font:700 17px/1.5 var(--font-hud,Orbitron,sans-serif);letter-spacing:.14em;padding:0 22px;box-sizing:border-box;color:#00e5ff;text-shadow:0 0 12px #00e5ff,0 0 28px #ff2e93;pointer-events:none;animation:eg-glitch .5s steps(2) 2';
-    document.body.appendChild(d);
-    setTimeout(() => location.reload(), 1100);
+    d.style.cssText = 'position:fixed;left:0;right:0;top:0;bottom:0;display:flex;align-items:center;justify-content:center;z-index:2147483000;text-align:center;font:700 17px/1.5 var(--font-hud,Orbitron,sans-serif);letter-spacing:.14em;padding:0 22px;box-sizing:border-box;color:#00e5ff;background:rgba(5,8,20,.82);text-shadow:0 0 12px #00e5ff,0 0 28px #ff2e93;pointer-events:none;animation:eg-flash .3s steps(2) 3';
+    if (!document.getElementById('eg-flash-kf')) { const k = document.createElement('style'); k.id = 'eg-flash-kf'; k.textContent = '@keyframes eg-flash{0%{opacity:.35;transform:translateX(-4px)}50%{opacity:1;transform:translateX(3px)}100%{opacity:1;transform:none}}'; document.head.appendChild(k); }
+    document.documentElement.appendChild(d);
+    setTimeout(() => location.reload(), 1700);
   }
   document.addEventListener('pointerdown', (e) => {
     const btn = e.target.closest && e.target.closest('.tb-more');
