@@ -522,3 +522,16 @@ test("start pictures that are not JPEG or PNG are converted before they reach a 
   assert.match(src, /async function frameToJpeg/); assert.match(src, /frame_images, body\.input_references/);
   assert.match(src, /mustTalk/); assert.match(src, /generate_audio = true/);
 });
+
+test("system reboot: the monthly cap counts again from the reboot, the real total is kept", async () => {
+  const os = require("os"), fs = require("fs"), path = require("path"), { createSpend } = require("../lib/spend");
+  const DATA = fs.mkdtempSync(path.join(os.tmpdir(), "spend-"));
+  const sp = createSpend({ DATA, API: "", getKey: () => "", getCap: () => 1 });
+  sp.log("Test", 1.5, "m");
+  assert.match(await sp.capBlock(), /cap reached/);
+  await sp.reboot();
+  assert.equal(await sp.capBlock(), null, "allowed again right after the reboot");
+  assert.ok((await sp.monthTotal()) >= 1.5, "the real total is untouched");
+  sp.log("Test", 1.2, "m");
+  assert.match(await sp.capBlock(), /cap reached/, "the cap applies again to what is spent after the reboot");
+});

@@ -47,8 +47,10 @@ module.exports = function systemRoutes(ctx) {
       const or = current && getKey() ? await spend.openrouter(url.searchParams.has("fresh")) : null;
       const cap = Number(settings.get().monthlyCap) || 0;
       const fal = current && process.env.FAL_KEY ? await falCredit(url.searchParams.has("fresh")) : null;
-      return send(res, 200, { month: m, current, openrouter: or, fal, local: spend.summarise(spend.read(m)), months, cap, capUsed: current ? await spend.monthTotal() : null, limits: current ? spend.limits() : null }), true;
+      return send(res, 200, { month: m, current, openrouter: or, fal, local: spend.summarise(spend.read(m)), months, cap, capUsed: current ? await spend.capUsed() : null, limits: current ? spend.limits() : null }), true;
     }
+    // hidden "system reboot" (five quick taps in Settings): the monthly cap starts counting again from now
+    if (req.method === "POST" && url.pathname === "/api/system/reboot") return send(res, 200, { ok: true, from: +(await spend.reboot()).toFixed(2) }), true;
     if (req.method === "GET" && url.pathname === "/api/prices") return send(res, 200, { prices: await prices() }), true;
     // what's running and waiting: render slots (Story stitches, Shorts) plus video generations still in progress
     if (req.method === "GET" && url.pathname === "/api/queue") {

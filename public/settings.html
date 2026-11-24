@@ -144,6 +144,26 @@ function paint() {
   $('confirmUnder').value = String(S.confirmUnder || 0);
 }
 let savedT;
+// Hidden: five quick taps in a row on the Monthly cap box title = "system reboot": the monthly cap counts again from zero.
+(function () {
+  let n = 0, t = 0;
+  const lab = document.querySelector('label:has(#monthlyCap)');
+  if (!lab) return;
+  lab.addEventListener('click', (e) => {
+    if (e.target.id === 'monthlyCap') return;
+    n = e.timeStamp - t > 900 ? 1 : n + 1; t = e.timeStamp;
+    if (n < 5) return;
+    n = 0;
+    fetch('/api/system/reboot', { method: 'POST' }).then(() => {
+      try { navigator.vibrate && navigator.vibrate(60); } catch {}
+      const d = document.createElement('div');
+      d.textContent = 'SYSTEM REBOOT';
+      d.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:2147483000;background:rgba(5,8,20,.85);color:#00e5ff;font:700 22px/1.4 var(--font-hud,Orbitron,sans-serif);letter-spacing:.2em;text-shadow:0 0 12px #00e5ff,0 0 28px #ff2e93;pointer-events:none';
+      document.documentElement.appendChild(d);
+      setTimeout(() => location.reload(), 1500);
+    });
+  });
+})();
 async function save(patch) {
   const r = await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
   const j = await r.json();
