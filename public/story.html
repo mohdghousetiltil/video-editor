@@ -160,6 +160,7 @@
       </div>
     </div>
     <label style="flex-direction:row;align-items:center;gap:8px;margin-top:12px"><input type="checkbox" id="glitch" style="width:auto"> <svg class=ic aria-hidden=true><use href=#i-zap></use></svg> Neon glitch effect (free)</label>
+    <label style="flex-direction:row;align-items:center;gap:8px;margin-top:12px"><input type="checkbox" id="camMove" checked style="width:auto"> Cinematic camera moves (push-ins, orbits, cranes on the big moments)</label>
     <label style="flex-direction:row;align-items:center;gap:8px;margin-top:12px"><input type="checkbox" id="chain" checked style="width:auto"> Chain flagged scenes (more consistent, slower)</label>
     <div id="scenes" style="margin-top:12px"></div>
     <div class="meta hidden" id="budgetNote" style="margin:12px 0;padding:10px 12px;border:1px solid var(--line);border-radius:10px"></div>
@@ -393,7 +394,7 @@ async function planScenes(){
   let ok=false;
   try{
     const r=await fetch('/api/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-      script:$('script').value,total:+$('total').value,aspect:$('aspect').value,style:lookText()})});
+      script:$('script').value,total:+$('total').value,aspect:$('aspect').value,style:lookText(),cinematic:$('camMove').checked})});
     const j=await r.json(); if(!r.ok) throw new Error(j.error||'Planning failed');
     $('bible').value=j.bible||'';
     projSound=j.sound||null;
