@@ -35,7 +35,8 @@ module.exports = function storyRoutes(ctx) {
   const saveStatus = (sid, st) => { try { fs.writeFileSync(statusFile(sid), JSON.stringify(st)); } catch {} };
   const readStatus = (sid) => stitches.get(sid) || (() => { try { return JSON.parse(fs.readFileSync(statusFile(sid), "utf8")); } catch { return null; } })();
   // anything still "running" on disk was cut off by a restart
-  for (const d of fs.existsSync(WORK) ? fs.readdirSync(WORK) : []) {
+  // (with the render queue a stitch lives on in the queue and finishes on a render worker)
+  if (!renderSlot.durable) for (const d of fs.existsSync(WORK) ? fs.readdirSync(WORK) : []) {
     const st = /^[a-f0-9]{12}$/.test(d) && readStatus(d);
     if (st && st.status === "running") saveStatus(d, { ...st, status: "failed", error: "The server restarted while this was being stitched. Click the button again: finished clips are reused, nothing is charged twice." });
   }
@@ -56,6 +57,124 @@ module.exports = function storyRoutes(ctx) {
   };
   const castFile = (id) => /^[a-f0-9]{16}$/.test(id || "") && ["png", "jpg", "webp"].map((e) => path.join(CAST, `${id}.${e}`)).find((f) => fs.existsSync(f));
   const dataUrl = (f) => `data:image/${path.extname(f).slice(1).replace("jpg", "jpeg")};base64,` + fs.readFileSync(f).toString("base64");
+
+  // ---------- the stitch itself: runs through lib/render.js, in this process or on a render worker ----------
+  const stitchHist = (sid, rec) => { try { ctx.history && ctx.history.put("story-" + sid, { kind: "story", url: `/api/final/${sid}`, thumb: `/api/final/${sid}/thumb.jpg`, ...rec }); } catch {} };
+  const stitchFailed = ({ sid }, e) => {
+    const st = stitches.get(sid) || {};
+    stitches.set(sid, st);
+    st.status = "failed"; st.error = String(e.message || e).slice(-500); saveStatus(sid, st); stitchHist(sid, { status: "failed", error: st.error });
+  };
+  async function runStitch({ sid, b, lang, clipCost }, { attempt = 1 } = {}) {
+    // budget mode (extend): clips shorter than their narration are slowed down (up to 1.5x) and then hold their last
+    // frame, instead of cutting the narration off
+    const ids = b.ids, dir = path.join(WORK, sid), extend = !!b.extend;
+    const nar = b.narration && Array.isArray(b.narration.lines) && b.narration.model ? b.narration : null;
+    const st = stitches.get(sid);
+    const hist = (rec) => stitchHist(sid, rec);
+    const step = (s) => { st.step = s; saveStatus(sid, st); };
+    try {
+      const [W, H] = b.aspect === "16:9" ? [1280, 720] : b.aspect === "1:1" ? [720, 720] : [720, 1280];
+      const vf = `scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,format=yuv420p`;
+      const enc = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-ar", "44100", "-ac", "2"];
+      let list = "", t = 0;
+      const starts = []; // where each scene starts in the final video (for sound effects on the cuts)
+      for (let i = 0; i < ids.length; i++) {
+        const line = nar ? String(nar.lines[i] || "").trim() : "";
+        step(`Downloading clip ${i + 1}/${ids.length}`);
+        const cached = path.join(WORK, "videos", ids[i] + ".mp4");
+        if (!fs.existsSync(cached)) { // downloads once into the shared video cache (works for every provider)
+          try { await ctx.ensureVideo(ids[i]); } catch (e) { throw new Error(`Clip ${i + 1} download failed (${e.status || e.message})`); }
+        }
+        fs.copyFileSync(cached, path.join(dir, `raw${i}.mp4`));
+        step(`Preparing clip ${i + 1}/${ids.length}`);
+        const audio = await hasAudio(path.join(dir, `raw${i}.mp4`));
+        let args;
+        if (line) {
+          step(`Voicing scene ${i + 1}/${ids.length}`);
+          // a retry keeps the narration the first attempt already paid for
+          const reuse = attempt > 1 && fs.existsSync(path.join(dir, `nar${i}.mp3`)) && fs.statSync(path.join(dir, `nar${i}.mp3`)).size > 0;
+          if (!reuse) fs.writeFileSync(path.join(dir, `nar${i}.mp3`), await tts({ model: nar.model, voice: nar.voice, text: line, instructions: nar.instructions, lang }));
+          // the voice service adds silence before and after a line; trimmed, the lines flow from scene to scene
+          // (a reused line was trimmed already)
+          if (!reuse) try {
+            await run(["-y", "-i", `nar${i}.mp3`, "-af", "silenceremove=start_periods=1:start_threshold=-45dB,areverse,silenceremove=start_periods=1:start_threshold=-45dB,areverse,adelay=60|60", "-c:a", "libmp3lame", "-q:a", "2", `nart${i}.mp3`], dir);
+            if (await mediaDuration(path.join(dir, `nart${i}.mp3`)) > 0.3) fs.renameSync(path.join(dir, `nart${i}.mp3`), path.join(dir, `nar${i}.mp3`));
+          } catch {}
+          const vd = await mediaDuration(path.join(dir, `raw${i}.mp4`)), ad = await mediaDuration(path.join(dir, `nar${i}.mp3`));
+          // The whole line is always heard: the scene is made long enough for it, never cut off. In order:
+          // 1. the voice is sped up a touch (at most 1.12x, still sounds natural),
+          // 2. the clip is slowed a little (at most 1.3x, 1.5x in budget mode),
+          // 3. only then does the last frame hold for the rest.
+          // Plus a short breath after the line so scenes don't run into each other.
+          const plan = fitScene(vd, ad, extend);
+          const D = plan.D, ds = D.toFixed(3);
+          let v = "[0:v]";
+          if (plan.slow > 1.001) v += `setpts=${plan.slow.toFixed(3)}*PTS,`;
+          v += vf;
+          if (plan.hold > 0.01) { // the last frame holds with a slow push-in, so it never looks frozen
+            const t0 = (vd * plan.slow).toFixed(3), hd = Math.max(0.5, plan.hold).toFixed(3);
+            v += `,tpad=stop_mode=clone:stop_duration=${(plan.hold + 0.1).toFixed(3)}` +
+              `,zoompan=z='if(gt(it,${t0}),1+0.06*min(1,(it-${t0})/${hd}),1)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=${W}x${H}:fps=24`;
+          }
+          v += "[v]";
+          // every pad has a fixed length (an endless apad never stops on the server's older ffmpeg 5.1) and so does
+          // the output (-t)
+          const voice = `[1:a]${plan.tempo > 1.001 ? `atempo=${plan.tempo.toFixed(3)},` : ""}apad=whole_dur=${ds},atrim=0:${ds}`;
+          // the clip's own sound is dropped under narration: video models often add talking of their own, which
+          // came through as a second voice. Ambience, music and effects are laid back in by mixStory below.
+          const fc = `${v};${voice}[a]`;
+          args = ["-y", "-i", `raw${i}.mp4`, "-i", `nar${i}.mp3`, "-filter_complex", fc, "-map", "[v]", "-map", "[a]", "-t", ds, ...enc, `n${i}.mp4`];
+        } else {
+          // a scene without narration keeps its own sound (quieter when the story is narrated)
+          args = audio
+            ? ["-y", "-i", `raw${i}.mp4`, "-vf", vf, ...(nar ? ["-af", "volume=0.6"] : []), ...enc, `n${i}.mp4`]
+            : await (async () => { // silent clip: add a silent track exactly as long as the clip
+              const vd = await mediaDuration(path.join(dir, `raw${i}.mp4`));
+              return ["-y", "-i", `raw${i}.mp4`, "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-vf", vf, ...(vd ? ["-t", vd.toFixed(3)] : ["-shortest"]), ...enc, `n${i}.mp4`];
+            })();
+        }
+        await run(args, dir);
+        list += `file 'n${i}.mp4'\n`;
+        starts.push(t); t += (await mediaDuration(path.join(dir, `n${i}.mp4`))) || 0;
+      }
+      step("Joining clips");
+      fs.writeFileSync(path.join(dir, "list.txt"), list);
+      if (b.look === "glitch") { // neon-glitch look over the whole video (needs one re-encode)
+        await run(["-y", "-f", "concat", "-safe", "0", "-i", "list.txt", "-c", "copy", "joined.mp4"], dir);
+        step("Adding the glitch look");
+        const total = await mediaDuration(path.join(dir, "joined.mp4"));
+        await run(["-y", "-i", "joined.mp4", "-filter_complex", glitchFilter("[0:v]", "[v]", W, H, total, total), "-map", "[v]", "-map", "0:a", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "copy", "-movflags", "+faststart", "final.mp4"], dir);
+      } else await run(["-y", "-f", "concat", "-safe", "0", "-i", "list.txt", "-c", "copy", "-movflags", "+faststart", "final.mp4"], dir);
+      // sound design: music + ambience under the whole story (dipping when the narrator speaks), effects on cuts
+      const snd = b.sound && typeof b.sound === "object" ? b.sound : null;
+      if (snd) {
+        step("Adding music and sound");
+        const cues = (Array.isArray(snd.sfx) ? snd.sfx : []).map((fx, i) => ({ fx: String(fx || ""), t: starts[i] })).filter((c) => c.fx && c.fx !== "none" && c.t != null);
+        const total = await mediaDuration(path.join(dir, "final.mp4"));
+        try {
+          if (await mixStory(run, dir, { input: "final.mp4", output: "mixed.mp4", total, music: snd.music, ambience: snd.ambience, cues, hasVoice: !!nar || b.speech === true }))
+            fs.renameSync(path.join(dir, "mixed.mp4"), path.join(dir, "final.mp4"));
+        } catch (e) { st.warnings.push("Music and sound could not be added (" + e.message.slice(0, 120) + "). The video has the narration only."); }
+      }
+      // keep only what's needed to replay / re-stitch
+      for (const f of fs.readdirSync(dir)) if (/^(n\d+\.mp4|joined\.mp4)$/.test(f)) fs.rm(path.join(dir, f), { force: true }, () => {});
+      st.status = "completed"; st.step = "Done"; saveStatus(sid, st);
+      hist({ status: "completed", duration: Math.round(await mediaDuration(path.join(dir, "final.mp4"))), cost: clipCost || undefined });
+    } catch (e) { stitchFailed({ sid }, e); }
+  }
+  ctx.renderSlot.define("stitch", {
+    ref: ({ sid }) => "story-" + sid,
+    run: runStitch,
+    onError: stitchFailed,
+    state: ({ sid }) => stitches.get(sid),
+    setState: ({ sid }, st) => stitches.set(sid, st),
+    // the finished clips come from the shared video cache; the web service fetches them first (prepare), since only
+    // it knows where clips from other providers live
+    prepare: async ({ b }) => { for (const id of b.ids) await ctx.ensureVideo(id).catch(() => {}); },
+    inputs: ({ sid, b }) => [`work/${sid}/`, "data/settings.json", ...b.ids.map((id) => `work/videos/${id}.mp4`)],
+    outputs: ({ sid }) => [`work/${sid}/`],
+  });
 
   return { busy, handle: async function handle(req, res, url) {
     let m;
@@ -213,11 +332,7 @@ module.exports = function storyRoutes(ctx) {
       const sid = crypto.randomBytes(6).toString("hex");
       const q = renderSlot.stats ? renderSlot.stats() : null, ahead = q ? q.waiting + (q.active >= q.slots ? 1 : 0) : 0;
       const st = { status: "running", step: ahead ? `Waiting for ${ahead} other video${ahead > 1 ? "s" : ""} to finish rendering…` : "Starting…", warnings: [], createdAt: Date.now() };
-      const nar = b.narration && Array.isArray(b.narration.lines) && b.narration.model ? b.narration : null;
       const lang = hing.isHinglish(req) ? "hinglish" : undefined;
-      // budget mode: clips shorter than their narration are slowed down (up to 1.5x) and then hold their last
-      // frame, instead of cutting the narration off
-      const extend = !!b.extend;
       const dir = path.join(WORK, sid);
       fs.mkdirSync(dir, { recursive: true });
       stitches.set(sid, st);
@@ -225,100 +340,14 @@ module.exports = function storyRoutes(ctx) {
       hist({ status: "running", title: String(b.title || "Story").slice(0, 140), duration: undefined, retry: { endpoint: "/api/stitch", body: { ...b } } });
       const step = (s) => { st.step = s; saveStatus(sid, st); };
       step(st.step);
-      renderSlot(async () => {
-        const [W, H] = b.aspect === "16:9" ? [1280, 720] : b.aspect === "1:1" ? [720, 720] : [720, 1280];
-        const vf = `scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,format=yuv420p`;
-        const enc = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-ar", "44100", "-ac", "2"];
-        let list = "", t = 0;
-        const starts = []; // where each scene starts in the final video (for sound effects on the cuts)
-        for (let i = 0; i < ids.length; i++) {
-          const line = nar ? String(nar.lines[i] || "").trim() : "";
-          step(`Downloading clip ${i + 1}/${ids.length}`);
-          const cached = path.join(WORK, "videos", ids[i] + ".mp4");
-          if (!fs.existsSync(cached)) { // downloads once into the shared video cache (works for every provider)
-            try { await ctx.ensureVideo(ids[i]); } catch (e) { throw new Error(`Clip ${i + 1} download failed (${e.status || e.message})`); }
-          }
-          fs.copyFileSync(cached, path.join(dir, `raw${i}.mp4`));
-          step(`Preparing clip ${i + 1}/${ids.length}`);
-          const audio = await hasAudio(path.join(dir, `raw${i}.mp4`));
-          let args;
-          if (line) {
-            step(`Voicing scene ${i + 1}/${ids.length}`);
-            fs.writeFileSync(path.join(dir, `nar${i}.mp3`), await tts({ model: nar.model, voice: nar.voice, text: line, instructions: nar.instructions, lang }));
-            // the voice service adds silence before and after a line; trimmed, the lines flow from scene to scene
-            try {
-              await run(["-y", "-i", `nar${i}.mp3`, "-af", "silenceremove=start_periods=1:start_threshold=-45dB,areverse,silenceremove=start_periods=1:start_threshold=-45dB,areverse,adelay=60|60", "-c:a", "libmp3lame", "-q:a", "2", `nart${i}.mp3`], dir);
-              if (await mediaDuration(path.join(dir, `nart${i}.mp3`)) > 0.3) fs.renameSync(path.join(dir, `nart${i}.mp3`), path.join(dir, `nar${i}.mp3`));
-            } catch {}
-            const vd = await mediaDuration(path.join(dir, `raw${i}.mp4`)), ad = await mediaDuration(path.join(dir, `nar${i}.mp3`));
-            // The whole line is always heard: the scene is made long enough for it, never cut off. In order:
-            // 1. the voice is sped up a touch (at most 1.12x, still sounds natural),
-            // 2. the clip is slowed a little (at most 1.3x, 1.5x in budget mode),
-            // 3. only then does the last frame hold for the rest.
-            // Plus a short breath after the line so scenes don't run into each other.
-            const plan = fitScene(vd, ad, extend);
-            const D = plan.D, ds = D.toFixed(3);
-            let v = "[0:v]";
-            if (plan.slow > 1.001) v += `setpts=${plan.slow.toFixed(3)}*PTS,`;
-            v += vf;
-            if (plan.hold > 0.01) { // the last frame holds with a slow push-in, so it never looks frozen
-              const t0 = (vd * plan.slow).toFixed(3), hd = Math.max(0.5, plan.hold).toFixed(3);
-              v += `,tpad=stop_mode=clone:stop_duration=${(plan.hold + 0.1).toFixed(3)}` +
-                `,zoompan=z='if(gt(it,${t0}),1+0.06*min(1,(it-${t0})/${hd}),1)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=${W}x${H}:fps=24`;
-            }
-            v += "[v]";
-            // every pad has a fixed length (an endless apad never stops on the server's older ffmpeg 5.1) and so does
-            // the output (-t)
-            const voice = `[1:a]${plan.tempo > 1.001 ? `atempo=${plan.tempo.toFixed(3)},` : ""}apad=whole_dur=${ds},atrim=0:${ds}`;
-            // the clip's own sound is dropped under narration: video models often add talking of their own, which
-            // came through as a second voice. Ambience, music and effects are laid back in by mixStory below.
-            const fc = `${v};${voice}[a]`;
-            args = ["-y", "-i", `raw${i}.mp4`, "-i", `nar${i}.mp3`, "-filter_complex", fc, "-map", "[v]", "-map", "[a]", "-t", ds, ...enc, `n${i}.mp4`];
-          } else {
-            // a scene without narration keeps its own sound (quieter when the story is narrated)
-            args = audio
-              ? ["-y", "-i", `raw${i}.mp4`, "-vf", vf, ...(nar ? ["-af", "volume=0.6"] : []), ...enc, `n${i}.mp4`]
-              : await (async () => { // silent clip: add a silent track exactly as long as the clip
-                const vd = await mediaDuration(path.join(dir, `raw${i}.mp4`));
-                return ["-y", "-i", `raw${i}.mp4`, "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-vf", vf, ...(vd ? ["-t", vd.toFixed(3)] : ["-shortest"]), ...enc, `n${i}.mp4`];
-              })();
-          }
-          await run(args, dir);
-          list += `file 'n${i}.mp4'\n`;
-          starts.push(t); t += (await mediaDuration(path.join(dir, `n${i}.mp4`))) || 0;
-        }
-        step("Joining clips");
-        fs.writeFileSync(path.join(dir, "list.txt"), list);
-        if (b.look === "glitch") { // neon-glitch look over the whole video (needs one re-encode)
-          await run(["-y", "-f", "concat", "-safe", "0", "-i", "list.txt", "-c", "copy", "joined.mp4"], dir);
-          step("Adding the glitch look");
-          const total = await mediaDuration(path.join(dir, "joined.mp4"));
-          await run(["-y", "-i", "joined.mp4", "-filter_complex", glitchFilter("[0:v]", "[v]", W, H, total, total), "-map", "[v]", "-map", "0:a", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "copy", "-movflags", "+faststart", "final.mp4"], dir);
-        } else await run(["-y", "-f", "concat", "-safe", "0", "-i", "list.txt", "-c", "copy", "-movflags", "+faststart", "final.mp4"], dir);
-        // sound design: music + ambience under the whole story (dipping when the narrator speaks), effects on cuts
-        const snd = b.sound && typeof b.sound === "object" ? b.sound : null;
-        if (snd) {
-          step("Adding music and sound");
-          const cues = (Array.isArray(snd.sfx) ? snd.sfx : []).map((fx, i) => ({ fx: String(fx || ""), t: starts[i] })).filter((c) => c.fx && c.fx !== "none" && c.t != null);
-          const total = await mediaDuration(path.join(dir, "final.mp4"));
-          try {
-            if (await mixStory(run, dir, { input: "final.mp4", output: "mixed.mp4", total, music: snd.music, ambience: snd.ambience, cues, hasVoice: !!nar || b.speech === true }))
-              fs.renameSync(path.join(dir, "mixed.mp4"), path.join(dir, "final.mp4"));
-          } catch (e) { st.warnings.push("Music and sound could not be added (" + e.message.slice(0, 120) + "). The video has the narration only."); }
-        }
-        // keep only what's needed to replay / re-stitch
-        for (const f of fs.readdirSync(dir)) if (/^(n\d+\.mp4|joined\.mp4)$/.test(f)) fs.rm(path.join(dir, f), { force: true }, () => {});
-        st.status = "completed"; st.step = "Done"; saveStatus(sid, st);
-        const clipCost = ids.reduce((a, i) => a + (ctx.history?.get(i)?.cost || 0), 0);
-        hist({ status: "completed", duration: Math.round(await mediaDuration(path.join(dir, "final.mp4"))), cost: clipCost || undefined });
-      }).catch((e) => { st.status = "failed"; st.error = e.message.slice(-500); saveStatus(sid, st); hist({ status: "failed", error: st.error }); })
-        .finally(() => setTimeout(() => stitches.delete(sid), 3600000));
+      const clipCost = ids.reduce((a, i) => a + (ctx.history?.get(i)?.cost || 0), 0); // the clips' own cost, for History
+      renderSlot.submit("stitch", { sid, b, lang, clipCost }).finally(() => setTimeout(() => stitches.delete(sid), 3600000));
       return send(res, 202, { id: sid }), true;
     }
     if (req.method === "GET" && (m = url.pathname.match(/^\/api\/stitch\/([a-f0-9]{12})$/))) {
       const st = readStatus(m[1]);
       // "running" on disk but not in memory: the server restarted mid-stitch, so it will never finish on its own
-      if (st && st.status === "running" && !stitches.has(m[1])) return send(res, 200, { ...st, status: "interrupted", step: "The server restarted", url: null }), true;
+      if (st && st.status === "running" && !stitches.has(m[1]) && !renderSlot.durable) return send(res, 200, { ...st, status: "interrupted", step: "The server restarted", url: null }), true;
       return (st ? send(res, 200, { ...st, url: st.status === "completed" ? `/api/final/${m[1]}` : null }) : send(res, 404, { error: "Unknown stitch" })), true;
     }
     if ((req.method === "GET" || req.method === "HEAD") && (m = url.pathname.match(/^\/api\/final\/(\w+)$/))) {

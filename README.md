@@ -28,6 +28,90 @@ Run: copy `.env.example` to `.env`, add your OpenRouter key, then `node server.j
 | `APP_PASSWORD` | password to open the site (login prompt) |
 | `APP_USER` | optional, defaults to `admin` |
 
+## Scaling renders: web service + render workers
+
+Rendering (Shorts, picture explainers, Story stitches, Enhance) is the heavy part: ffmpeg at full CPU for minutes. By default it runs inside the web server, a few at a time. To give it machines of its own, add a Postgres database and a bucket: the web service then only **queues** renders, and any number of **render workers** (the same Docker image) pick them up.
+
+```
+browser -> Cloudflare -> web service (API, pages, volume /data)
+                           |  queue a job: row in render_jobs (Postgres)
+                           |  input files -> bucket (R2 / S3)
+                           v
+                    render worker x N: claim job (FOR UPDATE SKIP LOCKED), copy inputs down, ffmpeg, copy outputs up
+                           |  progress every 5 s, then the result, History and spend records
+                           v
+                    web service copies the finished files back to its volume and serves them as before
+```
+
+- **Queue** (`lib/jobqueue.js`, table `render_jobs`): part of the main model in `db/schema.sql` (same `job_status` type, `owner_id` → `app_users`, `ref` = the same id as `generations.id` / History: `short-<id>`, `story-<id>`, `enh-<id>`). The app creates it from `db/render_jobs.sql` on start, and adds the `app_users` foreign key once that table exists. Workers claim with `SELECT … FOR UPDATE SKIP LOCKED`, so replicas never get the same job.
+- **Fair between users**: a worker takes the job of the owner with the fewest renders running, and no owner runs more than `RENDER_USER_RUNNING` (default 3) or has more than `RENDER_USER_QUEUED` (default 20) waiting or running; past that a new render is refused with "You already have 20 videos waiting…". Until accounts exist every job belongs to the one owner (`owner_id` empty), so these limits apply to the whole app; the accounts task only has to pass the user's id to `submit()`. (The running limit is checked per claim, so two workers claiming in the same instant can overshoot it by one.)
+- **Leases and retries**: a worker heartbeats while it renders; a job whose worker went quiet for 90 s (crash, redeploy, out of memory) or that ran past `RENDER_TIMEOUT_MIN` goes back in the queue with back-off (15 s, 30 s, … up to 5 min) until it has used `RENDER_MAX_ATTEMPTS` (default 2), then it fails with the reason shown on the page ("The render worker stopped responding … Tried 2 times."). A job's own failures (bad video, model error) fail straight away and are not retried.
+- **No double charges, no duplicate outputs**: one pending or running job per `ref`, so a double click or a resubmit joins the job instead of rendering twice. Outputs are written by path, so a retry overwrites rather than duplicates. While a job runs, its small files (a Short's plan, Story narration) are saved to the bucket, and a retry reuses them instead of paying for that AI work again. History and spend from a worker are written by the web service exactly once per job, even if it crashes while copying a result back (files are simply copied again).
+- **Shutdown**: on SIGTERM (redeploy, scale-down) a worker stops taking jobs, gives running ones `RENDER_DRAIN_SEC` (default 10 s) and hands the rest back without using up an attempt. A worker that starts before its database is reachable keeps retrying instead of exiting.
+- **Health**: `GET /api/render/health` on the web service (and `/health` on a worker) returns queue depth, how long the oldest job has waited, running and stuck jobs, live workers, renders done / failed in the last hour, the busiest owners, the last failure, and a `warning` when renders wait with no worker taking them (also logged every 5 minutes). `/healthz` stays a plain "process is up" check.
+- **Files** (`lib/objstore.js`, no SDK): keys in the bucket mirror paths under `DATA_DIR` (`work/shorts/<id>/short.mp4`). A worker only keeps a job's files while it renders. The bucket is a hand-over point, not the archive: the web service's volume still holds every result, so a lifecycle rule that deletes objects after 7 days is fine.
+- **Same code, two roles** (`lib/render.js`): each render kind is defined once (Shorts in `shorts.js`, stitches in `routes/story.js`, Enhance in `lib/enhance.js`) and runs either in-process or on a worker. History records and spend logged during a render on a worker travel back with the result and are written by the web service, so there is still one History and one spend ledger (the spend cap is checked on the web service before a job is queued).
+- **Off by default**: renders run in the web server as before, with or without `DATABASE_URL`. The queue starts only with `RENDER_QUEUE=on` **and** `DATABASE_URL` on the web service (a worker needs just `DATABASE_URL`).
+- **Workers run anywhere**: a worker needs only `DATABASE_URL`, the bucket settings and `OPENROUTER_API_KEY`; it never calls the web service. Extra replicas, or a worker on any other server, just point at the same database and bucket. Outside Railway use the database's public URL (Railway: `DATABASE_PUBLIC_URL`) with `?sslmode=require` or `PGSSL=1`.
+
+### Railway setup
+
+1. **Postgres**: in the project, *New → Database → PostgreSQL*.
+2. **Bucket** (Cloudflare R2): *R2 → Create bucket* (e.g. `video-studio`), then *Manage R2 API tokens → Create API token* with *Object Read & Write* on that bucket. Note the Account ID, Access Key ID and Secret. Optional: *Settings → Object lifecycle rules →* delete after 7 days.
+3. **Web service** (the existing one): keep its variables, volume and healthcheck, and add:
+
+   | Variable | Value |
+   |---|---|
+   | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` (reference variable) |
+   | `RENDER_QUEUE` | `on` (add it after the worker service is running) |
+   | `S3_BUCKET` | `video-studio` |
+   | `R2_ACCOUNT_ID` | your Cloudflare account id (or `S3_ENDPOINT` for another S3-compatible service; plain AWS S3 needs only `S3_REGION`) |
+   | `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | the R2 token |
+
+4. **Worker service**: *New → GitHub repo →* the same repo. It builds the same `Dockerfile`, and `railway.json`'s `/healthz` check works (the worker answers it). No volume and no public domain needed. Variables:
+
+   | Variable | Value |
+   |---|---|
+   | `RENDER_ROLE` | `worker` |
+   | `DATABASE_URL`, `S3_BUCKET`, `R2_ACCOUNT_ID`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | same as the web service |
+   | `OPENROUTER_API_KEY` | same key (Shorts ask the AI and voice their narration from the worker) |
+   | `RENDER_JOBS` | renders at once per replica (default 2) |
+   | `FFMPEG_SLOTS` / `FFMPEG_THREADS` | ffmpeg processes per replica (default 2) and threads each (default no cap) |
+
+5. **Size it**: give the worker CPU and memory (*Settings → Resources*); a Short peaks around 500 MB per ffmpeg process with threads capped, more without. For more throughput raise *Settings → Deploy → Replicas*: every replica is another worker pulling from the same queue. Rough guide: one replica with 8 vCPU / 8 GB and `RENDER_JOBS=3` renders three Shorts side by side; add replicas when pages show "Waiting for N other videos" too often.
+6. The web service can stay small: it no longer runs renders, only short ffmpeg steps (thumbnails, picture conversions).
+
+Check: the web log says `renders: queued for render workers`; the worker log says `render worker …: up to N job(s) at once`, then one line per job it picks up; `/api/render/health` shows `busy_workers` while something renders and no `warning`.
+
+Limits of this step: the web service is still a single instance (live job state and the result files are on it), so running several web replicas is a later step. Without `S3_BUCKET`, web and worker must share one `DATA_DIR`, which Railway services can't do (volumes are per service), so on Railway the bucket is required.
+
+### Locally
+
+- One process, as always: `npm start`.
+- Web + worker on one PC (no bucket needed, they share `DATA_DIR`): set `DATABASE_URL` and `RENDER_QUEUE=on` in `.env`, then run `npm start` in one terminal and `npm run worker` in another with a different `PORT`.
+
+### Render variables
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `DATABASE_URL` | none | Postgres for the render queue (used when `RENDER_QUEUE=on`, and by workers) |
+| `RENDER_ROLE` | `web` | `worker` (or `node server.js --worker`) = only pull and render jobs |
+| `RENDER_QUEUE` | off | `on` = queue renders for workers (needs `DATABASE_URL`) |
+| `RENDER_JOBS` | 1 public / 2 local; worker 2 | renders at once (per process) |
+| `RENDER_TIMEOUT_MIN` | 20 | one attempt may run this long |
+| `RENDER_MAX_ATTEMPTS` | 2 | attempts before a job is failed (worker lost, timeout, storage error) |
+| `RENDER_STALE_SEC` | 90 | no heartbeat for this long = worker lost, job re-queued |
+| `RENDER_DRAIN_SEC` | 10 | on shutdown, wait this long for running jobs before handing them back |
+| `S3_BUCKET` (or `R2_BUCKET`) | none | shared bucket; unset = shared `DATA_DIR` |
+| `R2_ACCOUNT_ID` / `S3_ENDPOINT` / `S3_REGION` | | where the bucket is (R2 account, any S3 endpoint, or an AWS region) |
+| `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | | bucket credentials |
+| `S3_PREFIX` | none | key prefix, to share one bucket between environments |
+| `RENDER_USER_RUNNING` | 3 | renders running at once per user (0 = no limit) |
+| `RENDER_USER_QUEUED` | 20 | renders waiting or running per user before new ones are refused (0 = no limit) |
+| `PGSSL` | off | `1` = TLS to Postgres, as does `?sslmode=require` in the URL (Railway's private network doesn't need it) |
+
+Tests: `npm install`, then `npm test`. The queue tests (claim, fairness, limits, retries, leases, timeouts, copy-back, health, shutdown) run on a real Postgres compiled to WebAssembly (PGlite, a dev dependency); with `TEST_DATABASE_URL=postgres://…` they also check that two connections claiming at once never get the same job.
+
 ## Shorts maker
 
 **Story mode (default voiceover):** the AI watches the clip, opens with a 1–2 s flash of the best moment (cold open, white flash + rewind sound) and a hook line ("Wait till you see what happens"), then tells it like a story ("Here's how it started…"), narrating every quiet stretch. The clip's own sound glides down under the narrator and back up after. Music is generated by the app (no copyright): **Auto** picks upbeat, suspense, chill, epic or funny from the clip's mood; it fills quiet parts and dips automatically under speech. Sound effects (boom on the hook, rewind, whoosh on cuts) are generated too. Narrator lines and effects are pre-mixed into one track before the final render (short audio inputs ending early inside the video graph deadlocked ffmpeg).
@@ -67,7 +151,7 @@ Options → "Search only this part": give a From / To time (12:30, 1:02:03) and 
 - OpenRouter calls retry twice on rate limits and passing server errors; calls that start paid work are only retried when it's safe (429 or never sent), so nothing is charged twice.
 - Old working files are cleaned up every 6 hours (Settings → Storage).
 - Prices on the Single clip and Story pages come live from OpenRouter (`/api/prices`, cached 6 h).
-- Code: `server.js` (core + generation routes), `routes/story.js`, `routes/system.js`, `shorts.js`, `lib/` (settings, spend, retries, queue, cleanup, prices, persistence, edit helpers). Tests: `npm test` (`node --test`; the render test needs ffmpeg).
+- Code: `server.js` (core + generation routes), `routes/story.js`, `routes/system.js`, `shorts.js`, `lib/` (settings, spend, retries, queue, cleanup, prices, persistence, edit helpers; `render.js`, `jobqueue.js` and `objstore.js` for render workers, see *Scaling renders*). Tests: `npm test` (`node --test`; the render test needs ffmpeg).
 
 ## Costs, confirmations and history
 

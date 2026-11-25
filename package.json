@@ -2,9 +2,18 @@
   "name": "video-studio",
   "private": true,
   "description": "AI video studio: single clips, story mode, UGC, poses and motion, and a Shorts maker.",
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "node server.js",
+    "worker": "node server.js --worker",
     "test": "node --test"
+  },
+  "dependencies": {
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.6.0"
   }
 }

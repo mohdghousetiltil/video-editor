@@ -9,6 +9,9 @@ const { glitchFilter } = require("./glitch");
 const crypto = require("crypto");
 const { orFetch } = require("./lib/openrouter");
 const { createLimiter } = require("./lib/queue");
+const { createRenderer } = require("./lib/render");
+const { createJobQueue, connect: connectDb } = require("./lib/jobqueue");
+const { createStorage } = require("./lib/objstore");
 const { createSpend, TTS_PER_SEC } = require("./lib/spend");
 const { createPrices } = require("./lib/prices");
 const { persistentMap } = require("./lib/store");
@@ -63,9 +66,30 @@ const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
 const SMALL = !!(process.env.PUBLIC_URL || "").trim();
 const ffSlot = createLimiter(Math.max(1, Number(process.env.FFMPEG_SLOTS) || (SMALL ? 1 : 2)));
 const FF_THREADS = process.env.FFMPEG_THREADS != null && process.env.FFMPEG_THREADS !== "" ? Math.max(0, Number(process.env.FFMPEG_THREADS) || 0) : SMALL ? 2 : 0;
-// a whole job (Short, Story stitch, Enhance) gets 20 minutes before its slot is given to the next one in line
-const renderSlot = createLimiter(Math.max(1, Number(process.env.RENDER_JOBS) || (process.env.PUBLIC_URL ? 1 : 2)),
-  { timeoutMs: (Number(process.env.RENDER_TIMEOUT_MIN) || 20) * 60000, label: "Rendering" });
+// a whole job (Short, Story stitch, Enhance) gets 20 minutes before its slot is given to the next one in line.
+// Where renders run (lib/render.js): in this process, as always, unless RENDER_QUEUE=on (and DATABASE_URL is set). A
+// database address alone doesn't change anything, so renders never wait for a worker that isn't there. With the queue
+// on, the web service only
+// queues them (Postgres table render_jobs) and render workers (`node server.js --worker` or RENDER_ROLE=worker, same
+// image) claim and run them; their files travel through S3_BUCKET (Cloudflare R2 / S3), or a shared DATA_DIR.
+const ROLE = process.argv.includes("--worker") || process.env.RENDER_ROLE === "worker" ? "worker" : "web";
+const QUEUE_WANTED = ROLE === "worker" || /^(on|1|true)$/i.test((process.env.RENDER_QUEUE || "").trim());
+const QUEUE_ON = !!process.env.DATABASE_URL && QUEUE_WANTED;
+if (QUEUE_WANTED && !process.env.DATABASE_URL && ROLE === "web") console.error("RENDER_QUEUE is on but DATABASE_URL is not set: rendering in this process.");
+if (ROLE === "worker" && !QUEUE_ON) { console.error("A render worker needs DATABASE_URL (the job queue). Exiting."); process.exit(1); }
+// Fair share between users: at most RENDER_USER_RUNNING renders running and RENDER_USER_QUEUED waiting or running per
+// user (0 = no limit). Until accounts exist every job belongs to the one owner, so these cap the whole app.
+const envInt = (k, d) => (process.env[k] != null && process.env[k] !== "" && !isNaN(+process.env[k]) ? Math.max(0, Math.floor(+process.env[k])) : d);
+const renderQueue = QUEUE_ON ? createJobQueue(connectDb(process.env.DATABASE_URL, { name: `video-studio-${ROLE}` }), {
+  staleSec: envInt("RENDER_STALE_SEC", 90) || 90,
+  maxRunningPerOwner: envInt("RENDER_USER_RUNNING", 3), maxQueuedPerOwner: envInt("RENDER_USER_QUEUED", 20),
+}) : null;
+const renderSlot = createRenderer({
+  slots: Math.max(1, Number(process.env.RENDER_JOBS) || (process.env.PUBLIC_URL ? 1 : 2)),
+  timeoutMs: (Number(process.env.RENDER_TIMEOUT_MIN) || 20) * 60000, label: "Rendering",
+  queue: renderQueue, storage: createStorage(process.env, { root: STORE }), role: ROLE,
+  maxAttempts: Math.max(1, Number(process.env.RENDER_MAX_ATTEMPTS) || 2),
+});
 // one ffmpeg step may run 10 minutes at most; a hung one is killed instead of holding its slot forever
 const FF_TIMEOUT = (Number(process.env.FFMPEG_TIMEOUT_MIN) || 10) * 60000;
 const run = (args, cwd) => ffSlot(() =>
@@ -150,12 +174,15 @@ const settings = require("./lib/settings")(DATA);
 const spend = createSpend({ DATA, API, getKey: () => KEY, getCap: () => settings.get().monthlyCap,
   getLimits: () => ({ dailyCap: settings.get().dailyVideoCap, weeklyCap: settings.get().weeklyVideoCap, tz: settings.get().tz }),
   getPending: () => pendingVideoCost() });
+// on a render worker, spend inside a job is recorded with the job and logged by the web service (one ledger)
+spend.log = renderSlot.capture("spend.log", spend.log);
 // price of videos that were submitted but are not finished yet (they are only logged as spend once they complete)
 const pendingVideoCost = () => { let s = 0; for (const j of jobs.values()) if (j && j.estimate > 0 && !["completed", "failed", "cancelled", "expired"].includes(j.status) && Date.now() - j.startedAt < 3 * 3600000) s += j.estimate; return s; };
 let videoReserved = 0; // being submitted right now (a few seconds), so two quick requests cannot both slip under the limit
 const logSpend = spend.log;
 const prices = createPrices({ API, getKey: () => KEY });
 const history = createHistory(DATA);
+history.put = renderSlot.capture("history.put", history.put); // same for History records
 const themes = createThemes();
 // storyboard stills: one picture per scene, approved before any video is paid for (work/stills/<id>.<ext>)
 const STILLS = path.join(STORE, "work", "stills");
@@ -258,7 +285,7 @@ function serveMp4(req, res, f, download) {
   res.writeHead(200, { ...h, "Content-Length": size });
   return fs.createReadStream(f).pipe(res);
 }
-http.createServer((req, res) => {
+if (ROLE === "web") http.createServer((req, res) => {
   const m = req.url.split("?")[0].match(/^\/s\/([a-f0-9]{24})\.mp4$/);
   serveMp4(req, res, m && path.join(SHARE_DIR, m[1] + ".mp4"));
 }).listen(SHARE_PORT, "127.0.0.1");
@@ -290,7 +317,7 @@ function startTunnel() {
 }
 function stopTunnel() { if (PUBLIC_URL) return; if (tunnel.proc) tunnel.proc.kill(); tunnel.status = "off"; tunnel.url = null; tunnel.proc = null; }
 process.on("exit", () => { try { tunnel.proc && tunnel.proc.kill(); } catch {} });
-process.on("SIGINT", () => { stopTunnel(); process.exit(0); });
+if (ROLE === "web") process.on("SIGINT", () => { stopTunnel(); process.exit(0); });
 
 // A pasted link must be a direct MP4 file. Video pages (YouTube, TikTok, Instagram...) are web pages, not video files.
 async function checkVideoLink(u) {
@@ -333,7 +360,7 @@ const systemRoutes = require("./routes/system")(ctx);
 const themeRoutes = require("./routes/themes")(ctx);
 const swapRoutes = require("./routes/faceswap")(ctx);
 const enhanceRoutes = require("./lib/enhance").createEnhance({ ...ctx, FFMPEG, VIDEO_CACHE });
-startCleanup(STORE, () => settings.get(), (id) => story.busy(id) || shorts.busy(id));
+if (ROLE === "web") startCleanup(STORE, () => settings.get(), (id) => story.busy(id) || shorts.busy(id));
 
 // OpenRouter reports only a status, never a percentage, so pages show the stage and the time elapsed (no countdown).
 function stage(job) {
@@ -1100,4 +1127,34 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => console.log(`Dashboard: http://localhost:${PORT}  (model: ${MODEL}, key ${KEY ? "loaded" : "MISSING"})`));
+// The render_jobs table is created on first start (IF NOT EXISTS). Until the database answers (it may start after this
+// service, or be briefly unreachable), keep trying with back-off instead of giving up.
+async function whenQueueReady() {
+  for (let wait = 1000; ; wait = Math.min(wait * 2, 30000)) {
+    try { await renderQueue.migrate(); return; } catch (e) { console.error(`Render queue not reachable (${e.message}); trying again in ${wait / 1000} s`); }
+    await new Promise((r) => setTimeout(r, wait));
+  }
+}
+if (ROLE === "worker") {
+  // a render worker serves /healthz (process up, for Railway's health check) and /health (queue health, from the
+  // database) and pulls render jobs from the queue; it needs nothing else from the web service
+  http.createServer(async (req, res) => {
+    if (req.url.startsWith("/healthz")) return send(res, 200, { ok: true, role: "worker", rendering: renderSlot.activeJobs() });
+    if (req.url.startsWith("/health")) return renderSlot.health().then((h) => send(res, 200, h), (e) => send(res, 503, { ok: false, error: e.message }));
+    send(res, 404, { error: "This is a render worker." });
+  }).listen(PORT, () => console.log(`Render worker (health on :${PORT}/healthz and /health)`));
+  whenQueueReady().then(() => renderSlot.startWorker({ concurrency: Math.max(1, Number(process.env.RENDER_JOBS) || 2) }));
+  // SIGTERM (redeploy, scale down): stop taking jobs, let running ones finish for RENDER_DRAIN_SEC, hand the rest back
+  let stopping = null;
+  const stop = () => stopping || (stopping = (async () => {
+    console.log("Render worker stopping…");
+    const left = await renderSlot.stopWorker(envInt("RENDER_DRAIN_SEC", 10) * 1000);
+    if (left) console.log(`Render worker: ${left} job(s) handed back to the queue`);
+    process.exit(0);
+  })());
+  process.on("SIGTERM", stop);
+  process.on("SIGINT", stop);
+} else {
+  server.listen(PORT, () => console.log(`Dashboard: http://localhost:${PORT}  (model: ${MODEL}, key ${KEY ? "loaded" : "MISSING"}, renders: ${QUEUE_ON ? "queued for render workers" : "in this process"})`));
+  if (renderQueue) whenQueueReady().then(() => renderSlot.startWatcher());
+}

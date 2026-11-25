@@ -6,6 +6,7 @@
 --    catalog               providers, ai_models, model_routes, looks, radio_stations
 --    files                 assets (every picture, clip, sound and sheet; the bytes stay on disk or in object storage)
 --    creative              influencers, generations (every clip, story scene, short, swap), stories, story_scenes, shorts_jobs, enhance_jobs, face_swaps
+--    rendering             render_jobs (the queue render workers pull Shorts, Story stitches and Enhance from)
 --    money                 spend_ledger (one row per paid call) + functions and views that apply the monthly cap and the daily / weekly video limits
 --    safety                face swap consent is part of the table, audit_events records who did what
 --
@@ -388,6 +389,40 @@ CREATE TABLE enhance_jobs (
   finished_at     timestamptz
 );
 CREATE INDEX enhance_owner_idx ON enhance_jobs (owner_id, created_at DESC);
+
+-- render queue: one row per Short / Story stitch / Enhance render, claimed by render workers (lib/jobqueue.js).
+-- The app creates this table on its own from db/render_jobs.sql (same definition) when DATABASE_URL is set.
+CREATE TABLE render_jobs (
+  id                 text PRIMARY KEY,
+  kind               text NOT NULL,                       -- 'short', 'pictures', 'stitch', 'enhance'
+  ref                text,                                -- the app record: short-<id>, story-<id>, enh-<id>
+  owner_id           uuid CONSTRAINT render_jobs_owner_fk REFERENCES app_users(id) ON DELETE CASCADE, -- NULL until accounts exist
+  payload            jsonb NOT NULL DEFAULT '{}'::jsonb,  -- what the worker needs to run it
+  status             job_status NOT NULL DEFAULT 'pending' CHECK (status <> 'expired'),
+  priority           smallint NOT NULL DEFAULT 0,         -- higher first
+  attempts           integer NOT NULL DEFAULT 0,          -- claims so far
+  max_attempts       integer NOT NULL DEFAULT 2 CHECK (max_attempts >= 1),
+  timeout_s          integer NOT NULL DEFAULT 1200 CHECK (timeout_s > 0), -- one attempt may run this long
+  run_after          timestamptz NOT NULL DEFAULT now(),  -- not claimed before this (retry back-off)
+  locked_by          text,                                -- worker id (host-pid)
+  lock_token         uuid,
+  locked_at          timestamptz,
+  heartbeat_at       timestamptz,                         -- the lease: renewed every few seconds while it runs
+  progress           jsonb,                               -- live state the web shows while it runs
+  result             jsonb,                               -- final state, changed files, side effects (History, spend)
+  error              text,
+  created_at         timestamptz NOT NULL DEFAULT now(),
+  started_at         timestamptz,
+  finished_at        timestamptz,
+  finalize_lease_at  timestamptz,                         -- the web service is copying the result back
+  effects_applied_at timestamptz,                         -- History / spend written (exactly once, never twice)
+  finalized_at       timestamptz                          -- copied back, done
+);
+CREATE INDEX render_jobs_ready_idx ON render_jobs (priority DESC, created_at, id) WHERE status = 'pending';
+CREATE INDEX render_jobs_running_idx ON render_jobs (owner_id, heartbeat_at) WHERE status = 'in_progress';
+CREATE INDEX render_jobs_open_idx ON render_jobs (created_at) WHERE finalized_at IS NULL;
+CREATE INDEX render_jobs_owner_idx ON render_jobs (owner_id, created_at DESC);
+CREATE UNIQUE INDEX render_jobs_active_ref_idx ON render_jobs (ref) WHERE ref IS NOT NULL AND status IN ('pending','in_progress');
 
 -- one row per face swap; the consent is part of the row and cannot be false
 CREATE TABLE face_swaps (

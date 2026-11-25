@@ -27,7 +27,8 @@ const VOICES = [
 const { MOOD_EXPR, MOODS, renderMood } = require("./lib/music");
 const hing = require("./lib/hinglish"); // Hinglish mode
 
-module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, serveMp4, tts, logSpend = () => {}, orFetch = fetch, renderSlot = (fn) => fn(), getModel = () => null, serveThumb, history = null }) {
+module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, serveMp4, tts, logSpend = () => {}, orFetch = fetch, renderSlot = null, getModel = () => null, serveThumb, history = null }) {
+  if (!renderSlot || !renderSlot.submit) renderSlot = require("./lib/render").createRenderer({ slots: 99 }); // stand-alone use: no limit
   const hist = (id, rec) => { try { history && history.put("short-" + id, { kind: "short", url: `/api/shorts/${id}/short.mp4`, thumb: `/api/shorts/${id}/thumb.jpg`, ...rec }); } catch {} };
   const DIR = path.join(STORE, "work", "shorts");
   // video-understanding model: Settings page choice, else SHORTS_MODEL, else Gemini Flash Lite
@@ -847,7 +848,8 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
     return m;
   };
   // Shorts that were mid-way when the server stopped can't be resumed; mark them so they don't spin forever.
-  for (const d of fs.readdirSync(DIR)) {
+  // (With the render queue they live on in the queue and finish on a render worker.)
+  if (!renderSlot.durable) for (const d of fs.readdirSync(DIR)) {
     const m = /^\w+$/.test(d) && readMeta(d);
     if (m && m.status === "running") saveMeta(d, { ...m, status: "failed", error: "The server restarted while this Short was being made. Make it again." });
   }
@@ -857,8 +859,33 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
     job.step = ahead ? `Waiting for ${ahead} other video${ahead > 1 ? "s" : ""} to finish rendering` : "Starting"; // another Short or Story is rendering
     saveMeta(id, { id, status: "running", createdAt: job.createdAt, source: { title: opts.title || "", link: opts.link || null } });
     hist(id, { status: "running", title: opts.title || opts.link || "Short", t: job.createdAt, ...(opts.link ? { retry: { endpoint: "/api/shorts", body: { ...opts, url: opts.link, link: undefined, file: undefined } } } : {}) });
-    renderSlot(() => runShort(id, opts));
+    renderSlot.submit("short", { id, opts: { ...opts, file: opts.file ? path.basename(opts.file) : opts.file } });
   };
+  // Shorts render through lib/render.js: in this process, or on a render worker that gets the Short's folder, the
+  // chosen music track and the settings, and sends the folder back. The source file is always in the Short's folder.
+  const failJob = ({ id, opts }, e) => {
+    const job = jobs.get(id) || {};
+    Object.assign(job, { status: "failed", error: String(e.message || e).slice(0, 500) });
+    jobs.set(id, job);
+    try { saveMeta(id, { id, status: "failed", ...(opts && opts.images ? { kind: "pictures" } : {}), createdAt: job.createdAt, error: job.error, source: job.source || { title: (opts && opts.title) || "" } }); } catch {}
+    hist(id, { status: "failed", error: job.error });
+  };
+  // A retry (the first worker was lost) reuses the plan the first attempt already paid for, when it was saved.
+  const shortJob = (runIt) => ({
+    ref: ({ id }) => "short-" + id,
+    run: (p, { attempt = 1 } = {}) => {
+      const opts = p.opts && p.opts.file ? { ...p.opts, file: path.join(dirOf(p.id), p.opts.file) } : { ...p.opts };
+      if (attempt > 1 && fs.existsSync(path.join(dirOf(p.id), "plan.json"))) opts.reusePlan = true;
+      return runIt(p.id, opts);
+    },
+    onError: failJob,
+    state: ({ id }) => jobs.get(id),
+    setState: ({ id }, st) => jobs.set(id, st),
+    inputs: ({ id, opts }) => [`work/shorts/${id}/`, "data/settings.json", ...(/^m[a-f0-9]{16}$/.test((opts && opts.music) || "") ? [`work/shorts/music/${opts.music}`] : [])],
+    outputs: ({ id }) => [`work/shorts/${id}/`],
+  });
+  renderSlot.define("short", shortJob((id, opts) => runShort(id, opts)));
+  renderSlot.define("pictures", shortJob((id, opts) => runPictures(id, opts)));
   const newJob = () => {
     const id = Date.now().toString(36) + crypto.randomBytes(4).toString("hex");
     fs.mkdirSync(dirOf(id), { recursive: true });
@@ -931,7 +958,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       job.step = ahead ? `Waiting for ${ahead} other video${ahead > 1 ? "s" : ""} to finish rendering` : "Starting";
       saveMeta(id, { id, status: "running", kind: "pictures", createdAt: job.createdAt, source: { title: opts.title || "Pictures" } });
       hist(id, { status: "running", title: opts.title || "Picture explainer", t: job.createdAt });
-      renderSlot(() => runPictures(id, opts));
+      renderSlot.submit("pictures", { id, opts });
       return send(res, 200, { id }), true;
     }
     if (req.method === "POST" && url.pathname === "/api/shorts/check") {
