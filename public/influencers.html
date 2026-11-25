@@ -251,6 +251,8 @@
   .pd-act .pd-redo{flex:1}
   .pd-act .pd-del{flex:none}
   .pd-act .pd-del.arm{border-color:var(--err) !important;color:var(--err) !important}
+  .gmsg .gerr{display:inline-flex;align-items:flex-start;gap:6px;color:var(--err);font-family:var(--font-ui,Inter);letter-spacing:.02em}
+  .gmsg .gerr .ic{flex:none;margin-top:2px}
 </style>
 <link rel="stylesheet" href="/app.css">
 <script src="/studio.js"></script>
@@ -457,16 +459,33 @@ async function genPics(ref){
   if(!(await S.confirmSpend({title:ref?`Enhance your photo into ${n} pictures?`:`Generate ${n} pictures?`,total:per*n,rows:[['Model',$('gModel').selectedOptions[0].textContent.split(' (')[0]],['Pictures',n+' × ~'+S.money(per)],['Style',ref?ENH.find(x=>x[0]===enhStyle)[1]:$('gStyle').selectedOptions[0].textContent]]}))) return;
   const b=ref?$('enhPic'):$('gen'), label=b.innerHTML; b.disabled=true; b.textContent='Generating…'; $('gMsg').textContent='This takes 10-40 seconds…'; $('cands').innerHTML='';
   if(ref) $('cands').scrollIntoView({behavior:'smooth',block:'center'});
+  // read a reply that may not be JSON (a dropped connection comes back as an HTML error page)
+  const readJSON=async r=>{ const t=await r.text(); try{ return JSON.parse(t); }catch{ throw new Error(r.ok?'The server sent an unreadable answer. Try again.':'The server did not answer properly ('+r.status+'). Try again in a moment.'); } };
   try{
     const r=await fetch('/api/portraits',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({desc:$('desc').value,style:ref?enhStyle:$('gStyle').value,model:$('gModel').value,count:+$('gCount').value,ref:ref||undefined})});
-    const j=await r.json(); if(!r.ok) throw new Error(j.error||'Failed');
+    let j=await readJSON(r); if(!r.ok) throw new Error(j.error||'Failed');
+    // the server makes them in the background; ask every 3 s until they are ready (4 minutes at most)
+    if(j.job){
+      const until=Date.now()+4*60000, id=j.job;
+      do{
+        if(Date.now()>until) throw new Error('Still not ready after 4 minutes. Try again, or pick a faster picture model.');
+        await new Promise(ok=>setTimeout(ok,3000));
+        try{ const q=await fetch('/api/portraits/'+id); j=await readJSON(q); if(!q.ok) throw new Error(j.error||'Failed'); }
+        catch(e){ if(/no longer available/.test(e.message)) throw e; j={running:true}; } // a blip: keep asking
+      }while(j.running);
+      if(j.error) throw new Error(j.error);
+    }
     $('cands').innerHTML=j.images.map((u,i)=>'<img data-i="'+i+'" src="'+u+'">').join('');
     $('cands').querySelectorAll('img').forEach(im=>im.onclick=async()=>{
       $('cands').querySelectorAll('img').forEach(x=>x.classList.remove('sel')); im.classList.add('sel');
       image=await shrinkSrc(im.src); removeImage=false; showPreview(image);
     });
     $('gMsg').textContent='Click the one you like, then Save. Cost: $'+(j.cost||0).toFixed(2);
-  }catch(e){ $('err').textContent=e.message; $('gMsg').textContent=''; }
+  }catch(e){
+    // right under the button that was pressed (the form's error line is far below)
+    $('gMsg').innerHTML='<span class="gerr">'+ic('circle-x')+' '+esc(e.message)+'</span>'; $('err').textContent='';
+    window.dispatchEvent(new Event('spend-changed'));
+  }
   b.disabled=false; b.innerHTML=label;
 }
 $('gen').onclick=()=>genPics();

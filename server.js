@@ -42,6 +42,7 @@ const imgFile = (id) => ["jpg", "png", "webp"].map((e) => path.join(IMG, `${id}.
 // Body profiles of an influencer (front, left, right, back, half body, full body), generated from the main picture: data/img/<id>.views/<view>.<ext>
 const INF_VIEWS = ["front", "left", "right", "back", "half", "full"];
 const profileTasks = new Map(); // influencer id -> body-profile task running in the background (see POST …/profiles)
+const portraitJobs = new Map(); // job id -> pictures being made in the background for the influencer form (see POST /api/portraits)
 const viewDir = (id) => path.join(IMG, `${id}.views`);
 const viewFile = (id, v) => INF_VIEWS.includes(v) ? ["jpg", "png", "webp"].map((e) => path.join(viewDir(id), `${v}.${e}`)).find((f) => fs.existsSync(f)) : undefined;
 
@@ -682,14 +683,35 @@ const server = http.createServer(async (req, res) => {
         if (!r.ok) throw new Error(j.error?.message || "Image generation failed (" + r.status + ")");
         return j;
       };
-      try {
+      // a picture comes back as base64 data or as a link: both work; anything else is skipped rather than shown broken
+      const picOf = (d) => d?.b64_json ? `data:${d.media_type || "image/png"};base64,${d.b64_json}` : /^https?:\/\//.test(d?.url || "") ? d.url : null;
+      // Made in the background: four pictures can take over a minute, and a request held open that long is dropped between
+      // Cloudflare and Railway (the page then got an HTML error page, "not valid JSON"). The page polls GET /api/portraits/<job>.
+      const job = crypto.randomBytes(8).toString("hex");
+      const task = { running: true, started: Date.now() };
+      portraitJobs.set(job, task);
+      setTimeout(() => portraitJobs.delete(job), 15 * 60000); // results are kept for 15 minutes at most
+      (async () => {
         let parts;
-        try { parts = [await call(n)]; } catch (e) { if (n === 1) throw e; parts = await Promise.all(Array.from({ length: n }, () => call(1))); }
-        const images = parts.flatMap((j) => (j.data || []).map((d) => `data:${d.media_type || "image/png"};base64,${d.b64_json}`));
+        try { parts = [await call(n)]; } catch (e) { if (n === 1) throw e; parts = (await Promise.allSettled(Array.from({ length: n }, () => call(1)))).map((x) => x.status === "fulfilled" ? x.value : { error: x.reason }); }
+        const images = parts.flatMap((j) => (j.data || []).map(picOf).filter(Boolean));
         const cost = parts.reduce((a, j) => a + (j.usage?.cost || 0), 0);
-        logSpend("Influencers", cost, model);
-        return send(res, 200, { images, cost });
-      } catch (e) { return send(res, 502, { error: e.message }); }
+        if (cost) logSpend("Influencers", cost, model);
+        if (!images.length) {
+          const why = parts.map((j) => j.error?.message || j.error).find(Boolean);
+          throw new Error(why ? "No picture came back: " + String(why).slice(0, 200) : "The model sent no picture back (it may have refused this photo). Try another look or picture model.");
+        }
+        Object.assign(task, { running: false, images, cost });
+      })().catch((e) => Object.assign(task, { running: false, error: String(e.message || e).slice(0, 300) }));
+      return send(res, 202, { job });
+    }
+    let pj;
+    if (req.method === "GET" && (pj = url.pathname.match(/^\/api\/portraits\/([0-9a-f]{16})$/))) {
+      const t = portraitJobs.get(pj[1]);
+      if (!t) return send(res, 404, { error: "These pictures are no longer available (the server restarted or they expired). Press the button again." });
+      if (t.running) return send(res, 200, { running: true });
+      portraitJobs.delete(pj[1]); // handed over once
+      return send(res, 200, t.error ? { error: t.error } : { images: t.images, cost: t.cost });
     }
 
     // ---- Scripts: a chat with a suspense writer (craft from thriller novels, films and real viral hooks) ----
