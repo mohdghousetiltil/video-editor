@@ -21,7 +21,7 @@
      inside it at 100%. A fixed frame sized with width/height 100% stopped well short of the bottom edge on an iPhone
      home-screen app, leaving dead space under the tab bar. */
   #stage{position:fixed;top:0;right:0;bottom:0;left:0;background:#05060d}
-  #app{position:absolute;top:0;left:0;width:100%;height:100%;border:0;display:block;background:#05060d}
+  #stage iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:0;display:block;background:#05060d} /* every page's frame */
   /* measuring boxes (invisible): #vp is pinned to all four edges of the viewport, the others are 100vh / 100lvh / 100dvh tall */
   #vp,#vh,#lvh,#dvh{position:fixed;left:0;top:0;width:0;visibility:hidden;pointer-events:none}
   #vp{bottom:0}
@@ -66,9 +66,47 @@
   addEventListener('resize', function () { measure(); push(); });
   addEventListener('orientationchange', function () { setTimeout(function () { measure(); push(); }, 300); });
   // a page reports its address and title: the address bar and the app switcher follow the page, not "/shell"
-  window.__shell.page = function (url, title) {
+  // (only the page on screen does; the ones kept in the background stay quiet)
+  window.__shell.page = function (url, title, win) {
+    if (win && frame && win !== frame.contentWindow) return;
     try { if (url && url !== location.pathname + location.search + location.hash) history.replaceState(null, '', url); } catch (e) {}
     if (title) document.title = title;
+  };
+  // ---- Pages stay alive between tabs: one frame per page. Changing tab hides the page you leave (it keeps running: what
+  // you typed, uploaded pictures, open panels, jobs that are still being checked) and shows the other one, loading it only
+  // the first time. A link that asks for different settings (/ugc?inf=…) or a page's own request reloads that page. ----
+  var frames = {}, stageEl = document.getElementById('stage');
+  var keyOf = function (url) { var u = new URL(url, location.href); return (u.pathname.replace(/\.html$/, '').replace(/^\/index$/, '/')) || '/'; };
+  frames[keyOf(new URLSearchParams(location.search).get('to') || '/')] = frame;
+  function show(f) {
+    if (f === frame && f.style.display !== 'none') return;
+    Object.keys(frames).forEach(function (k) { frames[k].style.display = frames[k] === f ? 'block' : 'none'; });
+    frame = f; fit(); push();
+    try {
+      var w = f.contentWindow, d = w.document;
+      window.__shell.page(w.location.pathname + w.location.search + w.location.hash, d.title, w);
+      w.postMessage({ shell: 'shown' }, location.origin); // the page closes any menu it left open
+    } catch (e) {}
+  }
+  window.__shell.active = function () { return frame.contentWindow; }; // the page on screen
+  window.__shell.go = function (url, opts) {
+    var u; try { u = new URL(url, location.href); } catch (e) { return false; }
+    if (u.origin !== location.origin) return false;
+    var k = keyOf(u.href), f = frames[k];
+    if (!f) {
+      f = document.createElement('iframe');
+      f.title = 'Video Studio'; f.setAttribute('allow', frame.getAttribute('allow')); f.setAttribute('allowfullscreen', '');
+      f.style.cssText = frame.style.cssText; f.className = frame.className; f.id = '';
+      f.addEventListener('load', function () { if (f === frame) { remeasure(); push(); } });
+      frames[k] = f; stageEl.appendChild(f); f.src = u.pathname + u.search + u.hash;
+    } else {
+      var cur = null; try { cur = f.contentWindow.location; } catch (e) {}
+      var wantsNew = (opts && opts.reload) || (u.search && cur && u.search !== cur.search);
+      if (wantsNew) f.src = u.pathname + u.search + u.hash;
+      else if (u.hash && cur && u.hash !== cur.hash) { try { cur.hash = u.hash; } catch (e) {} }
+    }
+    show(f);
+    return true;
   };
   // /shell?to=/story opens that page (inside this site only)
   var to = new URLSearchParams(location.search).get('to') || '/';

@@ -22,6 +22,13 @@
   document.addEventListener('selectstart', (e) => { const n = e.target && (e.target.nodeType === 3 ? e.target.parentElement : e.target); if (n && n.closest && n.closest('.pagehead')) e.preventDefault(); }, true);
   document.addEventListener('dragstart', (e) => { if (e.target.closest && e.target.closest('.sb,.tabbar,.radial,svg')) e.preventDefault(); });
 
+  // Off screen: the browser tab is hidden, or the shell keeps this page alive behind another tab. Background status checks
+  // (queue, spend, server) pause then, so pages kept alive don't each keep asking the server.
+  const offScreen = () => {
+    if (document.hidden) return true;
+    try { const sh = window.parent !== window && window.parent.__shell; return !!(sh && sh.active && sh.active() !== window); } catch { return false; }
+  };
+
   const items = [
     ['/', 'Single clip', ICON.clip, 'One prompt, one video'],
     ['/story', 'Story mode', ICON.story, 'Scenes, narration, stitch'],
@@ -216,6 +223,8 @@
   });
   addEventListener('resize', () => isOpen() && setOpen(false));
   addEventListener('pageshow', () => setOpen(false)); // back button shouldn't restore an open menu
+  // the shell keeps pages alive between tabs: coming back to this one, the More menu it was left with is closed
+  addEventListener('message', (e) => { if (e.origin === location.origin && e.data && e.data.shell === 'shown') setOpen(false); });
 
   // Browsers without speculation rules (Safari, Firefox): start fetching a page as soon as a nav link is
   // touched or hovered, so the tap itself finds it ready.
@@ -339,7 +348,7 @@
   });
   sbSpend.onclick = chip.onclick = () => openSpend();
   loadSpend();
-  setInterval(() => { if (!document.hidden) loadSpend(); }, 60000);
+  setInterval(() => { if (!offScreen()) loadSpend(); }, 60000);
   addEventListener('spend-changed', () => setTimeout(loadSpend, 1500)); // pages can nudge it after a paid action
 
   // ---------- Easter eggs (Settings → "Little easter-egg glitches"; off when the OS asks for reduced motion) ----------
@@ -538,7 +547,7 @@
     qa.title = (q.items || []).map((i) => `${i.kind}: ${i.title || i.id}`).join('\n') || 'Render queue';
   }).catch(() => {});
   loadQueue();
-  setInterval(() => { if (!document.hidden) loadQueue(); }, 10000);
+  setInterval(() => { if (!offScreen()) loadQueue(); }, 10000);
   addEventListener('spend-changed', loadQueue);
 
   const dot = document.getElementById('sbDot'), txt = document.getElementById('sbTxt');
@@ -547,7 +556,9 @@
       .then((r) => { if (!r.ok) throw 0; dot.className = 'dot ok'; txt.textContent = window.__eggNight ? 'NETRUNNER ONLINE' : 'SERVER ONLINE'; })
       .catch(() => { dot.className = 'dot bad'; txt.textContent = 'SERVER OFFLINE'; });
   ping();
-  setInterval(ping, 15000);
+  setInterval(() => { if (!offScreen()) ping(); }, 15000);
+  // back on screen after another tab: bring the status up to date at once
+  addEventListener('message', (e) => { if (e.origin === location.origin && e.data && e.data.shell === 'shown') { loadQueue(); loadSpend(); ping(); } });
 
   // Messages go to one quiet line under the page title (no pop-up notifications at the bottom of the screen)
   const status = document.createElement('p');

@@ -21,14 +21,19 @@
   const setInsets = (i) => { if (!i) return; root.style.setProperty('--sat', i.t + 'px'); root.style.setProperty('--sar', i.r + 'px'); root.style.setProperty('--sab', i.b + 'px'); root.style.setProperty('--sal', i.l + 'px'); };
   setInsets(sh.insets); // before the first paint
   addEventListener('message', (e) => { if (e.origin === location.origin && e.data && e.data.shell === 'insets') setInsets(e.data.insets); });
-  const report = () => { try { sh.page(location.pathname + location.search + location.hash, document.title); } catch {} };
+  const report = () => { try { sh.page(location.pathname + location.search + location.hash, document.title, window); } catch {} };
   addEventListener('DOMContentLoaded', report); addEventListener('hashchange', report); addEventListener('pageshow', report);
   document.addEventListener('click', (e) => {
     if (e.defaultPrevented) return;
     const a = e.target.closest && e.target.closest('a[href]');
     if (!a || a.target || a.hasAttribute('download')) return;
     let u; try { u = new URL(a.href, location.href); } catch { return; }
-    if (u.origin !== location.origin) { e.preventDefault(); window.open(u.href, '_blank', 'noopener'); }
+    if (u.origin !== location.origin) { e.preventDefault(); window.open(u.href, '_blank', 'noopener'); return; }
+    // another page of the app: the shell switches to it and keeps this one alive (nothing typed or running is lost)
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    if (/^\/api\//.test(u.pathname) || /\.(?!html$)[a-z0-9]+$/i.test(u.pathname) || u.searchParams.has('download')) return; // files, not pages
+    if (u.pathname === location.pathname && u.search === location.search) return; // same page / #anchor
+    if (sh.go && sh.go(u.href)) e.preventDefault();
   }, true);
 })();
 

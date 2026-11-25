@@ -220,7 +220,7 @@ $('starters').onclick=e=>{ const b=e.target.closest('[data-k]'); if(b){ setIdeas
 $('clear').onclick=()=>{ if(msgs.length&&!confirm('Start a new chat? This one will be cleared.')) return; msgs=[]; save(); render(); $('err').textContent=''; setIdeas(true,true); dealIdeas(); };
 $('chat').onclick=async e=>{
   const b=e.target.closest('button'); if(!b) return;
-  if(b.dataset.story){ try{ sessionStorage.setItem('scriptToStory',spoken(msgs[b.dataset.story].content)); }catch{} location.href='/story'; }
+  if(b.dataset.story){ try{ sessionStorage.setItem('scriptToStory',spoken(msgs[b.dataset.story].content)); }catch{} const sh=window.parent!==window&&window.parent.__shell; if(!(sh&&sh.go&&sh.go('/story',{reload:true}))) location.href='/story'; } // Story reloads so it picks up the script
   else if(b.dataset.copy){
     const ok=await copyText(plain(msgs[b.dataset.copy].content));
     if(ok) b.innerHTML=ic('check')+' Copied';
