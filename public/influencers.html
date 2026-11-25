@@ -522,8 +522,9 @@ const esc=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"
 // order: left, front, right, back, half body, full body, then left again (both directions)
 const LOOP=['left','front','right','back','half','full'], TALL={back:1,half:1,full:1}, LABEL=Object.fromEntries(VIEWS);
 function slideList(p){
-  // front falls back to the main picture; profiles not made yet are skipped
-  return LOOP.map(v=>[v,v==='front'?(p.views?.front||p.image):p.views?.[v]]).filter(x=>x[1]);
+  // the front is always the influencer's own main picture (a generated front pose must never replace their face on the card);
+  // the other sides are the generated profiles, and ones not made yet are skipped
+  return LOOP.map(v=>[v,v==='front'?p.image:p.views?.[v]]).filter(x=>x[1]);
 }
 function slidesHTML(p){
   const s=slideList(p), one=([v,u],clone)=>`<div class="slide${TALL[v]?' tall':''}" data-view="${v}" data-e="${p.id}" title="Edit ${esc(p.name)}"${clone?' aria-hidden="true"':''}>${TALL[v]?`<img class="bg" src="${u}" alt="" loading="lazy">`:''}<img class="fg" src="${u}" alt="${clone?'':esc(p.name)+', '+LABEL[v]}" loading="lazy" draggable="false"></div>`;
