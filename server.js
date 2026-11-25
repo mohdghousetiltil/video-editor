@@ -12,6 +12,7 @@ const { createLimiter } = require("./lib/queue");
 const { createSpend, TTS_PER_SEC } = require("./lib/spend");
 const { createPrices } = require("./lib/prices");
 const { persistentMap } = require("./lib/store");
+const { viewPrompt, realisticPrompt } = require("./lib/identity-prompt");
 const { startCleanup } = require("./lib/cleanup");
 const modelsLib = require("./lib/models");
 const { createHistory } = require("./lib/history");
@@ -639,21 +640,39 @@ const server = http.createServer(async (req, res) => {
       if (!desc) return send(res, 400, { error: "Write a description first." });
       const IMAGE_MODELS = ["qwen/qwen-image-3", "x-ai/grok-imagine-image-2.0", "bytedance-seed/seedream-5-0-lite", "google/gemini-3.1-flash-image"];
       const model = IMAGE_MODELS.includes(b.model) ? b.model : IMAGE_MODELS[0];
-      const lead = { photo: "Candid, unedited straight-out-of-camera front-phone portrait photo of ", studio: "Professional studio portrait photograph, 85mm lens, soft key light from the side with a subtle rim light, sharp eyes, of ", cartoon3d: "High-quality 3D animated character render in a Pixar-like style of ", anime: "Anime style illustration portrait of ", stylized: "Semi-realistic digital painting portrait, clearly an illustration and not a photograph, of " }[b.style] || "Realistic smartphone selfie portrait photo of ";
+      const lead = { photo: "Candid, unedited straight-out-of-camera front-phone portrait photo of ", studio: "Professional studio portrait photograph, 85mm lens, soft key light from the side with a subtle rim light, sharp eyes, of ", cartoon3d: "High-quality 3D animated character render in a Pixar-like style of ", anime: "Anime style illustration portrait of ", stylized: "Semi-realistic digital painting portrait, clearly an illustration and not a photograph, of ",
+        glam: "Glamorous beauty-campaign portrait photograph, flawless polished make-up, glossy retouched skin, soft beauty-dish lighting, of ",
+        cinematic: "Cinematic film still shot on 35mm anamorphic, moody teal-and-amber colour grade, shallow depth of field, soft film grain, of ",
+        editorial: "High-fashion magazine editorial photograph, styled outfit, confident pose, crisp studio strobe lighting, of ",
+        clay: "Handmade stop-motion claymation figure, visible fingerprints in the plasticine, miniature set lighting, of ",
+        comic: "Bold comic-book illustration, thick ink outlines, halftone shading, flat vivid colours, of ",
+        neon: "Cyberpunk digital illustration lit by pink and cyan neon signs, glowing rim light, rainy night city behind, of " }[b.style] || "Realistic smartphone selfie portrait photo of ";
       const prompt = `${lead}${desc}. Head and shoulders, looking at the camera, front-facing, relaxed expression with a slight smile, soft natural light, clean simple background${(b.style || "photo") === "photo" ? ", visible skin pores and fine peach fuzz, slight natural asymmetry, a few flyaway hairs, warm window light with soft falloff, none of the plastic over-retouched AI look, no beauty filter" : ""}. Vertical 9:16 framing.`;
       // from your photo: a NEW character in the chosen style that keeps your look (video models refuse real people's photos)
       const REF_STYLE = {
-        real: "a photorealistic AI influencer, a new original person who is clearly inspired by the photo: same hair colour and style, skin tone, eye colour, age range, outfit vibe and overall look, but an idealised, polished, AI-generated face, not a copy of the real person. Natural skin texture, soft flattering light",
+        // real = true to the photo: the same face, nothing beautified (it used to idealise the face; the polished look is now "glam")
+        real: "a true-to-life photograph of THE SAME person as in the photo: keep their exact face, facial structure, nose, eyes, lips, jawline, skin tone, skin texture with pores, freckles, moles, blemishes and wrinkles, natural asymmetry, hairline, body shape and age exactly as they are. Do NOT beautify, retouch, slim, smooth the skin, enlarge the eyes, whiten the teeth, add make-up or make them look younger or more attractive. No beauty filter, no plastic AI look. A normal candid phone-camera photo in natural daylight",
+        glam: "a glamorous, polished photorealistic AI influencer inspired by the photo: same hair colour and style, skin tone, eye colour, age range and overall look, but an idealised, beautified face with flawless make-up and smooth retouched skin, soft flattering beauty lighting",
+        cinematic: "a photorealistic cinematic film still of the person in the photo: the same face, hair, skin tone and age, shot on 35mm anamorphic with a moody teal-and-amber colour grade, shallow depth of field and soft film grain, not retouched",
+        editorial: "a high-fashion magazine editorial photograph of the person in the photo: the same face, hair, skin tone and age, a styled fashionable outfit in the colours of their clothes, confident pose, crisp studio strobe lighting",
+        clay: "a handmade stop-motion claymation figure: plasticine textures with faint fingerprints, rounded simplified features, miniature set lighting, keeping the photo's hair colour and style, skin tone, eye colour, outfit colours and accessories",
+        comic: "a bold comic-book character: thick ink outlines, halftone dot shading, flat vivid colours, keeping the photo's hair colour and style, skin tone, eye colour, outfit colours and accessories",
+        neon: "a cyberpunk digital-illustration character lit by pink and cyan neon, glowing rim light, a blurred rainy neon city behind, keeping the photo's hair colour and style, skin tone, eye colour, outfit colours and accessories",
         pixar: "a high-end 3D animated feature-film character: stylised proportions, big expressive eyes, soft subsurface skin, rich detailed textures, keeping the photo's hair colour and style, skin tone, eye colour, outfit colours and accessories",
         disney: "a classic hand-drawn 2D animated fairy-tale character: clean expressive linework, big eyes, painterly backdrop, keeping the photo's hair colour and style, skin tone, eye colour, outfit colours and accessories",
         ghibli: "a soft hand-painted Japanese animated-film character: gentle watercolour shading, simple warm features, pastel painted background, keeping the photo's hair colour and style, skin tone, eye colour, outfit colours and accessories",
         anime: "a modern anime character: cel shading, crisp line art, expressive eyes, vivid colours, keeping the photo's hair colour and style, skin tone, eye colour, outfit colours and accessories",
       };
       const refStyle = REF_STYLE[b.style] || REF_STYLE.real;
-      const redraw = b.style && b.style !== "real"
+      const style = b.style || "real", PHOTO_STYLES = ["real", "glam", "cinematic", "editorial"];
+      const redraw = !PHOTO_STYLES.includes(style)
         ? "Completely redraw the character from scratch as a fully stylised illustration with simplified, cartoon proportions: it must NOT look like a filtered or traced photo. Use a new pose and a new plain background; do not keep the photo's framing. "
-        : "Do not copy the photo: a new pose, new framing and a new clean background. ";
-      const refPrompt = `Image 1 is a reference photo of a person, used only for their look. Create ${refStyle}. ${redraw}${String(b.desc || "").trim() ? "Extra details: " + desc + ". " : ""}` +
+        : style === "real"
+          ? "The same person in a new photo: a new pose, new framing and a new clean background, but the face and body exactly as in the reference. "
+          : "Do not copy the photo: a new pose, new framing and a new clean background. ";
+      // Realistic: the full identity-preservation prompt (the same person, nothing beautified); the other looks restyle the person
+      const refPrompt = style === "real" ? realisticPrompt(String(b.desc || "").trim() ? desc : "")
+        : `Image 1 is a reference photo of a person, used only for their look. Create ${refStyle}. ${redraw}${String(b.desc || "").trim() ? "Extra details: " + desc + ". " : ""}` +
         "Made to be animated by an AI video model: one person only, head and shoulders, front-facing and looking straight into the camera, eyes open, both hands relaxed and out of frame or clearly visible, neutral friendly expression with a slight smile, even soft lighting, plain uncluttered background, sharp focus, no text, logos or watermark. Vertical 9:16 framing.";
       const n = Math.max(1, Math.min(4, Number(b.count) || 4));
       const call = async (k) => {
@@ -744,18 +763,9 @@ const server = http.createServer(async (req, res) => {
       const FRAME_MODELS = ["google/gemini-3.1-flash-image", "openai/gpt-image-2", "bytedance-seed/seedream-5-0-lite"];
       const model = FRAME_MODELS.includes(b.model) ? b.model : FRAME_MODELS[0];
       const person = `data:image/${path.extname(f).slice(1).replace("jpg", "jpeg")};base64,` + fs.readFileSync(f).toString("base64");
-      const SHOT = {
-        front: "Front view, head and upper chest: facing the camera straight on, looking into the lens, neutral relaxed expression, both ears equally visible.",
-        left: "Exact side profile facing screen-left: head and shoulders turned 90 degrees so only the side of the face is seen (the nose points to the left edge of the picture), looking ahead, not at the camera.",
-        right: "Exact side profile facing screen-right: head and shoulders turned 90 degrees so only the side of the face is seen (the nose points to the right edge of the picture), looking ahead, not at the camera.",
-        back: "Back view from the waist up: the person stands with their back to the camera and the face is NOT visible, showing the back of the head, the hairstyle from behind and the back of the outfit.",
-        half: "Half-body shot from the waist up: facing the camera, arms relaxed and both hands visible, natural standing posture.",
-        full: "Full-body shot from head to toe, feet and shoes fully in frame with some space above the head and below the feet: standing facing the camera, arms relaxed at the sides, natural posture.",
-      };
       const one = async (v) => {
-        const prompt = "Image 1 shows a character. Create a new picture of EXACTLY the same person for a character reference sheet: identical face, facial features, skin tone, age, hair colour, hair length and hairstyle, body type and proportions, and the same outfit and accessories (where image 1 does not show part of the outfit, invent it to match its style and colours). " +
-          (p.desc ? `The character: ${String(p.desc).slice(0, 600)} ` : "") + SHOT[v] + " " +
-          "Keep the same visual style as image 1 (a realistic photo stays a realistic photo; 3D, anime or illustrated stays in that style). Plain light-grey seamless studio background, soft even lighting, sharp focus, one person only, no text, no logo, no watermark. Vertical 9:16 framing.";
+        // identity first, then the camera angle for this pose (see lib/identity-prompt.js)
+        const prompt = viewPrompt(v, p.desc);
         const r = await orFetch(`${API}/images`, { method: "POST", headers: orHeaders(), body: JSON.stringify({ model, prompt, n: 1, aspect_ratio: "9:16", input_references: [{ type: "image_url", image_url: { url: person } }] }) }, { safe: false });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error?.message || `failed (${r.status})`);
