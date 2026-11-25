@@ -1,6 +1,12 @@
 // Forwards /api/* to the Railway backend. BACKEND_URL and PROXY_KEY are set in Cloudflare Pages settings.
 export async function onRequest({ request, env }) {
   const json = (status, error) => new Response(JSON.stringify({ error }), { status, headers: { "Content-Type": "application/json" } });
+  // Where the visitor is, from Cloudflare's own data on this request (no outside lookup, nothing stored, the IP is not returned).
+  if (new URL(request.url).pathname === "/api/geo") {
+    const cf = request.cf || {};
+    return new Response(JSON.stringify({ country: cf.country || null, region: cf.region || null, city: cf.city || null }),
+      { headers: { "Content-Type": "application/json", "Cache-Control": "private, no-store" } });
+  }
   if (!env.BACKEND_URL) return json(500, "BACKEND_URL is not set in the Cloudflare settings (Variables and secrets).");
   // accept "xxx.up.railway.app", "http://…" or "https://…/" and always talk HTTPS (Railway redirects http with an empty body)
   const base = "https://" + env.BACKEND_URL.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");

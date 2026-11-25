@@ -735,3 +735,25 @@ html.hold-gesture,html.hold-gesture *{-webkit-user-select:none !important;user-s
   clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,8px 100%,0 calc(100% - 8px))}
 .cf-warn::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--warn);box-shadow:0 0 10px var(--warn)}
 .cf-warn b{font:700 11.5px/1 var(--font-hud);letter-spacing:.16em;text-transform:uppercase;color:var(--warn);margin-right:4px}
+
+/* Location readout in the open circle menu: bottom-left over the tab bar, neon text with a glitch flicker */
+.radial-geo{display:none}
+@media(max-width:900px){
+  .radial-geo{display:block;position:fixed;left:calc(14px + var(--sal));right:14px;bottom:calc(86px + var(--sab));z-index:59;pointer-events:none;
+    font:700 6.5px/1.3 var(--font-hud);letter-spacing:.18em;text-transform:uppercase;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    opacity:0;transform:translateY(6px);transition:opacity .2s,transform .2s}
+  body.radial-open .radial-geo{opacity:1;transform:none}
+  .radial-geo .gl{position:relative;display:inline-block;color:var(--acc);text-shadow:0 0 8px rgba(0,229,255,.6)}
+  .radial-geo .gl::before,.radial-geo .gl::after{content:attr(data-t);position:absolute;left:0;top:0;width:100%;overflow:hidden;pointer-events:none}
+  .radial-geo .gl::before{color:var(--pink);text-shadow:none;animation:geo-gl-a 2.6s steps(1) infinite}
+  .radial-geo .gl::after{color:#7df3ff;text-shadow:none;animation:geo-gl-b 2.6s steps(1) infinite}
+  @keyframes geo-gl-a{0%,86%,100%{clip-path:inset(0 0 100% 0);transform:none}
+    87%{clip-path:inset(10% 0 55% 0);transform:translate(-3px,0)} 90%{clip-path:inset(60% 0 8% 0);transform:translate(2px,0)}
+    93%{clip-path:inset(30% 0 40% 0);transform:translate(-2px,0)} 96%{clip-path:inset(0 0 100% 0)}}
+  @keyframes geo-gl-b{0%,88%,100%{clip-path:inset(0 0 100% 0);transform:none}
+    89%{clip-path:inset(55% 0 10% 0);transform:translate(3px,0)} 92%{clip-path:inset(5% 0 70% 0);transform:translate(-2px,0)}
+    95%{clip-path:inset(40% 0 30% 0);transform:translate(1px,0)} 97%{clip-path:inset(0 0 100% 0)}}
+  body.radial-open .radial-geo .gl{animation:geo-jit 2.6s steps(1) infinite}
+  @keyframes geo-jit{0%,86%,100%{transform:none}88%{transform:translate(1px,0) skewX(-6deg)}91%{transform:translate(-1px,0)}94%{transform:none}}
+}
+@media(prefers-reduced-motion:reduce){.radial-geo .gl,.radial-geo .gl::before,.radial-geo .gl::after{animation:none !important}.radial-geo .gl::before,.radial-geo .gl::after{display:none}}

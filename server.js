@@ -730,6 +730,9 @@ const server = http.createServer(async (req, res) => {
     // ---- Influencer library (saved on disk in ./data so every page can use it) ----
     const pub = (p) => ({ id: p.id, name: p.name, desc: p.desc, seed: p.seed, seedance: p.seedance || null, image: imgFile(p.id) ? `/api/influencers/${p.id}/image?v=${p.updated || 0}` : null,
       views: Object.fromEntries(INF_VIEWS.map((v) => [v, viewFile(p.id, v)]).filter(([, f]) => f).map(([v, f]) => [v, `/api/influencers/${p.id}/view/${v}?v=${Math.round(fs.statSync(f).mtimeMs)}`])) });
+    // Visitor location: on the live site the Cloudflare proxy answers this itself (from its own request data); reaching the
+    // server directly (running locally) there is no such data
+    if (url.pathname === "/api/geo" && req.method === "GET") return send(res, 200, { country: req.headers["cf-ipcountry"] || null, region: null, city: null, local: true });
     if (url.pathname === "/api/influencers" && req.method === "GET") return send(res, 200, { influencers: readInf().map(pub) });
     if (url.pathname === "/api/influencers" && req.method === "POST") {
       const b = await readBody(req);
@@ -803,6 +806,16 @@ const server = http.createServer(async (req, res) => {
       if (!f) { res.writeHead(404); return res.end("No such profile"); }
       res.writeHead(200, { "Content-Type": "image/" + path.extname(f).slice(1).replace("jpg", "jpeg"), "Cache-Control": "private, max-age=31536000, immutable" });
       return fs.createReadStream(f).pipe(res);
+    }
+    // Remove one body profile (a bad one); the main picture and the other profiles stay. It can be made again on its own.
+    if (req.method === "DELETE" && (vm = url.pathname.match(/^\/api\/influencers\/([\w-]+)\/view\/(\w+)$/))) {
+      if (!INF_VIEWS.includes(vm[2])) return send(res, 400, { error: "Unknown pose." });
+      const p = readInf().find((x) => x.id === vm[1]);
+      if (!p) return send(res, 404, { error: "No such influencer." });
+      if (profileTasks.get(p.id)?.running) return send(res, 409, { error: "Poses are being made right now. Try again when they finish." });
+      const f = viewFile(p.id, vm[2]);
+      if (f) fs.unlinkSync(f);
+      return send(res, 200, pub(p));
     }
     // Does Seedance accept this influencer's picture? A rejection costs nothing; an acceptance makes a real 4 s clip.
     let cm;

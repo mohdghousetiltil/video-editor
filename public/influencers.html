@@ -231,6 +231,26 @@
   .save-row #save{flex:1;min-height:48px}
   .save-row #reset{min-height:48px}
   .addwrap .note{text-align:center;margin:0}
+  /* Manage poses panel */
+  .poses-dlg{width:min(620px,calc(100vw - 24px))}
+  .pd-note{margin:-4px 0 12px;font-size:12.5px}
+  .pd-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+  @media(max-width:480px){.pd-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  .pd-busy{grid-column:1/-1;margin:0;display:flex;align-items:center;gap:8px;color:var(--acc);font-family:var(--font-ui,Inter);letter-spacing:.04em}
+  .pd-item{display:flex;flex-direction:column;gap:6px;min-width:0}
+  .pd-pic{position:relative;aspect-ratio:1/1;overflow:hidden;background:rgba(3,6,16,.6);border:1px solid var(--line2,var(--line));
+    clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,8px 100%,0 calc(100% - 8px))}
+  .pd-pic img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 22%}
+  .pd-pic.tall img{object-fit:contain}
+  .pd-pic span{position:absolute;inset:0;display:grid;place-items:center;color:var(--mute);font:600 11px/1 var(--font-ui,Inter);letter-spacing:.12em;text-transform:uppercase}
+  .pd-item.none .pd-pic{border-style:dashed}
+  .pd-pic b{position:absolute;left:0;right:0;bottom:0;padding:14px 6px 5px;background:linear-gradient(transparent,rgba(0,0,0,.85));color:#fff;
+    font:700 11px/1 var(--font-ui,Inter);letter-spacing:.12em;text-transform:uppercase}
+  .pd-act{display:flex;gap:6px}
+  .pd-act .btn{min-height:36px;padding:0 10px !important;font-size:11.5px !important;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+  .pd-act .pd-redo{flex:1}
+  .pd-act .pd-del{flex:none}
+  .pd-act .pd-del.arm{border-color:var(--err) !important;color:var(--err) !important}
 </style>
 <link rel="stylesheet" href="/app.css">
 <script src="/studio.js"></script>
@@ -299,6 +319,11 @@
   </section>
 </div>
 
+<dialog class="spend-dlg poses-dlg" id="posesDlg" aria-labelledby="posesTitle">
+  <div class="sd-head"><h2 id="posesTitle">Poses</h2><button class="btn sd-x" data-x type="button" aria-label="Close"><svg class=ic aria-hidden=true><use href=#i-x></use></svg></button></div>
+  <p class="meta pd-note">Redo or delete a single pose. The main picture is never changed.</p>
+  <div class="pd-grid" id="posesGrid" data-confirm-anchor></div>
+</dialog>
 <dialog class="spend-dlg" id="animDlg" aria-label="Animate influencer">
   <div class="sd-head"><h2 id="animTitle">Animate</h2><button class="btn sd-x" data-x type="button" aria-label="Close"><svg class=ic aria-hidden=true><use href=#i-x></use></svg></button></div>
   <label>What should they do?<textarea id="animPrompt" style="min-height:80px">smiles, waves at the camera and says hi, natural handheld selfie video</textarea></label>
@@ -492,10 +517,11 @@ async function del(p){
 
 // ---------- body profiles: front, left, right, back, half body, full body of the same person ----------
 const VIEWS=[['front','Front'],['left','Left'],['right','Right'],['back','Back'],['half','Half'],['full','Full']], VIEW_PRICE=0.04, busy={};
-async function makeProfiles(p,fresh){
+async function makeProfiles(p,fresh,only){
   const have=Object.keys(p.views||{}), missing=VIEWS.map(v=>v[0]).filter(v=>!have.includes(v));
   // fresh influencer or some missing: make only those; all there already: redo all
-  const views=missing.length?missing:VIEWS.map(v=>v[0]);
+  // only: just these poses (Redo in Manage poses); otherwise the missing ones, or all when none is missing
+  const views=only&&only.length?only:missing.length?missing:VIEWS.map(v=>v[0]);
   if(!(await S.confirmSpend({title:(fresh?'Make body profiles for ':'Body profiles for ')+p.name+'?',total:VIEW_PRICE*views.length,
     rows:[['Profiles',views.map(v=>VIEWS.find(x=>x[0]===v)[1]).join(', ')],['Pictures',views.length+' × ~'+S.money(VIEW_PRICE)],['Model','Gemini 3.1 Flash Image (price not checked)']],
     note:'Made from the main picture, so it is the same person from every side. Video and face swap use them to keep the character the same.'}))) return;
@@ -552,6 +578,36 @@ function initSlides(pic){
   new ResizeObserver(()=>go(cur)).observe(tr);
   go(cur); paint();
 }
+// ---------- Manage poses: each pose on its own, Redo (paid, confirmed) or Delete (free, tap twice) ----------
+let posesFor=null;
+function openPoses(id){ posesFor=id; paintPoses(); if(!$('posesDlg').open) $('posesDlg').showModal(); }
+function paintPoses(){
+  const p=items.find(x=>x.id===posesFor); if(!p){ $('posesDlg').close(); return; }
+  $('posesTitle').textContent='Poses · '+p.name;
+  const run=!!busy[p.id];
+  $('posesGrid').innerHTML=(run?`<p class="pd-busy">${ic('hourglass')} ${esc(busy[p.id])}</p>`:'')+VIEWS.map(([v,l])=>{
+    const u=p.views?.[v];
+    return `<div class="pd-item${u?'':' none'}">
+      <div class="pd-pic${TALL[v]?' tall':''}">${u?`<img src="${u}" alt="${esc(p.name)}, ${l}" loading="lazy">`:`<span>Not made</span>`}<b>${l}</b></div>
+      <div class="pd-act">
+        <button type="button" class="btn pd-redo" data-redo="${v}" ${run?'disabled':''}>${ic('refresh')} ${u?'Redo':'Make'}</button>
+        ${u?`<button type="button" class="btn danger pd-del" data-del="${v}" ${run?'disabled':''} aria-label="Delete the ${l} pose">${ic('trash')}</button>`:''}
+      </div></div>`;
+  }).join('');
+  $('posesGrid').querySelectorAll('[data-redo]').forEach(b=>b.onclick=()=>makeProfiles(p,false,[b.dataset.redo]));
+  $('posesGrid').querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{
+    // first tap arms it, a second tap within 3 s deletes
+    if(!b.classList.contains('arm')){ b.classList.add('arm'); b.innerHTML=ic('trash')+' Sure?'; clearTimeout(b._t); b._t=setTimeout(()=>{ b.classList.remove('arm'); b.innerHTML=ic('trash'); },3000); return; }
+    b.disabled=true;
+    const v=b.dataset.del, l=VIEWS.find(x=>x[0]===v)[1];
+    try{
+      const r=await fetch('/api/influencers/'+p.id+'/view/'+v,{method:'DELETE'}); const j=await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(j.error||'Delete failed');
+      toast(l+' pose of '+p.name+' deleted.'); await load();
+    }catch(e){ toast("Couldn’t delete the "+l+' pose: '+e.message,'err'); b.disabled=false; }
+  });
+}
+$('posesDlg').addEventListener('click',e=>{ if(e.target.closest('[data-x]')||e.target===$('posesDlg')) $('posesDlg').close(); });
 function closeMenus(){ document.querySelectorAll('.menu').forEach(m=>m.hidden=true); document.querySelectorAll('[data-m]').forEach(b=>b.setAttribute('aria-expanded','false')); }
 document.addEventListener('click',e=>{ if(!e.target.closest('.menu')) closeMenus(); });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeMenus(); });
@@ -578,6 +634,7 @@ function render(){
             ${p.image&&!nViews(p)?`<button role="menuitem" data-a="${p.id}">${ic('clapper')} Animate<span class="sub">no poses yet</span></button>`:''}
             ${p.image?`<button role="menuitem" data-v="${p.id}" ${busy[p.id]?'disabled':''}>${ic('person')} ${nViews(p)===VIEWS.length?'Redo':'Make'} body profiles<span class="sub">${nViews(p)}/6</span></button>
             <button role="menuitem" data-t="${p.id}">${ic('zap')} Test with Seedance<span class="sub">${p.seedance==='ok'?'accepts':p.seedance==='blocked'?'blocks':'untested'}</span></button>`:''}
+            ${p.image?`<button role="menuitem" data-pm="${p.id}">${ic('image')} Manage poses<span class="sub">redo / delete one</span></button>`:''}
             <button role="menuitem" data-e="${p.id}">${ic('pen')} Edit<span class="sub">seed ${p.seed}</span></button>
             <hr>
             <button role="menuitem" class="danger" data-d="${p.id}">${ic('trash')} Delete</button>
@@ -604,6 +661,8 @@ function render(){
   });
   $('list').querySelectorAll('[data-v]').forEach(b=>b.onclick=()=>makeProfiles(items.find(x=>x.id===b.dataset.v)));
   $('list').querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>del(items.find(x=>x.id===b.dataset.d)));
+  $('list').querySelectorAll('[data-pm]').forEach(b=>b.onclick=()=>openPoses(b.dataset.pm));
+  if($('posesDlg').open) paintPoses(); // keep the panel in step with the latest poses
   $('list').querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>openAnim(items.find(x=>x.id===b.dataset.a)));
 }
 // ---------- picture -> video: animate a saved influencer from their picture (same face, seed and description) ----------
