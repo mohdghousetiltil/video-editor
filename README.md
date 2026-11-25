@@ -51,7 +51,7 @@ browser -> Cloudflare -> web service (API, pages, volume /data)
 - **Health**: `GET /api/render/health` on the web service (and `/health` on a worker) returns queue depth, how long the oldest job has waited, running and stuck jobs, live workers, renders done / failed in the last hour, the busiest owners, the last failure, and a `warning` when renders wait with no worker taking them (also logged every 5 minutes). `/healthz` stays a plain "process is up" check.
 - **Files** (`lib/objstore.js`, no SDK): keys in the bucket mirror paths under `DATA_DIR` (`work/shorts/<id>/short.mp4`). A worker only keeps a job's files while it renders. The bucket is a hand-over point, not the archive: the web service's volume still holds every result, so a lifecycle rule that deletes objects after 7 days is fine.
 - **Same code, two roles** (`lib/render.js`): each render kind is defined once (Shorts in `shorts.js`, stitches in `routes/story.js`, Enhance in `lib/enhance.js`) and runs either in-process or on a worker. History records and spend logged during a render on a worker travel back with the result and are written by the web service, so there is still one History and one spend ledger (the spend cap is checked on the web service before a job is queued).
-- **No `DATABASE_URL`**: nothing changes, renders run in the web server as before (`RENDER_QUEUE=off` does the same with a database set).
+- **Off by default**: renders run in the web server as before, with or without `DATABASE_URL`. The queue starts only with `RENDER_QUEUE=on` **and** `DATABASE_URL` on the web service (a worker needs just `DATABASE_URL`).
 - **Workers run anywhere**: a worker needs only `DATABASE_URL`, the bucket settings and `OPENROUTER_API_KEY`; it never calls the web service. Extra replicas, or a worker on any other server, just point at the same database and bucket. Outside Railway use the database's public URL (Railway: `DATABASE_PUBLIC_URL`) with `?sslmode=require` or `PGSSL=1`.
 
 ### Railway setup
@@ -63,6 +63,7 @@ browser -> Cloudflare -> web service (API, pages, volume /data)
    | Variable | Value |
    |---|---|
    | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` (reference variable) |
+   | `RENDER_QUEUE` | `on` (add it after the worker service is running) |
    | `S3_BUCKET` | `video-studio` |
    | `R2_ACCOUNT_ID` | your Cloudflare account id (or `S3_ENDPOINT` for another S3-compatible service; plain AWS S3 needs only `S3_REGION`) |
    | `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | the R2 token |
@@ -87,15 +88,15 @@ Limits of this step: the web service is still a single instance (live job state 
 ### Locally
 
 - One process, as always: `npm start`.
-- Web + worker on one PC (no bucket needed, they share `DATA_DIR`): set `DATABASE_URL` in `.env`, then run `npm start` in one terminal and `npm run worker` in another with a different `PORT`.
+- Web + worker on one PC (no bucket needed, they share `DATA_DIR`): set `DATABASE_URL` and `RENDER_QUEUE=on` in `.env`, then run `npm start` in one terminal and `npm run worker` in another with a different `PORT`.
 
 ### Render variables
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `DATABASE_URL` | none | Postgres for the render queue; unset = render in the web server |
+| `DATABASE_URL` | none | Postgres for the render queue (used when `RENDER_QUEUE=on`, and by workers) |
 | `RENDER_ROLE` | `web` | `worker` (or `node server.js --worker`) = only pull and render jobs |
-| `RENDER_QUEUE` | on | `off` = render in-process even with `DATABASE_URL` |
+| `RENDER_QUEUE` | off | `on` = queue renders for workers (needs `DATABASE_URL`) |
 | `RENDER_JOBS` | 1 public / 2 local; worker 2 | renders at once (per process) |
 | `RENDER_TIMEOUT_MIN` | 20 | one attempt may run this long |
 | `RENDER_MAX_ATTEMPTS` | 2 | attempts before a job is failed (worker lost, timeout, storage error) |

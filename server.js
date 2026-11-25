@@ -67,11 +67,15 @@ const SMALL = !!(process.env.PUBLIC_URL || "").trim();
 const ffSlot = createLimiter(Math.max(1, Number(process.env.FFMPEG_SLOTS) || (SMALL ? 1 : 2)));
 const FF_THREADS = process.env.FFMPEG_THREADS != null && process.env.FFMPEG_THREADS !== "" ? Math.max(0, Number(process.env.FFMPEG_THREADS) || 0) : SMALL ? 2 : 0;
 // a whole job (Short, Story stitch, Enhance) gets 20 minutes before its slot is given to the next one in line.
-// Where renders run (lib/render.js): without DATABASE_URL in this process, as always. With it, the web service only
+// Where renders run (lib/render.js): in this process, as always, unless RENDER_QUEUE=on (and DATABASE_URL is set). A
+// database address alone doesn't change anything, so renders never wait for a worker that isn't there. With the queue
+// on, the web service only
 // queues them (Postgres table render_jobs) and render workers (`node server.js --worker` or RENDER_ROLE=worker, same
 // image) claim and run them; their files travel through S3_BUCKET (Cloudflare R2 / S3), or a shared DATA_DIR.
 const ROLE = process.argv.includes("--worker") || process.env.RENDER_ROLE === "worker" ? "worker" : "web";
-const QUEUE_ON = !!process.env.DATABASE_URL && process.env.RENDER_QUEUE !== "off";
+const QUEUE_WANTED = ROLE === "worker" || /^(on|1|true)$/i.test((process.env.RENDER_QUEUE || "").trim());
+const QUEUE_ON = !!process.env.DATABASE_URL && QUEUE_WANTED;
+if (QUEUE_WANTED && !process.env.DATABASE_URL && ROLE === "web") console.error("RENDER_QUEUE is on but DATABASE_URL is not set: rendering in this process.");
 if (ROLE === "worker" && !QUEUE_ON) { console.error("A render worker needs DATABASE_URL (the job queue). Exiting."); process.exit(1); }
 // Fair share between users: at most RENDER_USER_RUNNING renders running and RENDER_USER_QUEUED waiting or running per
 // user (0 = no limit). Until accounts exist every job belongs to the one owner, so these cap the whole app.
