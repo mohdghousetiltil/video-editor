@@ -870,8 +870,14 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
     try { saveMeta(id, { id, status: "failed", ...(opts && opts.images ? { kind: "pictures" } : {}), createdAt: job.createdAt, error: job.error, source: job.source || { title: (opts && opts.title) || "" } }); } catch {}
     hist(id, { status: "failed", error: job.error });
   };
+  // A retry (the first worker was lost) reuses the plan the first attempt already paid for, when it was saved.
   const shortJob = (runIt) => ({
-    run: (p) => runIt(p.id, p.opts && p.opts.file ? { ...p.opts, file: path.join(dirOf(p.id), p.opts.file) } : p.opts),
+    ref: ({ id }) => "short-" + id,
+    run: (p, { attempt = 1 } = {}) => {
+      const opts = p.opts && p.opts.file ? { ...p.opts, file: path.join(dirOf(p.id), p.opts.file) } : { ...p.opts };
+      if (attempt > 1 && fs.existsSync(path.join(dirOf(p.id), "plan.json"))) opts.reusePlan = true;
+      return runIt(p.id, opts);
+    },
     onError: failJob,
     state: ({ id }) => jobs.get(id),
     setState: ({ id }, st) => jobs.set(id, st),

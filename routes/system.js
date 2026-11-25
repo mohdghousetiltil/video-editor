@@ -53,6 +53,10 @@ module.exports = function systemRoutes(ctx) {
     if (req.method === "POST" && url.pathname === "/api/system/reboot") return send(res, 200, { ok: true, from: +(await spend.reboot()).toFixed(2) }), true;
     if (req.method === "GET" && url.pathname === "/api/prices") return send(res, 200, { prices: await prices() }), true;
     // what's running and waiting: render slots (Story stitches, Shorts) plus video generations still in progress
+    // render queue health for monitoring: depth, oldest waiting job, live workers, stuck jobs, per-user load
+    if (req.method === "GET" && url.pathname === "/api/render/health") {
+      try { return send(res, 200, await renderSlot.health()), true; } catch (e) { return send(res, 503, { ok: false, error: e.message }), true; }
+    }
     if (req.method === "GET" && url.pathname === "/api/queue") {
       const running = ctx.history ? ctx.history.list({ status: "running", limit: 30 }).filter((r) => Date.now() - r.t < 3 * 3600000) : [];
       const items = running.map((r) => ({ id: r.id, kind: r.kind, title: r.title, model: r.model, status: r.status, t: r.t }));

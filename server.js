@@ -73,7 +73,13 @@ const FF_THREADS = process.env.FFMPEG_THREADS != null && process.env.FFMPEG_THRE
 const ROLE = process.argv.includes("--worker") || process.env.RENDER_ROLE === "worker" ? "worker" : "web";
 const QUEUE_ON = !!process.env.DATABASE_URL && process.env.RENDER_QUEUE !== "off";
 if (ROLE === "worker" && !QUEUE_ON) { console.error("A render worker needs DATABASE_URL (the job queue). Exiting."); process.exit(1); }
-const renderQueue = QUEUE_ON ? createJobQueue(connectDb(process.env.DATABASE_URL), { staleSec: Number(process.env.RENDER_STALE_SEC) || 90 }) : null;
+// Fair share between users: at most RENDER_USER_RUNNING renders running and RENDER_USER_QUEUED waiting or running per
+// user (0 = no limit). Until accounts exist every job belongs to the one owner, so these cap the whole app.
+const envInt = (k, d) => (process.env[k] != null && process.env[k] !== "" && !isNaN(+process.env[k]) ? Math.max(0, Math.floor(+process.env[k])) : d);
+const renderQueue = QUEUE_ON ? createJobQueue(connectDb(process.env.DATABASE_URL, { name: `video-studio-${ROLE}` }), {
+  staleSec: envInt("RENDER_STALE_SEC", 90) || 90,
+  maxRunningPerOwner: envInt("RENDER_USER_RUNNING", 3), maxQueuedPerOwner: envInt("RENDER_USER_QUEUED", 20),
+}) : null;
 const renderSlot = createRenderer({
   slots: Math.max(1, Number(process.env.RENDER_JOBS) || (process.env.PUBLIC_URL ? 1 : 2)),
   timeoutMs: (Number(process.env.RENDER_TIMEOUT_MIN) || 20) * 60000, label: "Rendering",
@@ -1117,22 +1123,34 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-// the render_jobs table is created on first start (IF NOT EXISTS); two services starting at once may race, so retry once
-const migrate = () => renderQueue.migrate().catch((e) => new Promise((r) => setTimeout(r, 2000)).then(() => renderQueue.migrate()).catch(() => { throw e; }));
+// The render_jobs table is created on first start (IF NOT EXISTS). Until the database answers (it may start after this
+// service, or be briefly unreachable), keep trying with back-off instead of giving up.
+async function whenQueueReady() {
+  for (let wait = 1000; ; wait = Math.min(wait * 2, 30000)) {
+    try { await renderQueue.migrate(); return; } catch (e) { console.error(`Render queue not reachable (${e.message}); trying again in ${wait / 1000} s`); }
+    await new Promise((r) => setTimeout(r, wait));
+  }
+}
 if (ROLE === "worker") {
-  // a render worker serves only /healthz (Railway's health check) and pulls render jobs from the queue
-  http.createServer((req, res) => send(res, req.url.startsWith("/healthz") ? 200 : 404, req.url.startsWith("/healthz") ? { ok: true, role: "worker", rendering: renderSlot.activeJobs() } : { error: "This is a render worker." }))
-    .listen(PORT, () => console.log(`Render worker (health check on :${PORT})`));
-  migrate().then(() => renderSlot.startWorker({ concurrency: Math.max(1, Number(process.env.RENDER_JOBS) || 2) }))
-    .catch((e) => { console.error("Render worker could not start:", e.message); process.exit(1); });
-  const stop = async () => {
-    const left = await renderSlot.stopWorker((Number(process.env.RENDER_DRAIN_SEC) || 10) * 1000);
-    if (left) console.log(`Render worker stopping: ${left} job(s) handed back to the queue`);
+  // a render worker serves /healthz (process up, for Railway's health check) and /health (queue health, from the
+  // database) and pulls render jobs from the queue; it needs nothing else from the web service
+  http.createServer(async (req, res) => {
+    if (req.url.startsWith("/healthz")) return send(res, 200, { ok: true, role: "worker", rendering: renderSlot.activeJobs() });
+    if (req.url.startsWith("/health")) return renderSlot.health().then((h) => send(res, 200, h), (e) => send(res, 503, { ok: false, error: e.message }));
+    send(res, 404, { error: "This is a render worker." });
+  }).listen(PORT, () => console.log(`Render worker (health on :${PORT}/healthz and /health)`));
+  whenQueueReady().then(() => renderSlot.startWorker({ concurrency: Math.max(1, Number(process.env.RENDER_JOBS) || 2) }));
+  // SIGTERM (redeploy, scale down): stop taking jobs, let running ones finish for RENDER_DRAIN_SEC, hand the rest back
+  let stopping = null;
+  const stop = () => stopping || (stopping = (async () => {
+    console.log("Render worker stopping…");
+    const left = await renderSlot.stopWorker(envInt("RENDER_DRAIN_SEC", 10) * 1000);
+    if (left) console.log(`Render worker: ${left} job(s) handed back to the queue`);
     process.exit(0);
-  };
+  })());
   process.on("SIGTERM", stop);
   process.on("SIGINT", stop);
 } else {
   server.listen(PORT, () => console.log(`Dashboard: http://localhost:${PORT}  (model: ${MODEL}, key ${KEY ? "loaded" : "MISSING"}, renders: ${QUEUE_ON ? "queued for render workers" : "in this process"})`));
-  if (renderQueue) migrate().then(() => renderSlot.startWatcher()).catch((e) => console.error("Render queue unavailable:", e.message));
+  if (renderQueue) whenQueueReady().then(() => renderSlot.startWatcher());
 }

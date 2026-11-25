@@ -65,7 +65,7 @@ module.exports = function storyRoutes(ctx) {
     stitches.set(sid, st);
     st.status = "failed"; st.error = String(e.message || e).slice(-500); saveStatus(sid, st); stitchHist(sid, { status: "failed", error: st.error });
   };
-  async function runStitch({ sid, b, lang, clipCost }) {
+  async function runStitch({ sid, b, lang, clipCost }, { attempt = 1 } = {}) {
     // budget mode (extend): clips shorter than their narration are slowed down (up to 1.5x) and then hold their last
     // frame, instead of cutting the narration off
     const ids = b.ids, dir = path.join(WORK, sid), extend = !!b.extend;
@@ -92,9 +92,12 @@ module.exports = function storyRoutes(ctx) {
         let args;
         if (line) {
           step(`Voicing scene ${i + 1}/${ids.length}`);
-          fs.writeFileSync(path.join(dir, `nar${i}.mp3`), await tts({ model: nar.model, voice: nar.voice, text: line, instructions: nar.instructions, lang }));
+          // a retry keeps the narration the first attempt already paid for
+          const reuse = attempt > 1 && fs.existsSync(path.join(dir, `nar${i}.mp3`)) && fs.statSync(path.join(dir, `nar${i}.mp3`)).size > 0;
+          if (!reuse) fs.writeFileSync(path.join(dir, `nar${i}.mp3`), await tts({ model: nar.model, voice: nar.voice, text: line, instructions: nar.instructions, lang }));
           // the voice service adds silence before and after a line; trimmed, the lines flow from scene to scene
-          try {
+          // (a reused line was trimmed already)
+          if (!reuse) try {
             await run(["-y", "-i", `nar${i}.mp3`, "-af", "silenceremove=start_periods=1:start_threshold=-45dB,areverse,silenceremove=start_periods=1:start_threshold=-45dB,areverse,adelay=60|60", "-c:a", "libmp3lame", "-q:a", "2", `nart${i}.mp3`], dir);
             if (await mediaDuration(path.join(dir, `nart${i}.mp3`)) > 0.3) fs.renameSync(path.join(dir, `nart${i}.mp3`), path.join(dir, `nar${i}.mp3`));
           } catch {}
@@ -161,6 +164,7 @@ module.exports = function storyRoutes(ctx) {
     } catch (e) { stitchFailed({ sid }, e); }
   }
   ctx.renderSlot.define("stitch", {
+    ref: ({ sid }) => "story-" + sid,
     run: runStitch,
     onError: stitchFailed,
     state: ({ sid }) => stitches.get(sid),

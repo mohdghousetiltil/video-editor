@@ -29,11 +29,11 @@ function memBucket() {
 function defineDemo(render, root, { states = new Map(), history = [], behave = {} } = {}) {
   const spend = render.capture("spend.log", (feature, cost) => history.push([feature, cost]));
   render.define("demo", {
-    async run({ id, fail }) {
+    async run({ id, fail }, info) {
       const st = states.get(id), dir = path.join(root, "work", "jobs", id);
-      st.step = "Working"; st.where = root;
+      st.step = "Working"; st.where = root; st.runs = (st.runs || 0) + 1;
       spend("Demo", 0.25);
-      if (behave.run) await behave.run(st);
+      if (behave.run) await behave.run(st, dir, info);
       if (fail) throw new Error(fail);
       fs.writeFileSync(path.join(dir, "out.txt"), fs.readFileSync(path.join(dir, "in.txt"), "utf8").toUpperCase());
       fs.rmSync(path.join(dir, "scratch.txt"), { force: true });
@@ -61,7 +61,7 @@ test("no queue: runs in this process, with the old render(fn) call still working
   assert.deepEqual(history, [["Demo", 0.25]]);
   states.set("b", { status: "running" });
   await render.submit("demo", { id: "b", fail: "boom" });
-  assert.deepEqual(states.get("b"), { status: "failed", step: "Working", where: root, error: "boom" });
+  assert.deepEqual(states.get("b"), { status: "failed", step: "Working", where: root, runs: 1, error: "boom" });
   assert.equal(await render(() => 42), 42);
   assert.deepEqual(render.stats(), { active: 0, waiting: 0, slots: 1 });
 });
@@ -79,9 +79,11 @@ test("web + worker: inputs go up, the worker renders, files / state / spend come
   const worker = createRenderer({ ...opts, role: "worker", storage: withSync(bucket, workerRoot), workerId: "w1" });
   let failOnce = true, gate = null;
   const W = defineDemo(web, webRoot);
-  const K = defineDemo(worker, workerRoot, { behave: { async run(st) {
+  const K = defineDemo(worker, workerRoot, { behave: { async run(st, dir, info) {
     if (gate) await gate;
-    if (st.flaky && failOnce) { failOnce = false; throw new Error("worker hiccup"); }
+    st.attempt = info.attempt;
+    if (st.flaky && failOnce) { failOnce = false; fs.writeFileSync(path.join(dir, "plan.json"), "{\"paid\":true}"); throw new Error("worker hiccup"); }
+    if (st.flaky) st.reusedPlan = fs.existsSync(path.join(dir, "plan.json")); // attempt 2 sees attempt 1's checkpoint
   } } });
   try {
     await web.startWatcher();
@@ -120,7 +122,21 @@ test("web + worker: inputs go up, the worker renders, files / state / spend come
     W.history.length = 0;
     await web.submit("demo", { id: "c" });
     assert.equal(W.states.get("c").status, "done");
+    assert.equal(W.states.get("c").attempt, 2);
+    assert.equal(W.states.get("c").reusedPlan, true, "the retry got the work the first attempt saved (checkpoint)");
     assert.deepEqual(W.history, [["Demo", 0.25], ["Demo", 0.25]]);
+
+    // 3b. the same record submitted twice while it waits renders once
+    gate = new Promise((r) => (open = r));
+    fs.mkdirSync(path.join(webRoot, "work/jobs/e"), { recursive: true });
+    fs.writeFileSync(path.join(webRoot, "work/jobs/e/in.txt"), "e");
+    W.states.set("e", { status: "running" });
+    const twice = [web.submit("demo", { id: "e" }, { ref: "demo-e" }), web.submit("demo", { id: "e" }, { ref: "demo-e" })];
+    await until(() => W.states.get("e").step === "Working");
+    open(); gate = null;
+    await Promise.all(twice);
+    assert.equal(W.states.get("e").runs, 1, "one render, both callers told when it finished");
+    assert.equal((await db.query("SELECT count(*)::int AS n FROM render_jobs WHERE ref = 'demo-e'")).rows[0].n, 1);
 
     // 4. failing on every attempt: the job's own onError runs (on the worker) and the failure shows on the web
     fs.mkdirSync(path.join(webRoot, "work/jobs/d"), { recursive: true });
@@ -135,6 +151,54 @@ test("web + worker: inputs go up, the worker renders, files / state / spend come
     await new Promise((r) => setTimeout(r, 100));
     await db.close();
   }
+});
+
+test("per-user limit: a submit over it fails with a message the page can show", async (t) => {
+  let PGlite;
+  try { ({ PGlite } = await import("@electric-sql/pglite")); } catch { return t.skip("PGlite not installed"); }
+  const db = new PGlite();
+  const queue = createJobQueue(db, { maxQueuedPerOwner: 1 });
+  await queue.migrate();
+  const root = tmp();
+  const web = createRenderer({ queue, role: "web", storage: withSync({ kind: "local", shared: true }, root), log: quiet });
+  const W = defineDemo(web, root);
+  try {
+    W.states.set("p", { status: "running" });
+    W.states.set("q", { status: "running" });
+    web.submit("demo", { id: "p" }, { ownerId: "00000000-0000-0000-0000-00000000000a" });
+    await until(async () => (await queue.counts()).queued === 1);
+    await web.submit("demo", { id: "q" }, { ownerId: "00000000-0000-0000-0000-00000000000a" });
+    assert.equal(W.states.get("q").status, "failed");
+    assert.match(W.states.get("q").error, /already have 1 videos waiting/);
+    const h = await web.health();
+    assert.equal(h.mode, "queue");
+    assert.equal(h.pending, 1);
+    assert.equal(h.limits.queuedPerOwner, 1);
+  } finally { await db.close(); }
+});
+
+test("graceful shutdown (SIGTERM): stop claiming, hand an unfinished job back without using an attempt", async (t) => {
+  let PGlite;
+  try { ({ PGlite } = await import("@electric-sql/pglite")); } catch { return t.skip("PGlite not installed"); }
+  const db = new PGlite();
+  const queue = createJobQueue(db);
+  await queue.migrate();
+  const root = tmp();
+  const worker = createRenderer({ queue, role: "worker", storage: withSync({ kind: "local", shared: true }, root), pollMs: 20, heartbeatMs: 1000, maxAttempts: 1, log: quiet });
+  let started, never = new Promise(() => {});
+  defineDemo(worker, root, { behave: { run: () => { started(); return never; } } }); // a render that won't finish in time
+  try {
+    const running = new Promise((r) => (started = r));
+    const { id } = await queue.enqueue({ kind: "demo", payload: { id: "s" } });
+    worker.startWorker({ concurrency: 1 });
+    await running;
+    assert.equal(await worker.stopWorker(50), 1, "one job was still running when the drain time ran out");
+    const row = await queue.get(id);
+    assert.equal(row.status, "pending", "back in the queue for another worker");
+    assert.equal(row.attempts, 0, "and its one attempt is still unused");
+    await new Promise((r) => setTimeout(r, 100));
+    assert.equal((await queue.get(id)).status, "pending", "the stopped worker claims nothing new");
+  } finally { await db.close(); }
 });
 
 test("a job whose worker disappeared is failed on the web after its attempts run out", async (t) => {

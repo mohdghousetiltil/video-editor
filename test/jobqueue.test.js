@@ -28,12 +28,12 @@ test("enqueue then claim: oldest first, higher priority before it, nothing twice
   const a = await q.enqueue({ kind: "short", payload: { id: "a" } });
   const b = await q.enqueue({ kind: "stitch", payload: { id: "b" } });
   const c = await q.enqueue({ kind: "short", payload: { id: "c" }, priority: 5 });
-  assert.equal(a.status, "queued");
+  assert.equal(a.status, "pending");
   assert.deepEqual(a.payload, { id: "a" });
-  assert.equal(a.user_id, null); // ready for accounts later
+  assert.equal(a.owner_id, null); // the single owner, until accounts exist
   const first = await q.claim("w1");
   assert.equal(first.id, c.id, "higher priority first");
-  assert.equal(first.status, "running");
+  assert.equal(first.status, "in_progress");
   assert.equal(first.attempts, 1);
   assert.equal(first.locked_by, "w1");
   assert.ok(first.lock_token);
@@ -75,7 +75,7 @@ test("a failed attempt goes back in the queue with back-off until attempts run o
   const { id } = await q.enqueue({ kind: "short", maxAttempts: 3 });
   let j = await q.claim("w");
   let r = await q.fail(j.id, j.lock_token, new Error("storage hiccup"));
-  assert.equal(r.status, "queued");
+  assert.equal(r.status, "pending");
   assert.equal(r.error, "storage hiccup");
   assert.equal(r.finished_at, null);
   let wait = (new Date(r.run_after) - Date.now()) / 1000;
@@ -117,8 +117,8 @@ test("reap: a job whose worker stopped heartbeating is re-queued, then failed wh
   await age(id, "heartbeat_at", 120);
   const reaped = await q.reap();
   assert.deepEqual(reaped.map((x) => x.id), [id], "only the quiet one");
-  assert.equal(reaped[0].status, "queued");
-  assert.match(reaped[0].error, /stopped responding/);
+  assert.equal(reaped[0].status, "pending");
+  assert.match(reaped[0].error, /stopped responding.*Trying again/);
   assert.equal(await q.heartbeat(id, j.lock_token), false, "the old worker lost it");
   assert.equal(await q.complete(id, j.lock_token, {}), null, "and can't complete it");
 
@@ -130,7 +130,8 @@ test("reap: a job whose worker stopped heartbeating is re-queued, then failed wh
   const [last] = await q.reap();
   assert.equal(last.status, "failed");
   assert.ok(last.finished_at);
-  assert.equal((await q.get(healthy.id)).status, "running", "the healthy job was left alone");
+  assert.match(last.error, /Tried 2 times/, "the failure says why, visibly");
+  assert.equal((await q.get(healthy.id)).status, "in_progress", "the healthy job was left alone");
 });
 
 test("reap: a job that runs past its own timeout is stopped even while heartbeating", async (t) => {
@@ -149,7 +150,7 @@ test("release hands a job back without using an attempt (worker shutting down)",
   await q.enqueue({ kind: "short", maxAttempts: 1 });
   const j = await q.claim("w");
   const r = await q.release(j.id, j.lock_token);
-  assert.equal(r.status, "queued");
+  assert.equal(r.status, "pending");
   assert.equal(r.attempts, 0);
   assert.equal((await q.claim("w2")).attempts, 1, "still has its one attempt");
 });
@@ -165,19 +166,101 @@ test("cancel stops a queued job and takes a running one away from its worker", a
   assert.equal(await q.heartbeat(j.id, j.lock_token), false);
 });
 
-test("finalize: only one caller gets a finished job; open lists what's not copied back", async (t) => {
-  const q = await fresh(); if (!q) return t.skip("PGlite not installed");
+test("copy-back: one lease at a time, side effects claimable exactly once, even after a crash half-way", async (t) => {
+  const q = await fresh({ finalizeLeaseSec: 60 }); if (!q) return t.skip("PGlite not installed");
   const a = await q.enqueue({ kind: "short" });
   const b = await q.enqueue({ kind: "short" });
-  assert.equal(await q.finalize(a.id), null, "still queued");
+  assert.equal(await q.finalize(a.id), null, "still pending");
   const j = await q.claim("w");
   await q.complete(j.id, j.lock_token, {});
   assert.ok(await q.finalize(a.id));
-  assert.equal(await q.finalize(a.id), null, "already taken");
+  assert.equal(await q.finalize(a.id), null, "someone is copying it back");
+  assert.equal(await q.claimEffects(a.id), true);
+  // the web service crashes here; after the lease runs out another try copies the files again...
+  await age(a.id, "finalize_lease_at", 61);
+  assert.ok(await q.finalize(a.id), "lease expired: can be copied back again");
+  assert.equal(await q.claimEffects(a.id), false, "...but spend and History are never written twice");
+  await q.finalized(a.id);
   assert.deepEqual((await q.open()).map((x) => x.id), [b.id]);
-  await q.unfinalize(a.id);
-  assert.equal((await q.open()).length, 2);
+  assert.equal(await q.finalize(a.id), null, "done for good");
   assert.deepEqual((await q.getMany([a.id, b.id])).map((x) => x.id).sort(), [a.id, b.id].sort());
+});
+
+test("idempotent enqueue: one pending or running job per ref; a finished ref can be rendered again", async (t) => {
+  const q = await fresh(); if (!q) return t.skip("PGlite not installed");
+  const a = await q.enqueue({ kind: "short", ref: "short-abc" });
+  const again = await q.enqueue({ kind: "short", ref: "short-abc" });
+  assert.equal(again.id, a.id);
+  assert.equal(again.deduped, true);
+  const j = await q.claim("w");
+  assert.equal((await q.enqueue({ kind: "short", ref: "short-abc" })).id, a.id, "running counts too");
+  await q.complete(j.id, j.lock_token, {});
+  const redo = await q.enqueue({ kind: "short", ref: "short-abc" });
+  assert.notEqual(redo.id, a.id, "after it finished, a new render (e.g. Retry) is a new job");
+  assert.equal((await q.counts()).queued, 1);
+});
+
+test("fair share: the owner with fewer running jobs goes first, and nobody runs more than the limit", async (t) => {
+  const q = await fresh({ maxRunningPerOwner: 2 }); if (!q) return t.skip("PGlite not installed");
+  const A = "00000000-0000-0000-0000-00000000000a", B = "00000000-0000-0000-0000-00000000000b";
+  for (let i = 0; i < 5; i++) await q.enqueue({ kind: "short", ownerId: A, payload: { i } }); // A fills the queue first
+  await q.enqueue({ kind: "short", ownerId: B });
+  await q.enqueue({ kind: "short", ownerId: B });
+  const order = [];
+  for (let i = 0; i < 6; i++) { const j = await q.claim("w"); order.push(j ? (j.owner_id === A ? "A" : "B") : "-"); }
+  assert.deepEqual(order, ["A", "B", "A", "B", "-", "-"], "taking turns; then both are at 2 running and the rest wait");
+  const h = await q.health();
+  assert.equal(h.running, 4);
+  assert.equal(h.pending, 3);
+  assert.deepEqual(h.owners.find((o) => o.owner_id === A), { owner_id: A, pending: 3, running: 2 });
+});
+
+test("per-owner queue limit: refused with a clear error, other owners unaffected", async (t) => {
+  const q = await fresh({ maxQueuedPerOwner: 2 }); if (!q) return t.skip("PGlite not installed");
+  const A = "00000000-0000-0000-0000-00000000000a";
+  await q.enqueue({ kind: "short", ownerId: A });
+  await q.enqueue({ kind: "short", ownerId: A, ref: "short-x" });
+  await assert.rejects(q.enqueue({ kind: "short", ownerId: A }), (e) => e.code === "QUEUE_FULL" && /already have 2 videos/.test(e.message));
+  assert.equal((await q.enqueue({ kind: "short", ownerId: A, ref: "short-x" })).deduped, true, "re-submitting a queued one is fine");
+  assert.ok(await q.enqueue({ kind: "short", ownerId: null }), "the default owner has its own allowance");
+  const j = await q.claim("w");
+  await q.complete(j.id, j.lock_token, {});
+  assert.ok(await q.enqueue({ kind: "short", ownerId: A }), "room again once one finished");
+});
+
+test("health: depth, oldest waiting, live workers, stuck jobs, last failure", async (t) => {
+  const q = await fresh({ staleSec: 60 }); if (!q) return t.skip("PGlite not installed");
+  const a = await q.enqueue({ kind: "short" });
+  await q.enqueue({ kind: "stitch" });
+  await q.enqueue({ kind: "enhance", runAfterSec: 300 });
+  await age(a.id, "created_at", 600);
+  await db.query("UPDATE render_jobs SET run_after = now() - interval '10 minutes' WHERE id = $1", [a.id]);
+  const j = await q.claim("w1");
+  assert.equal(j.id, a.id);
+  const k = await q.claim("w2");
+  await q.fail(k.id, k.lock_token, "bad input", { retry: false });
+  let h = await q.health();
+  assert.equal(h.pending, 1);
+  assert.equal(h.ready, 0, "the back-off one isn't ready yet");
+  assert.equal(h.running, 1);
+  assert.equal(h.busy_workers, 1);
+  assert.equal(h.failed_1h, 1);
+  assert.equal(h.lastFailure.error, "bad input");
+  await age(a.id, "heartbeat_at", 120);
+  h = await q.health();
+  assert.equal(h.stale, 1, "a running job whose worker went quiet shows up before it is reaped");
+  assert.equal(h.busy_workers, 0);
+});
+
+test("db/schema.sql and db/render_jobs.sql define the same render_jobs columns", () => {
+  const fs = require("fs"), path = require("path");
+  const cols = (f) => {
+    const s = fs.readFileSync(path.join(__dirname, "..", "db", f), "utf8").replace(/\r/g, "").replace(/,(\s)/g, "$1");
+    const body = s.slice(s.search(/CREATE TABLE (IF NOT EXISTS )?render_jobs \(/)).split("\n);")[0];
+    return body.split("\n").slice(1).map((l) => l.trim().split(/\s+/).slice(0, 2).join(" ")).filter((x) => /^[a-z_]+ /.test(x));
+  };
+  assert.deepEqual(cols("schema.sql"), cols("render_jobs.sql"));
+  assert.ok(cols("schema.sql").includes("owner_id uuid"));
 });
 
 test("two connections claiming at once never get the same job (SKIP LOCKED)", { skip: !pgUrl && "needs TEST_DATABASE_URL (PGlite is a single connection)" }, async () => {
