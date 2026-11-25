@@ -698,7 +698,7 @@ textarea{line-height:1.55;resize:vertical;overflow-y:auto}
   .sb-music{display:none}
   .radial-scrim.flash-l{animation:scrim-l .4s ease-out}.radial-scrim.flash-r{animation:scrim-r .4s ease-out}
   /* the station name sits under the Play / Pause button, inside the dial */
-  .radial-station{display:block;position:absolute;left:-70px;width:140px;top:-68px;text-align:center;pointer-events:none;opacity:0;transition:opacity .2s}
+  .radial-station{display:block;position:absolute;left:-70px;width:140px;top:46px;text-align:center;pointer-events:none;opacity:0;transition:opacity .2s}
   body.radial-open .radial-station.show{opacity:1} /* only while the menu is open */
   .radial-station b{display:block;font:700 11px/1.2 var(--font-ui);letter-spacing:.08em;text-transform:uppercase;color:var(--text);text-shadow:0 1px 6px #000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .radial-station span{display:block;font:600 10px/1.2 var(--font-ui);letter-spacing:.08em;text-transform:uppercase;color:var(--acc);opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

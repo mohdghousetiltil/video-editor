@@ -106,7 +106,7 @@
       const tb = tabs.getBoundingClientRect(), bottom = tb.height > 0 && tb.top > 0 ? Math.min(tb.top, H) : H - 70;
       const sat = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sat')) || 0;
       const freeH = Math.max(200, bottom - sat), cx = W / 2, cy = sat + freeH / 2;
-      R = Math.round(Math.max(80, Math.min(n > 5 ? 158 : 150, Math.min(W, 520) / 2 - 6 - RING, freeH / 2 - 6 - RING)));
+      R = Math.round(Math.max(110, Math.min(n > 5 ? 158 : 150, Math.min(W, 520) / 2 - 6 - RING, freeH / 2 - 6 - RING)));
       radial.style.left = cx + 'px'; radial.style.top = cy + 'px';
       const d = 2 * (R + RING);
       ring.style.cssText = `left:${-d / 2}px;top:${-d / 2}px;width:${d}px;height:${d}px`;
