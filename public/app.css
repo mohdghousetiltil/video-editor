@@ -34,7 +34,7 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:200;op
 .sb::after{content:"";position:absolute;right:-1px;top:0;width:1px;height:100%;
   background:linear-gradient(180deg,transparent,var(--acc),var(--pink),transparent);opacity:.55}
 .sb-brand{display:flex;align-items:center;gap:11px;color:var(--text);text-decoration:none;font-family:var(--font-hud);font-weight:800;font-size:15px;letter-spacing:.14em;padding:4px 6px}
-.sb-brand em{font-style:normal;color:var(--acc);text-shadow:0 0 12px rgba(0,229,255,.8);margin-left:.35em}
+.sb-brand em{font-style:normal;color:var(--acc);text-shadow:0 0 12px rgba(0,229,255,.8)}
 .sb-logo{width:38px;height:38px;display:grid;place-items:center;color:#04121a;
   background:linear-gradient(135deg,var(--acc),var(--violet));
   clip-path:polygon(25% 0,100% 0,100% 75%,75% 100%,0 100%,0 25%);filter:drop-shadow(0 0 10px rgba(0,229,255,.7))}
@@ -455,6 +455,32 @@ body.eg-overdrive .wrap,body.eg-overdrive .sb{animation:eg-shake .12s steps(2) 2
 @media(max-width:900px){body.eg-night .tb-orb{background:radial-gradient(circle at 30% 25%,#ffb3d6,var(--mg) 50%,var(--violet) 115%) !important;box-shadow:0 0 22px rgba(255,46,147,.8) !important}}
 .tb-more{-webkit-touch-callout:none;user-select:none}
 
+/* netrunner screen break (breach.js): one layer over everything, drawn on a canvas, with a text readout */
+.eg-br{position:fixed;left:0;top:0;right:0;bottom:0;z-index:2147483000;overflow:hidden;outline:none;touch-action:none;cursor:pointer;
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+.eg-br canvas{position:absolute;left:0;top:0;width:100%;height:100%}
+.eg-br-term{position:absolute;left:0;right:0;top:calc(var(--sat,0px) + 22vh);margin:0 auto;max-width:420px;padding:0 22px;box-sizing:border-box;pointer-events:none;
+  font:600 13px/2 var(--font-mono,ui-monospace,Menlo,monospace);letter-spacing:.04em;color:#7df3ff;text-align:left}
+.eg-br-lines div{white-space:pre-wrap;animation:eg-br-in .18s steps(3) both}
+.eg-br-lines .h{position:relative;margin-bottom:10px;font:800 21px/1.3 var(--font-hud,Orbitron,sans-serif);letter-spacing:.1em;color:#fff;
+  text-shadow:-2px 0 rgba(255,46,147,.9),2px 0 rgba(0,229,255,.9)}
+.eg-br-lines .h::after{content:attr(data-t);position:absolute;left:0;top:0;color:#ff2e93;opacity:.8;pointer-events:none;text-shadow:none;animation:eg-br-tear 1.7s steps(1) infinite;clip-path:inset(100% 0 0 0)}
+.eg-br-lines .m{color:#ff7ab8}
+.eg-br-lines .y{color:#c6ff00}
+.eg-br-term.boot .m,.eg-br-term.boot .h::after{display:none}
+.eg-br-bar{margin-top:16px}
+.eg-br-bar i{display:block;height:6px;background:linear-gradient(90deg,#ff2e93,#00e5ff);transform-origin:left;transform:scaleX(0)}
+.eg-br-bar span{display:block;margin-top:4px;font-size:11px;color:#a3aed3}
+.eg-br-term.boot .eg-br-bar i{background:#00e5ff}
+.eg-br-skip{position:absolute;left:0;right:0;bottom:calc(var(--sab,0px) + 18px);text-align:center;pointer-events:none;opacity:0;
+  font:700 11px/1 var(--font-ui,sans-serif);letter-spacing:.28em;color:#a3aed3;text-shadow:0 0 6px #000,0 0 3px #000}
+.eg-br-skip.show{opacity:.85}
+@keyframes eg-br-in{from{opacity:0;transform:translateX(-10px)}to{opacity:1;transform:none}}
+@keyframes eg-br-tear{0%,100%{clip-path:inset(100% 0 0 0);transform:none}30%{clip-path:inset(15% 0 55% 0);transform:translateX(6px)}34%{clip-path:inset(60% 0 12% 0);transform:translateX(-5px)}38%{clip-path:inset(100% 0 0 0);transform:none}}
+html.eg-br-hit .wrap,html.eg-br-hit .tabbar{animation:eg-br-jolt .5s linear 1}
+@keyframes eg-br-jolt{0%{transform:translate(0,0)}10%{transform:translate(-9px,6px)}22%{transform:translate(8px,-5px)}36%{transform:translate(-6px,-3px)}52%{transform:translate(5px,3px)}70%{transform:translate(-3px,1px)}100%{transform:none}}
+@media(prefers-reduced-motion:reduce){html.eg-br-hit .wrap,html.eg-br-hit .tabbar,.eg-br-lines div,.eg-br-lines .h::after{animation:none !important}.eg-br-lines .h::after{display:none}}
+
 /* ---------- fix-list additions: readable helper text, stage progress, confirmations, help, footer, queue ---------- */
 :root{--mute:#a3aed3}
 .sb-nav .tx small{font-size:12.5px;white-space:normal;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.25}
@@ -490,6 +516,7 @@ small,.meta,.hint,.count,.sd-note{font-size:13px}
 .site-foot button,.site-foot a{all:unset;cursor:pointer;color:var(--mute);text-decoration:underline;text-underline-offset:3px}
 .site-foot button:hover,.site-foot button:focus-visible,.site-foot a:hover{color:var(--acc)}
 .site-foot .sf-note{margin-left:auto}
+.site-foot .sf-ver{font-family:var(--font-mono);font-size:11px;letter-spacing:.08em}
 .model-notes{color:var(--mute);font-size:13px;margin:-4px 0 14px;min-height:1em}
 .tier{display:inline-block;margin-left:6px;padding:1px 6px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;border:1px solid var(--line2);vertical-align:middle}
 .tier.draft{color:var(--ok);border-color:rgba(57,255,156,.45)}

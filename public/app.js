@@ -1,6 +1,9 @@
 // Shared shell: sidebar (desktop), tab bar (mobile), page heading, server status, toasts.
 (function () {
   if (window.__shellRedirect) return; // this page is being replaced by the shell right now
+  // The app's version, shown in every page footer and on the boot screen. Raise it with each release and add a line to
+  // CHANGELOG.md; v1.0 is kept for the first public release.
+  const VERSION = '0.0.014589';
   const svg = (d) => `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
   const ICON = {
     clip: svg('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9.5 5 2.5-5 2.5z"/>'),
@@ -46,7 +49,7 @@
   const side = document.createElement('aside');
   side.className = 'sb';
   side.innerHTML =
-    '<a class="sb-brand" href="/"><span class="sb-logo">'+ICON.clip+'</span><span>VIDEO<em>STUDIO</em></span></a>' +
+    '<a class="sb-brand" href="/"><span class="sb-logo">'+ICON.clip+'</span><span>VD<em>-0</em></span></a>' +
     '<div class="sb-nav">' +
     items.map((i) => `<a href="${i[0]}" class="${i[0] === here ? 'on' : ''}" title="${i[1]}: ${i[3]}"${i[0] === here ? ' aria-current="page"' : ''}><span class="ic">${i[2]}</span><span class="tx"><b>${i[1]}</b><small>${i[3]}</small></span></a>`).join('') +
     '</div><a class="sb-queue" id="sbQueue" href="/history?status=running" hidden><span class="dot ok"></span><span id="sbQueueTxt"></span></a>' +
@@ -351,7 +354,8 @@
   setInterval(() => { if (!offScreen()) loadSpend(); }, 60000);
   addEventListener('spend-changed', () => setTimeout(loadSpend, 1500)); // pages can nudge it after a paid action
 
-  // ---------- Easter eggs (Settings → "Little easter-egg glitches"; off when the OS asks for reduced motion) ----------
+  // ---------- Easter eggs (Settings → "Little easter-egg glitches"; off when the OS asks for reduced motion, except
+  // netrunner mode itself and its screen break, which then plays a calm short version) ----------
   //  · every few minutes a page title or heading glitches for a split second (never buttons)
   //  · ↑ ↑ ↓ ↓ ← → ← → B A  → OVERDRIVE
   //  · click the logo (or, on a phone, tap the page title) 5 times fast → the nav gets hacked for a moment
@@ -360,13 +364,40 @@
   //  · touch: 2-finger tap, 3-finger tap, hold the title, pull down 3 times, turn sideways and back (see below)
   //  · iPhone home-screen app: a boot screen at most once an hour
   //  · after midnight the server light says NETRUNNER ONLINE
+  //  · netrunner mode, phones: the first tap on + breaks the screen (breach.js), once per app launch
   (() => {
     let on = true;
     try { on = localStorage.getItem('eggs') !== '0'; } catch {}
     if (!sessionStorage.getItem('eggsSync')) { // pick up the server setting once per visit
       fetch('/api/settings').then((r) => r.json()).then((j) => { try { localStorage.setItem('eggs', j.settings.eggs ? '1' : '0'); sessionStorage.setItem('eggsSync', '1'); } catch {} }).catch(() => {});
     }
-    if (!on || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (!on) return;
+    // night owls: after midnight the status light (desktop) says NETRUNNER ONLINE and the phone orb glows magenta
+    const night = new Date().getHours() < 4;
+    if (night) { window.__eggNight = true; document.body.classList.add('eg-night'); }
+    // netrunner mode's screen break: the first tap on + plays it instead of opening the menu; every tap after that opens
+    // the menu as usual. "Played" is shared by all the pages kept alive in the app and forgotten when the app is closed.
+    // (Called after the hold gesture is wired up, so a hold stays a hold.)
+    const armBreach = () => {
+      if (!night) return;
+      const KEY = 'egBreach';
+      const played = () => { try { return sessionStorage.getItem(KEY) === '1'; } catch { return !!window.__egBreached; } };
+      if (!played()) { const s = document.createElement('script'); s.src = '/breach.js'; document.head.appendChild(s); }
+      moreBtn.addEventListener('click', (e) => {
+        const show = window.studioBreach; // not loaded (yet, or offline): + simply works as always
+        if (!show || isOpen() || played()) return;
+        const orb = moreBtn.querySelector('.tb-orb').getBoundingClientRect();
+        if (!orb.width) return;
+        const started = show.play({ x: orb.left + orb.width / 2, y: orb.top + orb.height / 2 }, {
+          focus: e.detail === 0 ? moreBtn : null,
+          done: () => toast('SYSTEM RESTORED // nice try, netrunner', 'ok'),
+        });
+        if (!started) return;
+        window.__egBreached = true; try { sessionStorage.setItem(KEY, '1'); } catch {}
+        e.preventDefault(); e.stopImmediatePropagation();
+      }, true);
+    };
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) { armBreach(); return; }
     const glitch = (el) => { if (!el) return; el.classList.remove('eg-glitch'); void el.offsetWidth; el.classList.add('eg-glitch'); setTimeout(() => el.classList.remove('eg-glitch'), 420); };
     const tear = (n = 5) => {
       for (let i = 0; i < n; i++) setTimeout(() => {
@@ -438,6 +469,7 @@
     ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => orb.addEventListener(ev, () => clearTimeout(holdT)));
     orb.addEventListener('click', (e) => { if (held) { held = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
     orb.addEventListener('contextmenu', (e) => e.preventDefault()); // no long-press menu on Android
+    armBreach();
 
     // ---- shake the phone → the screen tears (Android; iPhones only send motion after a permission prompt) ----
     if ('DeviceMotionEvent' in window && typeof DeviceMotionEvent.requestPermission !== 'function') {
@@ -505,7 +537,7 @@
         // a different crew each boot
         const CREWS = ['NETRUNNER', 'FIXER', 'TECHIE', 'NOMAD', 'SOLO', 'ROCKERBOY', 'MEDTECH', 'MEDIA'];
         const crew = new Date().getHours() < 4 ? 'NETRUNNER' : CREWS[Math.floor(Math.random() * CREWS.length)];
-        const lines = ['VIDEO//STUDIO OS v3.1', 'LINKING NEURAL RENDER CORE ......... OK', `JACKING IN ${crew} CREW .............. OK`, 'CALIBRATING LOOKS ...................... OK', `WELCOME BACK, ${crew}`];
+        const lines = [`VD-0 OS v${VERSION}`, 'LINKING NEURAL RENDER CORE ......... OK', `JACKING IN ${crew} CREW .............. OK`, 'CALIBRATING LOOKS ...................... OK', `WELCOME BACK, ${crew}`];
         // on screen for 3.756 s: the lines type in over the first ~2.4 s, then it holds and fades
         boot.innerHTML = lines.map((l, i) => `<div style="--d:${i * 600}ms">${l}</div>`).join('');
         const end = () => { boot.classList.add('out'); setTimeout(() => boot.remove(), 300); };
@@ -514,9 +546,6 @@
       }
     }
 
-    // night owls: after midnight the status light (desktop) says NETRUNNER ONLINE and the phone orb glows magenta
-    const hr = new Date().getHours();
-    if (hr < 4) { window.__eggNight = true; document.body.classList.add('eg-night'); }
   })();
 
   // ---------- Help (sidebar ? and footer), footer, render queue ----------
@@ -534,7 +563,8 @@
       const ft = document.createElement('footer');
       ft.className = 'site-foot';
       ft.innerHTML = '<a href="/guide">How it works</a><span aria-hidden="true">·</span>' + ['help', 'about', 'privacy', 'refunds'].map((k) => `<button type="button" data-k="${k}">${S.INFO[k][0]}</button>`).join('<span aria-hidden="true">·</span>') +
-        '<span class="sf-note">Single-user studio · charges go to your own OpenRouter key</span>';
+        '<span class="sf-note">Single-user studio · charges go to your own OpenRouter key</span>' +
+        `<span class="sf-ver">VD-0 v${VERSION}</span>`;
       ft.addEventListener('click', (e) => { const b = e.target.closest('button[data-k]'); if (b) S.openInfo(b.dataset.k); });
       wrap.append(ft);
     }

@@ -4,6 +4,6 @@ export async function onRequest({ request, env, next }) {
   if (!env.APP_PASSWORD) return next();
   const want = "Basic " + btoa(`${env.APP_USER || "admin"}:${env.APP_PASSWORD}`);
   if (request.headers.get("Authorization") !== want)
-    return new Response("Login required", { status: 401, headers: { "WWW-Authenticate": 'Basic realm="Video Studio"' } });
+    return new Response("Login required", { status: 401, headers: { "WWW-Authenticate": 'Basic realm="VD-0"' } });
   return next();
 }
