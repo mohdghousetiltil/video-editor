@@ -88,14 +88,24 @@
     const geo = document.createElement('div');
     geo.className = 'radial-geo';
     geo.setAttribute('aria-live', 'polite');
-    const paint = (txt) => { geo.innerHTML = `<span class="gl-k">Location:</span> <span class="gl" data-t="${txt.replace(/"/g, '&quot;')}">${txt.replace(/</g, '&lt;')}</span>`; };
+    // the place is always shown in full on its one line: if it is too long for the space left of the + button, its text shrinks to fit
+    const fit = () => {
+      const gl = geo.querySelector('.gl'); if (!gl || !gl.clientWidth) return;
+      gl.style.fontSize = ''; gl.style.whiteSpace = '';
+      let s = parseFloat(getComputedStyle(gl).fontSize);
+      while (gl.scrollWidth > gl.clientWidth + 0.5 && s > 4.5) { s -= 0.25; gl.style.fontSize = s + 'px'; }
+      // still too long even small (a very long place on a narrow phone): never cut it, let it take one more line instead
+      if (gl.scrollWidth > gl.clientWidth + 0.5) { gl.style.fontSize = ''; gl.style.whiteSpace = 'normal'; }
+    };
+    const paint = (txt) => { geo.innerHTML = `<span class="gl-k">Location:</span> <span class="gl" data-t="${txt.replace(/"/g, '&quot;')}">${txt.replace(/</g, '&lt;')}</span>`; fit(); };
+    addEventListener('resize', fit);
     paint('Scanning…');
     document.body.append(geo);
     const show = (g) => {
       if (!g || (!g.country && !g.region && !g.city)) return paint(g && g.local ? 'Local' : 'Unknown');
       let country = g.country;
       try { country = new Intl.DisplayNames([navigator.language || 'en'], { type: 'region' }).of(g.country) || g.country; } catch {}
-      paint([[g.city, g.region].filter(Boolean).join(', '), country].filter(Boolean).join(' · '));
+      paint([g.city || g.region, country].filter(Boolean).join(' · ')); // city · country fits the one line (region only without a city)
     };
     let cached = null;
     try { cached = JSON.parse(sessionStorage.getItem('geo') || 'null'); } catch {}
