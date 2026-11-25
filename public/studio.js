@@ -235,7 +235,13 @@
     el.setAttribute('aria-label', title);
     const host = document.getElementById('confirmHost');
     if (host) host.append(el);
-    else if (lastBtn && lastBtn.isConnected) lastBtn.insertAdjacentElement('afterend', el);
+    else if (lastBtn && lastBtn.isConnected) {
+      // A page can say where a button's confirmation goes (data-confirm-anchor on an ancestor, e.g. a card in a grid). A button in a
+      // ⋯ menu never hosts it: the menu closes right after the click and would hide the confirmation inside it.
+      const menu = lastBtn.closest('[role="menu"]');
+      const at = lastBtn.closest('[data-confirm-anchor]') || (menu && menu.parentElement) || lastBtn;
+      at.insertAdjacentElement('afterend', el);
+    }
     else (document.querySelector('.wrap') || document.body).append(el);
     setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }));
     return el;
@@ -251,7 +257,7 @@
         `<dl class="cf-rows">${rows.filter((r) => r && r[1] != null && r[1] !== '').map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}` +
         `<dt>Estimated total</dt><dd class="cf-total">${money(total)}</dd></dl>` +
         (note ? `<p class="sd-note">${esc(note)}</p>` : '') +
-        (first ? '<p class="cf-warn" role="alert"><b>Heads up:</b> this charges real money to your OpenRouter key. The monthly cap in Settings stops paid calls once it is reached.</p>' : '') +
+        (first ? '<p class="cf-warn" role="alert"><b>Heads up:</b> this will eat part of your credits. Your monthly cap in Settings stops spending once it is reached.</p>' : '') +
         `<div class="cf-act"><button class="btn primary" data-yes type="button">Confirm · ${money(total)}</button><button class="btn" data-no type="button">Cancel</button></div>`;
       const done = (v) => { d.remove(); if (v) ls.set('paidOk', true); resolve(v); };
       d._cancel = () => done(false);
@@ -293,7 +299,7 @@
           ${(res.warnings || []).length ? `<p class="meta">${res.warnings.map(esc).join('<br>')}</p>` : ''}
           ${(plan.alternatives || []).length ? `<div class="dir-alts"><span class="meta">Or switch to:</span>${plan.alternatives.map((a, i) => `<button type="button" class="btn" data-alt="${i}">${esc(a.name || a.model)} · ${money(totalOf({ ...plan, model: a.model, resolution: (map[a.model] || {}).res && map[a.model].res.includes(plan.resolution) ? plan.resolution : ((map[a.model] || {}).res || [])[0] }))}<small>${esc(a.why || '')}</small></button>`).join('')}</div>` : ''}
           <p class="meta">Decided by ${res.source === 'rules' ? 'the built-in rules (the AI brain did not answer)' : esc(res.brain || 'the AI') + (res.cached ? ' (same plan as a moment ago, free)' : ` (${money(res.brainCost, 4)})`)} from ${res.candidates} models.</p>
-          ${first ? '<p class="cf-warn" role="alert"><b>Heads up:</b> this charges real money to your account. The monthly cap in Settings stops paid calls once it is reached.</p>' : ''}
+          ${first ? '<p class="cf-warn" role="alert"><b>Heads up:</b> this will eat part of your credits. Your monthly cap in Settings stops spending once it is reached.</p>' : ''}
           <div class="cf-act"><button class="btn primary" data-yes type="button">Confirm · ${money(total)}</button><button class="btn" data-no type="button">Cancel</button></div>`;
         d.querySelectorAll('[data-alt]').forEach((b) => (b.onclick = () => {
           const a = plan.alternatives[+b.dataset.alt], am = map[a.model];

@@ -17,7 +17,8 @@ export async function onRequest({ request, env }) {
   try { r = await fetch(base + u.pathname + u.search, init); }
   catch (e) { return json(502, "Can't reach the backend at " + base + " (" + e.message + ")."); }
   if (r.status === 401) return json(502, `Backend refused the request: Cloudflare's PROXY_KEY (${key.length} characters, starts "${key.slice(0, 4)}") doesn't match Railway's. Set both to exactly the same value.`);
-  if (r.status === 502 || r.status === 503) {
+  // the app's own JSON errors pass through; only a bare gateway page means the backend itself is down
+  if ((r.status === 502 || r.status === 503) && !(r.headers.get("content-type") || "").includes("application/json")) {
     const t = await r.text();
     return json(502, "Backend is not responding (" + r.status + "). On Railway check the service is running and the domain's port matches the PORT in the logs. " + t.slice(0, 200));
   }

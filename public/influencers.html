@@ -84,11 +84,153 @@
   .cands img{width:100%;aspect-ratio:9/16;object-fit:cover;border-radius:10px;border:2px solid transparent;cursor:pointer;display:block}
   .cands img:hover{border-color:#3a3f55}
   .cands img.sel{border-color:var(--acc)}
-  .views{display:grid;grid-template-columns:repeat(6,1fr);gap:4px;margin:2px 0 4px}
-  .views a,.views span{display:block;aspect-ratio:9/16;border-radius:6px;overflow:hidden;background:var(--panel2);border:1px dashed var(--line);position:relative}
-  .views img{width:100%;height:100%;object-fit:cover;display:block}
-  .views i{position:absolute;left:0;right:0;bottom:0;font:600 9px/1.4 Inter,sans-serif;font-style:normal;text-align:center;background:#000a;color:#fff}
   .vmsg{font-size:12px;color:var(--mute)}
+  .vmsg:empty{display:none}
+  /* a cost confirmation from a card (Pose, or the ⋯ menu) opens as a full-width row right under that card */
+  #list>.inline-confirm{grid-column:1/-1;margin:0}
+
+  /* ===== square picture that swipes through the body profiles in a loop: left, front, right, back, half, full, left… ===== */
+  .pic{aspect-ratio:1/1;overflow:hidden;font-size:0}
+  .pic .nopic{position:absolute;inset:0;display:grid;place-items:center;color:var(--mute);cursor:pointer}
+  .pic .nopic .ic{width:42px;height:42px}
+  .slides{position:absolute;inset:0;display:flex;overflow-x:auto;scroll-snap-type:x mandatory;overscroll-behavior-x:contain;scrollbar-width:none}
+  .slides::-webkit-scrollbar{display:none}
+  .slide{flex:0 0 100%;height:100%;scroll-snap-align:center;scroll-snap-stop:always;position:relative;overflow:hidden;background:var(--panel2);cursor:pointer}
+  .slide img{position:absolute;inset:0;width:100%;height:100%;display:block}
+  .slide .fg{object-fit:cover;object-position:center 22%}
+  /* back, half and full body are shown whole (head and feet), on a blurred copy of themselves */
+  .slide.tall .fg{object-fit:contain}
+  .slide .bg{object-fit:cover;filter:blur(18px) brightness(.5);transform:scale(1.15)}
+  .pic .vlabel{position:absolute;top:10px;left:10px;z-index:2;padding:5px 11px;font:700 10.5px/1 var(--font-ui,Inter);letter-spacing:.14em;text-transform:uppercase;
+    color:var(--acc2);background:rgba(3,6,16,.8);clip-path:polygon(6px 0,100% 0,calc(100% - 6px) 100%,0 100%);pointer-events:none}
+  .pic .dots{position:absolute;top:14px;right:12px;z-index:2;display:flex;gap:5px;pointer-events:none}
+  .pic .dots i{width:6px;height:6px;transform:rotate(45deg);background:rgba(255,255,255,.35)}
+  .pic .dots i.on{background:var(--acc);box-shadow:0 0 6px var(--acc)}
+  .pic .sw{position:absolute;top:50%;z-index:2;width:34px;height:34px;margin-top:-17px;padding:0;display:grid;place-items:center;cursor:pointer;color:var(--acc);
+    background:rgba(3,6,16,.78);border:1px solid var(--line2,var(--line));clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,8px 100%,0 calc(100% - 8px));
+    opacity:0;transition:opacity .2s,background .15s}
+  .pic .sw .ic{width:16px;height:16px}
+  .pic .sw.l{left:8px} .pic .sw.l .ic{transform:rotate(180deg)}
+  .pic .sw.r{right:8px}
+  .pic:hover .sw,.pic .sw:focus-visible{opacity:1}
+  .pic .sw:hover{background:rgba(0,229,255,.2)}
+  @media(hover:none){.pic .sw{display:none}}
+  .pic .cap{z-index:1;pointer-events:none}
+
+  /* ===== neon HUD theme (matches the rest of the app): square corners, cut-corner accents, uppercase UI type, cyan lines ===== */
+  .card{border-radius:0;border-color:var(--line2,var(--line));background:linear-gradient(180deg,rgba(16,20,42,.9),rgba(9,12,25,.95));position:relative;overflow:visible}
+  .card::before{content:"";position:absolute;top:-1px;left:-1px;width:36px;height:2px;background:var(--acc);box-shadow:0 0 10px var(--acc);z-index:3;pointer-events:none}
+  .card:hover{border-color:rgba(0,229,255,.45)}
+  .card.sel{border-color:var(--acc);box-shadow:inset 0 0 0 1px var(--acc)}
+  .pic .cap b{font:700 15px/1.2 var(--font-ui,Inter);letter-spacing:.1em;text-transform:uppercase}
+  .badge{border-radius:0;clip-path:polygon(5px 0,100% 0,calc(100% - 5px) 100%,0 100%);font:700 10.5px/1.4 var(--font-ui,Inter);letter-spacing:.08em;text-transform:uppercase;padding:2px 9px;border:0}
+  .badge.ok{background:rgba(57,255,156,.15)} .badge.no{background:rgba(255,77,109,.15)}
+  .desc{font-size:12.5px;-webkit-line-clamp:3}
+  .vmsg{font-family:var(--font-ui,Inter);letter-spacing:.03em}
+  .actions .primary{min-height:40px}
+  .actions .more{width:40px;min-height:40px}
+  .menu{border-radius:0;border-color:var(--line2,var(--line));background:linear-gradient(180deg,rgba(16,20,42,.98),rgba(9,12,25,.99));
+    clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,12px 100%,0 calc(100% - 12px))}
+  .menu button,.menu a{border-radius:0;position:relative;font:700 13px/1.2 var(--font-ui,Inter);letter-spacing:.08em;text-transform:uppercase}
+  .menu button:hover,.menu a:hover,.menu button:focus-visible,.menu a:focus-visible{background:linear-gradient(90deg,rgba(0,229,255,.18),rgba(255,46,147,.06))}
+  .menu button:hover::before,.menu a:hover::before,.menu button:focus-visible::before,.menu a:focus-visible::before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:3px;background:var(--acc);box-shadow:0 0 10px var(--acc)}
+  .menu .ic{color:var(--acc)} .menu .danger .ic{color:var(--err)}
+  .menu .sub{letter-spacing:.06em;text-transform:none;font-weight:600}
+  .menu hr{border-top-style:dashed}
+  .empty{border-radius:0;font-family:var(--font-ui,Inter);letter-spacing:.06em;text-transform:uppercase}
+  .drop{border-radius:0;border-color:rgba(0,229,255,.35);background:rgba(3,6,16,.5);clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,12px 100%,0 calc(100% - 12px))}
+  .drop:hover,.drop.over{background:rgba(0,229,255,.07)}
+  .enh-box,.gen{border-radius:0;border-color:var(--line2,var(--line));background:rgba(3,6,16,.45);
+    clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,12px 100%,0 calc(100% - 12px))}
+  textarea,input[type=text],.gen select{border-radius:0}
+  .cands img{border-radius:0}
+  .cands img.sel{box-shadow:0 0 0 1px var(--acc)}
+  label{font-family:var(--font-ui,Inter);letter-spacing:.08em;text-transform:uppercase}
+  label textarea,label input,label select{text-transform:none;letter-spacing:0;font-family:Inter,system-ui,sans-serif}
+
+  /* ===== screen sizes: the grid fills the space on a computer, 2 a row on a phone ===== */
+  .grid{grid-template-columns:repeat(auto-fill,minmax(210px,1fr))}
+  label,.row>*,.card,.info{min-width:0}
+  textarea,input,select{max-width:100%;min-width:0}
+  @media(max-width:900px){.layout{grid-template-columns:1fr}}
+  @media(max-width:700px){
+    #list.grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+    #list .info{padding:8px;gap:5px}
+    #list .desc,#list .badge{display:none}
+    #list .pic .cap{padding:20px 8px 6px}
+    #list .pic .cap b{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    #list .pic .vlabel{top:7px;left:7px;font-size:9px;padding:4px 8px}
+    #list .pic .dots{top:10px;right:8px;gap:4px}
+    #list .pic .dots i{width:5px;height:5px}
+    #list .vmsg{font-size:11px;line-height:1.3}
+    #list .actions{gap:6px}
+    #list .actions .primary{min-height:44px;font-size:11.5px !important;letter-spacing:.04em !important;padding:0 6px !important;white-space:nowrap;overflow:hidden}
+    #list .actions .more{width:44px;min-height:44px;flex:none}
+    /* the ⋯ menu pops up over the card; a half-width card is too narrow for it, so it spans both columns:
+       from a left-column card it grows to the right, from a right-column card to the left */
+    #list .menu{min-width:0;width:calc(200% + 10px + 16px)}
+    #list .card:nth-child(odd) .menu{left:0;right:auto}
+    #list .card:nth-child(even) .menu{right:0;left:auto}
+    #list .card{z-index:auto}
+    #list .card:has(.menu:not([hidden])){z-index:5}
+    #list .menu button,#list .menu a{padding:11px 10px}
+  }
+
+  /* ===== two views: Library / Add influencer ===== */
+  .vtabs{display:flex;gap:4px;padding:4px;margin:0 0 18px;width:max-content;max-width:100%;border:1px solid var(--line2,var(--line));background:rgba(3,6,16,.55);
+    clip-path:polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,10px 100%,0 calc(100% - 10px))}
+  .vtabs button{all:unset;box-sizing:border-box;cursor:pointer;display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 18px;
+    font:700 13px/1 var(--font-ui,Inter);letter-spacing:.1em;text-transform:uppercase;color:var(--mute);white-space:nowrap;
+    clip-path:polygon(8px 0,100% 0,calc(100% - 8px) 100%,0 100%);transition:color .15s,background .15s}
+  .vtabs button .ic{width:16px;height:16px}
+  .vtabs button:hover{color:var(--text);background:rgba(0,229,255,.07)}
+  .vtabs button:focus-visible{outline:none;color:var(--text);background:rgba(0,229,255,.12)}
+  .vtabs button.on{color:#03101a;background:linear-gradient(110deg,var(--acc),#4d7cff 60%,var(--pink,#ff2e93) 120%)}
+  .vtabs i{font-style:normal;font-size:11px;padding:2px 7px;background:rgba(3,6,16,.35);clip-path:polygon(4px 0,100% 0,calc(100% - 4px) 100%,0 100%)}
+  .vtabs i:empty{display:none}
+  .vtabs button:not(.on) i{background:rgba(0,229,255,.1);color:var(--acc2)}
+  #viewLib[hidden],#viewAdd[hidden]{display:none}
+  @media(max-width:700px){.vtabs{width:100%}.vtabs button{flex:1;justify-content:center;padding:0 8px;font-size:12px;letter-spacing:.06em}}
+
+  /* Add influencer: one centred column, the upload square first, the look types right under it once a photo is in */
+  .addwrap{max-width:560px;margin:0 auto;display:flex;flex-direction:column;align-items:stretch;gap:16px}
+  .addwrap>h2{justify-content:center;margin:0}
+  .addwrap .drop{width:min(360px,100%);aspect-ratio:1/1;margin:0 auto;font-size:13px;line-height:1.4}
+  .addwrap .drop #dropText{display:flex;flex-direction:column;align-items:center;gap:8px;padding:20px}
+  .addwrap .drop #dropText .ic{width:40px;height:40px;color:var(--acc);filter:drop-shadow(0 0 8px rgba(0,229,255,.6))}
+  .addwrap .drop #dropText b{font:700 15px/1.2 var(--font-hud,Inter);letter-spacing:.14em;text-transform:uppercase;color:var(--text)}
+  .addwrap .drop #dropText small{color:var(--mute);text-transform:none;letter-spacing:.02em}
+  .addwrap .drop.has #dropText{display:none}
+  .addwrap .drop.has::after{content:"Change photo";position:absolute;left:50%;bottom:10px;transform:translateX(-50%);padding:6px 12px;font:700 11px/1 var(--font-ui,Inter);
+    letter-spacing:.12em;text-transform:uppercase;color:var(--acc2);background:rgba(3,6,16,.8);clip-path:polygon(6px 0,100% 0,calc(100% - 6px) 100%,0 100%);pointer-events:none}
+  .addwrap .enh-box{margin:0;padding:0;align-items:center;text-align:center;border:0;background:none;clip-path:none;animation:enh-in .25s ease-out} /* no outline box: just the looks and the button */
+  @keyframes enh-in{from{opacity:0;transform:translateY(-6px)}}
+  @media(prefers-reduced-motion:reduce){.addwrap .enh-box{animation:none}}
+  .addwrap .enh-box[hidden]{display:none}
+  .addwrap .enh-head{justify-content:center;font:700 12px/1.2 var(--font-hud,Inter);letter-spacing:.16em;text-transform:uppercase;color:var(--acc2)}
+  .addwrap .enh-box .look-swipe{width:100%}
+  .addwrap #enhPic{width:100%;min-height:46px}
+  .addwrap #enhNote{font-size:12px;color:var(--mute)}
+  .addwrap .gmsg:empty,.addwrap .cands:empty{display:none}
+  .addwrap .cands{margin:0;grid-template-columns:repeat(4,minmax(0,1fr))}
+  @media(max-width:520px){.addwrap .cands{grid-template-columns:1fr 1fr}}
+  .addwrap .fields{display:flex;flex-direction:column;gap:2px;padding-top:14px;border-top:1px dashed var(--line2,var(--line))}
+  .addwrap .fields .row{align-items:center}
+  .addwrap #descPicMsg{font-size:12px;color:var(--mute)}
+  .gen-alt{border:1px solid var(--line2,var(--line));background:rgba(3,6,16,.4)}
+  .gen-alt summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;min-height:44px;padding:0 14px;
+    font:700 12.5px/1.2 var(--font-ui,Inter);letter-spacing:.1em;text-transform:uppercase;color:var(--acc2)}
+  .gen-alt summary::-webkit-details-marker{display:none}
+  .gen-alt summary::before{content:"";width:7px;height:7px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(-45deg);transition:transform .2s}
+  .gen-alt[open] summary::before{transform:rotate(45deg)}
+  .gen-alt .gen{margin:0;border:0;clip-path:none;background:none;padding:4px 14px 14px}
+  .gen-alt .gen label{margin-bottom:10px}
+  .addwrap .seedrow{margin:0}
+  .addwrap .err:empty{display:none}
+  .save-row{display:flex;gap:8px}
+  .save-row #save{flex:1;min-height:48px}
+  .save-row #reset{min-height:48px}
+  .addwrap .note{text-align:center;margin:0}
 </style>
 <link rel="stylesheet" href="/app.css">
 <script src="/studio.js"></script>
@@ -97,46 +239,64 @@
 </head>
 <body data-title="Influencers" data-sub="Your AI influencers.">
 <div class="wrap">
-  <div class="layout">
-    <div class="panel" id="formPanel">
-      <h2 id="formTitle">Add influencer</h2>
-      <label class="drop" id="drop" style="cursor:pointer"><span id="dropText">No picture yet.<br><small>Generate pictures below (recommended), or click / drop an AI-made character image to upload it.</small></span><input type="file" id="upFile" accept="image/jpeg,image/png,image/webp" class="hidden" aria-label="Upload a character image"></label>
-      <div class="enh-box" id="enhBox">
-        <div class="enh-head"><svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> <b>Have a real photo?</b> Turn it into a video-ready influencer</div>
-        <div class="look-swipe" id="enhStyles"></div>
-        <div class="row"><button class="btn primary" id="enhPic" type="button" disabled><svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> Make influencer from my photo</button><span class="meta" id="enhNote" style="font-size:12px">Upload a photo above first.</span></div>
-      </div>
-      <p class="meta" style="margin:-6px 0 12px">Video models block real photos, so this makes a new AI character with your look.</p>
-      <label>Name<input type="text" id="name" placeholder="e.g. Maya"></label>
-      <label>Description (reused word-for-word in prompts)
-        <textarea id="desc" placeholder="A friendly woman in her mid-20s with warm light-brown skin, shoulder-length wavy dark brown hair, small gold hoop earrings, cream knit sweater."></textarea></label>
-      <div class="row" style="margin:-4px 0 12px"><button class="btn" id="descPic" type="button"><svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> Fill description from the picture</button><span class="meta" id="descPicMsg" style="font-size:12px;color:var(--mute)"></span></div>
-      <div class="gen">
-        <h2 style="margin-bottom:8px"><svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> Generate pictures from the description</h2>
-        <label style="margin-bottom:8px">Made for which video model?<select id="gTarget"><option value="seedance">Seedance (3D animated or anime, so it accepts the picture)</option><option value="grok">Grok Lite and others (realistic is fine)</option></select></label>
-        <div class="row" style="margin-bottom:8px">
-          <select id="gStyle" style="flex:1" aria-label="Picture style"></select>
-          <select id="gCount" style="width:70px" aria-label="Number of pictures"><option>2</option><option selected>4</option></select>
-        </div>
-        <select id="gModel" style="margin-bottom:8px" aria-label="Picture model"><option value="qwen/qwen-image-3">Qwen Image 3 (~$0.03/pic, measured)</option><option value="x-ai/grok-imagine-image-2.0">Grok Imagine Image 2.0 (~$0.06/pic, measured)</option><option value="bytedance-seed/seedream-5-0-lite">Seedream 5.0 Lite (price not checked)</option><option value="google/gemini-3.1-flash-image">Gemini 3.1 Flash Image (price not checked)</option></select>
-        <button class="btn" id="gen" type="button" style="width:100%"><svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> Generate pictures</button>
-        <div id="gMsg" class="meta" style="margin-top:6px">Pick one, Save, then press <b><svg class=ic aria-hidden=true><use href=#i-clapper></use></svg> Animate</b> on the card.</div>
-        <div class="cands" id="cands"></div>
-      </div>
-      <label>Seed (keeps the look similar between videos)
-        <span class="row"><input type="text" id="seed" style="flex:1;width:auto"><button class="btn" id="dice" type="button"><svg class=ic aria-hidden=true><use href=#i-dice></use></svg></button></span></label>
-      <div class="row">
-        <button class="btn primary" id="save" type="button">Save influencer</button>
-        <button class="btn" id="reset" type="button">Clear</button>
-      </div>
-      <div class="err" id="err"></div>
-      <div class="note">For Seedance, pick a stylized look. <a href="/guide#influencers">How it works</a></div>
-    </div>
-
-    <div>
-      <div class="grid" id="list"></div>
-    </div>
+  <!-- two views: the library of saved influencers, and adding (or editing) one -->
+  <div class="vtabs" role="tablist" aria-label="Influencers">
+    <button type="button" role="tab" id="tabLib" class="on" aria-selected="true" aria-controls="viewLib"><svg class=ic aria-hidden=true><use href=#i-user></use></svg> Library <i id="libCount"></i></button>
+    <button type="button" role="tab" id="tabAdd" aria-selected="false" aria-controls="viewAdd"><svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> <span id="tabAddTxt">Add influencer</span></button>
   </div>
+
+  <section id="viewLib" role="tabpanel" aria-labelledby="tabLib">
+    <div class="grid" id="list"></div>
+  </section>
+
+  <section id="viewAdd" role="tabpanel" aria-labelledby="tabAdd" hidden>
+    <div class="addwrap" id="formPanel">
+      <h2 id="formTitle">Add influencer</h2>
+      <!-- 1. the picture: centred, the first thing to do -->
+      <label class="drop" id="drop"><span id="dropText"><svg class=ic aria-hidden=true><use href=#i-upload></use></svg><b>Upload a photo</b><small>Click or drop a JPG, PNG or WEBP (up to 8 MB)</small></span><input type="file" id="upFile" accept="image/jpeg,image/png,image/webp" class="hidden" aria-label="Upload a photo"></label>
+
+      <!-- 2. once a photo is in: which look to turn it into -->
+      <div class="enh-box" id="enhBox" hidden>
+        <div class="enh-head"><svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> <b>Choose a look</b></div>
+        <div class="look-swipe" id="enhStyles"></div>
+        <button class="btn primary" id="enhPic" type="button" disabled><svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> Make influencer from my photo</button>
+        <span class="meta" id="enhNote">Upload a photo above first.</span>
+      </div>
+      <div id="gMsg" class="meta gmsg"></div>
+      <div class="cands" id="cands"></div>
+
+      <!-- 3. who they are -->
+      <div class="fields">
+        <label>Name<input type="text" id="name" placeholder="e.g. Maya"></label>
+        <label>Description <small>reused word for word in every prompt</small>
+          <textarea id="desc" placeholder="A friendly woman in her mid-20s with warm light-brown skin, shoulder-length wavy dark brown hair, small gold hoop earrings, cream knit sweater."></textarea></label>
+        <div class="row"><button class="btn" id="descPic" type="button"><svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> Fill description from the picture</button><span class="meta" id="descPicMsg"></span></div>
+      </div>
+
+      <!-- no photo: make a character from the description instead -->
+      <details class="gen-alt">
+        <summary>No photo? Generate one from the description</summary>
+        <div class="gen">
+          <label>Made for which video model?<select id="gTarget"><option value="seedance">Seedance (3D animated or anime, so it accepts the picture)</option><option value="grok">Grok Lite and others (realistic is fine)</option></select></label>
+          <div class="row">
+            <label style="flex:1">Style<select id="gStyle"></select></label>
+            <label style="width:90px">Pictures<select id="gCount"><option>2</option><option selected>4</option></select></label>
+          </div>
+          <label>Picture model<select id="gModel"><option value="qwen/qwen-image-3">Qwen Image 3 (~$0.03/pic, measured)</option><option value="x-ai/grok-imagine-image-2.0">Grok Imagine Image 2.0 (~$0.06/pic, measured)</option><option value="bytedance-seed/seedream-5-0-lite">Seedream 5.0 Lite (price not checked)</option><option value="google/gemini-3.1-flash-image">Gemini 3.1 Flash Image (price not checked)</option></select></label>
+          <button class="btn" id="gen" type="button" style="width:100%"><svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> Generate pictures</button>
+        </div>
+      </details>
+
+      <label class="seedrow">Seed (keeps the look similar between videos)
+        <span class="row"><input type="text" id="seed" style="flex:1;width:auto"><button class="btn" id="dice" type="button" aria-label="New random seed"><svg class=ic aria-hidden=true><use href=#i-dice></use></svg></button></span></label>
+      <div class="err" id="err"></div>
+      <div class="row save-row">
+        <button class="btn" id="reset" type="button">Clear</button>
+        <button class="btn primary" id="save" type="button">Save influencer</button>
+      </div>
+      <div class="note">Realistic keeps your real face; some video models refuse real faces, so for Seedance pick a drawn or 3D look. <a href="/guide#influencers">How it works</a></div>
+    </div>
+  </section>
 </div>
 
 <dialog class="spend-dlg" id="animDlg" aria-label="Animate influencer">
@@ -172,14 +332,29 @@ function shrink(file,max=768){
 function showPreview(src){
   $('drop').querySelector('img')?.remove();
   if(src){const im=document.createElement('img');im.src=src;$('drop').appendChild(im);}
+  $('drop').classList.toggle('has',!!src);
   $('enhPic').disabled=!src; paintEnh();
+  // the look types appear under the picture once there is one
+  const was=$('enhBox').hidden; $('enhBox').hidden=!src;
+  if(was&&src) requestAnimationFrame(enhRecentre);
 }
+// ---------- two views: the library, and adding / editing one influencer ----------
+function setView(v){
+  const add=v==='add';
+  $('viewLib').hidden=add; $('viewAdd').hidden=!add;
+  $('tabLib').classList.toggle('on',!add); $('tabAdd').classList.toggle('on',add);
+  $('tabLib').setAttribute('aria-selected',!add); $('tabAdd').setAttribute('aria-selected',add);
+  if(add) requestAnimationFrame(enhRecentre);
+  window.scrollTo({top:0,behavior:'instant'});
+}
+$('tabLib').onclick=()=>{ if(editing) resetForm(); setView('lib'); };
+$('tabAdd').onclick=()=>{ if(editing) resetForm(); setView('add'); };
 
 async function upload(f){
   if(!f) return; $('err').textContent='';
   if(!/^image\/(jpeg|png|webp)$/.test(f.type)) return $('err').textContent='Use a JPG, PNG or WEBP picture.';
   if(f.size>8*1048576) return $('err').textContent='That picture is over 8 MB.';
-  try{ image=await shrink(f); removeImage=false; showPreview(image); toast('Photo added. Video models block real photos: pick a style and press Make influencer from my photo.'); }catch(e){ $('err').textContent=e.message; }
+  try{ image=await shrink(f); removeImage=false; showPreview(image); toast('Photo added. Choose a look below it, then press Make influencer from my photo.'); $('enhBox').scrollIntoView({behavior:'smooth',block:'nearest'}); }catch(e){ $('err').textContent=e.message; }
 }
 $('upFile').onchange=e=>upload(e.target.files[0]);
 ['dragenter','dragover'].forEach(t=>$('drop').addEventListener(t,ev=>{ev.preventDefault();$('drop').classList.add('over')}));
@@ -189,11 +364,24 @@ const newSeed=()=>Math.floor(Math.random()*2e9);
 $('dice').onclick=()=>{$('seed').value=newSeed()};
 
 // Make influencer from my photo: which style to turn it into (all made so the video models accept the picture)
-const ENH=[['real','Realistic','camera','Grok, Veo and most models'],['pixar','3D animated','box','every model, Seedance too'],['disney','2D Disney-like','castle','every model, Seedance too'],['ghibli','Ghibli-like','leaf','every model, Seedance too'],['anime','Anime','flower','every model, Seedance too']];
+// [id, name, icon, note shown under the button]
+const ENH=[
+  ['real','Realistic','camera','your real face, not retouched. Some video models refuse real faces: if one does, try Glam or a drawn style'],
+  ['glam','Glam','gem','a polished, beautified AI version of you. Works with Grok, Veo and most models'],
+  ['cinematic','Cinematic','film','a moody movie-still look. Works with Grok, Veo and most models'],
+  ['editorial','Editorial','shirt','a fashion-magazine shoot. Works with Grok, Veo and most models'],
+  ['pixar','3D animated','box','works with every model, Seedance too'],
+  ['clay','Clay','hand','a stop-motion clay figure. Works with every model, Seedance too'],
+  ['disney','2D Disney-like','castle','works with every model, Seedance too'],
+  ['ghibli','Ghibli-like','leaf','works with every model, Seedance too'],
+  ['anime','Anime','flower','works with every model, Seedance too'],
+  ['comic','Comic','laugh','a bold comic-book drawing. Works with every model, Seedance too'],
+  ['neon','Neon','zap','a cyberpunk neon portrait. Works with every model, Seedance too'],
+];
 let enhStyle=(()=>{ try{ return localStorage.getItem('enhStyle')||'real'; }catch{ return 'real'; } })();
 // the style picker is the same neon swipe carousel as the Look picker: the card that lands in the middle is the style
-const ENH_NEON={real:'#00e5ff',pixar:'#ff8a3d',disney:'#ffd84d',ghibli:'#7dffb0',anime:'#ff7ad9'};
-let enhQuiet=0;
+const ENH_NEON={real:'#00e5ff',glam:'#ffb3e6',cinematic:'#ffbf69',editorial:'#e0e0ff',pixar:'#ff8a3d',clay:'#d9a066',disney:'#ffd84d',ghibli:'#7dffb0',anime:'#ff7ad9',comic:'#ff4d4d',neon:'#b388ff'};
+let enhQuiet=0, enhRecentre=()=>{};
 (function buildEnh(){
   $('enhStyles').className='look-swipe'; $('enhStyles').removeAttribute('role');
   $('enhStyles').innerHTML=`<button type="button" class="look-arrow prev" aria-label="Previous style">${ic('chevron')}</button>
@@ -211,17 +399,19 @@ let enhQuiet=0;
   $('enhStyles').querySelector('.next').onclick=()=>step(1);
   track.addEventListener('keydown',e=>{ if(e.key==='ArrowLeft'||e.key==='ArrowRight'){ e.preventDefault(); step(e.key==='ArrowLeft'?-1:1); } });
   // start on the saved style once the layout exists
-  requestAnimationFrame(()=>{ const c=track.querySelector(`[data-s="${enhStyle}"]`)||cards()[0]; centre(c,false); near(c); });
+  // centre the saved look; again whenever the look strip is shown (while hidden it has no width)
+  enhRecentre=()=>{ const c=track.querySelector(`[data-s="${enhStyle}"]`)||cards()[0]; centre(c,false); near(c); };
+  requestAnimationFrame(enhRecentre);
 })();
 function paintEnh(){
   $('enhStyles').querySelectorAll('.look-card').forEach(c=>{ const on=c.dataset.s===enhStyle; c.classList.toggle('sel',on); c.setAttribute('aria-checked',on); c.tabIndex=on?0:-1; });
   const has=!!$('drop').querySelector('img'), e=ENH.find(x=>x[0]===enhStyle)||ENH[0];
-  $('enhNote').textContent=has?`${e[1]}: works with ${e[3]}.`:'Upload a photo above first.';
+  $('enhNote').textContent=has?`${e[1]}: ${e[3]}.`:'Upload a photo above first.';
 }
 paintEnh();
 const STYLE_SETS={
-  seedance:[['cartoon3d','3D animated character (accepted by Seedance in my test)'],['anime','Anime']],
-  grok:[['photo','Realistic selfie photo'],['studio','Studio portrait'],['stylized','Stylized digital painting'],['cartoon3d','3D animated character'],['anime','Anime']],
+  seedance:[['cartoon3d','3D animated character (accepted by Seedance in my test)'],['anime','Anime'],['clay','Clay stop-motion figure'],['comic','Comic-book drawing'],['neon','Cyberpunk neon illustration']],
+  grok:[['photo','Natural phone selfie (unretouched)'],['studio','Studio portrait'],['glam','Glam beauty shot (polished)'],['cinematic','Cinematic film still'],['editorial','Fashion editorial'],['stylized','Stylized digital painting'],['cartoon3d','3D animated character'],['anime','Anime'],['clay','Clay stop-motion figure'],['comic','Comic-book drawing'],['neon','Cyberpunk neon illustration']],
 };
 function fillStyles(){ $('gStyle').innerHTML=STYLE_SETS[$('gTarget').value].map(s=>'<option value="'+s[0]+'">'+s[1]+'</option>').join(''); }
 $('gTarget').onchange=fillStyles; fillStyles();
@@ -261,17 +451,18 @@ function shrinkSrc(src,max=768){
 }
 function resetForm(){
   editing=null;image=null;removeImage=false;
-  $('formTitle').textContent='Add influencer';
+  $('formTitle').textContent='Add influencer'; $('tabAddTxt').textContent='Add influencer';
   $('name').value='';$('desc').value='';$('seed').value=newSeed();$('err').textContent='';
-  showPreview(null); $('cands').innerHTML=''; render();
+  showPreview(null); $('cands').innerHTML=''; $('gMsg').textContent=''; render();
 }
 $('reset').onclick=resetForm;
 
 function edit(p){
   editing=p.id;image=null;removeImage=false;
-  $('formTitle').textContent='Edit '+p.name;
+  $('formTitle').textContent='Edit '+p.name; $('tabAddTxt').textContent='Edit '+p.name;
   $('name').value=p.name;$('desc').value=p.desc||'';$('seed').value=p.seed;$('err').textContent='';
-  showPreview(p.image); render(); window.scrollTo({top:0,behavior:'smooth'});
+  $('cands').innerHTML=''; $('gMsg').textContent='';
+  showPreview(p.image); render(); setView('add');
 }
 
 $('save').onclick=async()=>{
@@ -284,7 +475,7 @@ $('save').onclick=async()=>{
       id:editing,name:$('name').value,desc:$('desc').value,seed:Number.isInteger(seed)?seed:undefined,
       ...(image?{image}:{}),...(removeImage?{removeImage:true}:{})})});
     const j=await r.json(); if(!r.ok) throw new Error(j.error||'Save failed');
-    const newPic=!!image; await load(); resetForm();
+    const newPic=!!image; await load(); resetForm(); setView('lib'); // back to the library, where the new card is
     // a new main picture: the influencer needs body profiles to work well in videos
     if(newPic&&j.image) makeProfiles(j,true);
   }catch(e){$('err').textContent=e.message}
@@ -311,33 +502,79 @@ async function makeProfiles(p,fresh){
   busy[p.id]='Making '+views.length+' profiles, about 20-60 seconds…'; render();
   try{
     const r=await fetch('/api/influencers/'+p.id+'/profiles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({views})});
-    const j=await r.json(); if(!r.ok) throw new Error(j.error||'Failed');
+    let j=await r.json(); if(!r.ok) throw new Error(j.error||'Failed');
+    // the server makes them in the background; ask every few seconds until it's finished
+    const until=Date.now()+6*60000;
+    while(j.running){
+      if(Date.now()>until) throw new Error('Still not finished after 6 minutes. Reload the page in a bit to see what was made.');
+      await new Promise(ok=>setTimeout(ok,4000));
+      try{ const q=await fetch('/api/influencers/'+p.id+'/profiles'); if(q.ok) j=await q.json(); }catch{}
+    }
+    if(j.none) throw new Error('The server restarted while making them. Press the button again.');
+    if(j.error) throw new Error(j.error);
     delete busy[p.id]; await load();
     const m=$('vmsg-'+p.id); if(m) m.textContent=(j.failed?.length?'Not made: '+j.failed.map(f=>f.view).join(', ')+' (press the button again). ':'Done. ')+'Cost: '+S.money(j.cost||0);
     window.dispatchEvent(new Event('spend-changed'));
   }catch(e){ delete busy[p.id]; render(); const m=$('vmsg-'+p.id); if(m) m.innerHTML='<span style="color:var(--err)">'+esc(e.message)+'</span>'; }
 }
 const esc=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+// ---------- card picture: swipe through the profiles in a loop, starting on the front face ----------
+// order: left, front, right, back, half body, full body, then left again (both directions)
+const LOOP=['left','front','right','back','half','full'], TALL={back:1,half:1,full:1}, LABEL=Object.fromEntries(VIEWS);
+function slideList(p){
+  // front falls back to the main picture; profiles not made yet are skipped
+  return LOOP.map(v=>[v,v==='front'?(p.views?.front||p.image):p.views?.[v]]).filter(x=>x[1]);
+}
+function slidesHTML(p){
+  const s=slideList(p), one=([v,u],clone)=>`<div class="slide${TALL[v]?' tall':''}" data-view="${v}" data-e="${p.id}" title="Edit ${esc(p.name)}"${clone?' aria-hidden="true"':''}>${TALL[v]?`<img class="bg" src="${u}" alt="" loading="lazy">`:''}<img class="fg" src="${u}" alt="${clone?'':esc(p.name)+', '+LABEL[v]}" loading="lazy" draggable="false"></div>`;
+  // a copy of the last slide before the first and of the first after the last: swiping past either end lands on the real one, so it loops
+  const body=s.length>1?one(s[s.length-1],1)+s.map(x=>one(x)).join('')+one(s[0],1):s.map(x=>one(x)).join('');
+  return `<div class="slides" data-n="${s.length}" data-start="${Math.max(0,s.findIndex(x=>x[0]==='front'))}">${body}</div>`+
+    (s.length>1?`<span class="vlabel"></span><span class="dots">${s.map(()=>'<i></i>').join('')}</span>
+    <button type="button" class="sw l" aria-label="Previous profile">${ic('chevron')}</button><button type="button" class="sw r" aria-label="Next profile">${ic('chevron')}</button>`:'');
+}
+function initSlides(pic){
+  const tr=pic.querySelector('.slides'); if(!tr) return;
+  const n=+tr.dataset.n; if(n<2) return;
+  const all=[...tr.children], w=()=>tr.clientWidth;
+  let cur=+tr.dataset.start; // index among the real slides
+  const go=(i,smooth)=>tr.scrollTo({left:w()*(i+1),behavior:smooth?'smooth':'instant'});
+  const paint=()=>{ pic.querySelector('.vlabel').textContent=LABEL[all[cur+1].dataset.view]; pic.querySelectorAll('.dots i').forEach((d,k)=>d.classList.toggle('on',k===cur)); };
+  const settle=()=>{
+    const i=Math.round(tr.scrollLeft/w());
+    if(i===0){ cur=n-1; go(cur); } else if(i===n+1){ cur=0; go(cur); } else cur=i-1;
+    paint();
+  };
+  let t; tr.addEventListener('scroll',()=>{ clearTimeout(t); t=setTimeout(settle,110); },{passive:true});
+  pic.querySelector('.sw.l').onclick=e=>{ e.stopPropagation(); tr.scrollBy({left:-w(),behavior:'smooth'}); };
+  pic.querySelector('.sw.r').onclick=e=>{ e.stopPropagation(); tr.scrollBy({left:w(),behavior:'smooth'}); };
+  new ResizeObserver(()=>go(cur)).observe(tr);
+  go(cur); paint();
+}
 function closeMenus(){ document.querySelectorAll('.menu').forEach(m=>m.hidden=true); document.querySelectorAll('[data-m]').forEach(b=>b.setAttribute('aria-expanded','false')); }
 document.addEventListener('click',e=>{ if(!e.target.closest('.menu')) closeMenus(); });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeMenus(); });
 function render(){
-  if(!items.length){ $('list').innerHTML='<div class="empty" style="grid-column:1/-1">No influencers yet. Add your first one on the left.</div>'; return; }
+  $('libCount').textContent=items.length||'';
+  if(!items.length){ $('list').innerHTML='<div class="empty" style="grid-column:1/-1">No influencers yet.<br><button class="btn primary" type="button" id="firstInf" style="margin-top:12px">Add your first influencer</button></div>'; $('firstInf').onclick=()=>setView('add'); return; }
   const nViews=p=>Object.keys(p.views||{}).length;
   const seedBadge=p=>p.seedance==='ok'?`<span class="badge ok">${ic('check')} Seedance</span>`:p.seedance==='blocked'?`<span class="badge no">${ic('x')} Seedance</span>`:'';
   $('list').innerHTML=items.map(p=>`
-    <div class="card ${p.id===editing?'sel':''}">
-      <div class="pic" data-e="${p.id}" title="Edit ${esc(p.name)}">${p.image?`<img src="${p.image}" alt="">`:'<svg class=ic aria-hidden=true><use href=#i-user></use></svg>'}
+    <div class="card ${p.id===editing?'sel':''}" data-confirm-anchor>
+      <div class="pic" data-c="${p.id}">${p.image?slidesHTML(p):`<span class="nopic" data-e="${p.id}" title="Edit ${esc(p.name)}"><svg class=ic aria-hidden=true><use href=#i-user></use></svg></span>`}
         <div class="cap"><b>${esc(p.name)}</b>${seedBadge(p)}</div></div>
       <div class="info">
-        ${p.image?`<div class="views" title="Body profiles: video models use them to keep this person the same from every side">${VIEWS.map(([v,l])=>p.views?.[v]?`<a href="${p.views[v]}" target="_blank" rel="noopener"><img src="${p.views[v]}" alt="${l}" loading="lazy"><i>${l}</i></a>`:`<span><i>${l}</i></span>`).join('')}</div>
-        <div class="vmsg" id="vmsg-${p.id}">${busy[p.id]||(nViews(p)===VIEWS.length?'':nViews(p)?nViews(p)+' of 6 body profiles. Make the rest from the menu.':'No body profiles yet. Make them from the menu.')}</div>`:''}
+        ${p.image?`<div class="vmsg" id="vmsg-${p.id}">${busy[p.id]||(nViews(p)===VIEWS.length?'':nViews(p)?nViews(p)+' of 6 poses. Make the rest from the menu.':'No poses yet. Press Pose to make them.')}</div>`:''}
         ${p.desc?`<div class="desc">${esc(p.desc)}</div>`:''}
         <div class="actions">
-          ${p.image?`<button class="btn primary" data-a="${p.id}">${ic('clapper')} Animate</button>`:`<button class="btn primary" data-e="${p.id}">${ic('image')} Add a picture</button>`}
+          ${!p.image?`<button class="btn primary" data-e="${p.id}">${ic('image')} Add a picture</button>`
+            // no poses (body profiles) yet: making them comes first; once there are poses the button is Animate
+            :!nViews(p)?`<button class="btn primary" data-v="${p.id}" ${busy[p.id]?'disabled':''} title="Make the poses: front, sides, back, half and full body">${ic(busy[p.id]?'hourglass':'person')} ${busy[p.id]?'Posing…':'Pose'}</button>`
+            :`<button class="btn primary" data-a="${p.id}">${ic('clapper')} Animate</button>`}
           <button class="btn more" data-m="${p.id}" aria-label="More for ${esc(p.name)}" aria-haspopup="menu" aria-expanded="false">${ic('dots')}</button>
           <div class="menu" role="menu" id="menu-${p.id}" hidden>
             <a role="menuitem" href="/ugc?inf=${p.id}">${ic('box')} Use in UGC</a>
+            ${p.image&&!nViews(p)?`<button role="menuitem" data-a="${p.id}">${ic('clapper')} Animate<span class="sub">no poses yet</span></button>`:''}
             ${p.image?`<button role="menuitem" data-v="${p.id}" ${busy[p.id]?'disabled':''}>${ic('person')} ${nViews(p)===VIEWS.length?'Redo':'Make'} body profiles<span class="sub">${nViews(p)}/6</span></button>
             <button role="menuitem" data-t="${p.id}">${ic('zap')} Test with Seedance<span class="sub">${p.seedance==='ok'?'accepts':p.seedance==='blocked'?'blocks':'untested'}</span></button>`:''}
             <button role="menuitem" data-e="${p.id}">${ic('pen')} Edit<span class="sub">seed ${p.seed}</span></button>
@@ -353,6 +590,7 @@ function render(){
   });
   $('list').querySelectorAll('.menu').forEach(m=>m.addEventListener('click',()=>closeMenus()));
   $('list').querySelectorAll('[data-e]').forEach(b=>b.onclick=()=>edit(items.find(x=>x.id===b.dataset.e)));
+  $('list').querySelectorAll('.pic[data-c]').forEach(initSlides);
   $('list').querySelectorAll('[data-t]').forEach(b=>b.onclick=async()=>{
     const p=items.find(x=>x.id===b.dataset.t);
     if(!(await S.confirmSpend({title:'Test "'+p.name+'" with Seedance?',total:0.15,rows:[['Model','Seedance 2.0 Mini, 480p'],['If rejected','nothing is charged'],['If accepted','a real 4 s test clip']],note:'The total is what you pay only if Seedance accepts the picture.'}))) return;

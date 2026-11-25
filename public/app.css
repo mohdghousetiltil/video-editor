@@ -74,14 +74,14 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:200;op
   .tabbar a:hover{border:0;color:var(--text)}
 
   /* centre orb */
-  .tb-more{display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:0;padding:0 2px 6px;cursor:pointer;
+  .tb-more{display:flex;flex-direction:column;align-items:center;gap:8px;background:none;border:0;padding:0 2px 6px;cursor:pointer;
     color:var(--mute);font-family:var(--font-ui);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;touch-action:manipulation}
   .tb-more small{font:inherit;line-height:1}
-  .tb-orb{width:56px;height:56px;margin-top:-30px;border-radius:50%;display:grid;place-items:center;color:#04121a;
+  .tb-orb{--orb:clamp(46px,14.5vw,64px);width:var(--orb);height:var(--orb);margin-top:calc(var(--orb) * -.54);flex:none;border-radius:50%;display:grid;place-items:center;color:#04121a;
     background:radial-gradient(circle at 30% 25%,#9ff7ff,var(--acc) 45%,var(--violet) 110%);
     border:3px solid #060811;box-shadow:0 0 0 1px rgba(0,229,255,.55),0 0 22px -2px rgba(0,229,255,.75),0 8px 18px -6px rgba(0,0,0,.8);
     transition:transform .25s var(--ease),box-shadow .2s,background .2s}
-  .tb-orb svg{width:26px;height:26px;stroke-width:2.4;transition:transform .25s var(--ease)}
+  .tb-orb svg{width:calc(var(--orb) * .46);height:calc(var(--orb) * .46);stroke-width:2.4;transition:transform .25s var(--ease)}
   .tb-more:active .tb-orb{transform:scale(.93)}
   .tb-more.on{color:var(--acc)}
   .tb-more.on .tb-orb{box-shadow:0 0 0 2px var(--acc),0 0 26px 0 rgba(0,229,255,.85),0 8px 18px -6px rgba(0,0,0,.8)}
@@ -714,3 +714,24 @@ textarea{line-height:1.55;resize:vertical;overflow-y:auto}
 .pagehead,.pagehead *,.pagehead *::before,.pagehead *::after{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
 /* while the page title is held for the hidden gesture, nothing on the page can be selected */
 html.hold-gesture,html.hold-gesture *{-webkit-user-select:none !important;user-select:none !important;-webkit-touch-callout:none !important}
+
+/* No visible scrollbars anywhere (the pink bar on the right): pages still scroll with touch, wheel, keys and trackpad. */
+*{scrollbar-width:none !important}
+*::-webkit-scrollbar{display:none !important;width:0 !important;height:0 !important}
+
+/* Cost confirmations and their warning, in the app's HUD type (they used plain body text) */
+.inline-confirm{position:relative;border:1px solid var(--line2);background:linear-gradient(180deg,rgba(16,20,42,.96),rgba(9,12,25,.98));padding:14px 16px;
+  clip-path:polygon(0 0,calc(100% - var(--cut)) 0,100% var(--cut),100% 100%,var(--cut) 100%,0 calc(100% - var(--cut)))}
+.inline-confirm::before{content:"";position:absolute;top:0;left:0;width:36px;height:2px;background:var(--acc);box-shadow:0 0 10px var(--acc)}
+.inline-confirm h3{display:flex;align-items:center;gap:9px;font:700 12px/1.3 var(--font-hud);letter-spacing:.16em;color:var(--acc2);margin:0 0 12px}
+.inline-confirm h3::before{content:"";width:7px;height:7px;flex:none;background:var(--pink);box-shadow:0 0 8px var(--pink);transform:rotate(45deg)}
+.inline-confirm .cf-rows{gap:6px 16px;font-size:14px}
+.inline-confirm dt{font:600 11.5px/1.5 var(--font-ui);letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
+.inline-confirm dd{font:600 14px/1.4 var(--font-ui);letter-spacing:.03em;color:var(--text);min-width:0;overflow-wrap:anywhere}
+.inline-confirm .cf-total{font:700 17px/1.2 var(--font-hud);letter-spacing:.06em;color:var(--warn);text-shadow:0 0 10px rgba(255,210,63,.35)}
+.inline-confirm .sd-note{font:500 13px/1.45 var(--font-ui);letter-spacing:.02em;color:var(--mute)}
+.cf-warn{position:relative;margin:12px 0;padding:10px 12px 10px 16px;border:0;background:rgba(255,210,63,.07);
+  font:500 13.5px/1.45 var(--font-ui);letter-spacing:.02em;color:var(--text);
+  clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,8px 100%,0 calc(100% - 8px))}
+.cf-warn::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--warn);box-shadow:0 0 10px var(--warn)}
+.cf-warn b{font:700 11.5px/1 var(--font-hud);letter-spacing:.16em;text-transform:uppercase;color:var(--warn);margin-right:4px}
