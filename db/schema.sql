@@ -69,7 +69,7 @@ CREATE TABLE user_settings (
   tz                  text NOT NULL DEFAULT 'Australia/Sydney',
   confirm_under_usd   numeric(6,2) NOT NULL DEFAULT 0 CHECK (confirm_under_usd BETWEEN 0 AND 5),
   keep_days           integer NOT NULL DEFAULT 14   CHECK (keep_days BETWEEN 1 AND 365),
-  keep_shorts_days    integer NOT NULL DEFAULT 90   CHECK (keep_shorts_days BETWEEN 1 AND 3650),
+  keep_shorts_days    integer NOT NULL DEFAULT 60   CHECK (keep_shorts_days BETWEEN 1 AND 3650),
   easter_eggs         boolean NOT NULL DEFAULT true,
   units               ui_units NOT NULL DEFAULT 'credits',
   hindi_mode          boolean NOT NULL DEFAULT false,
@@ -235,6 +235,16 @@ CREATE TABLE influencers (
   UNIQUE (owner_id, name)
 );
 CREATE TRIGGER trg_influencers_updated BEFORE UPDATE ON influencers FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- body profiles ("poses"): up to six generated pictures of the same character; the main picture stays on influencers
+CREATE TABLE influencer_views (
+  influencer_id  text NOT NULL REFERENCES influencers(id) ON DELETE CASCADE,
+  view           text NOT NULL CHECK (view IN ('front','left','right','back','half','full')),
+  asset_id       uuid NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+  model          text,                            -- the picture model that made it
+  created_at     timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (influencer_id, view)
+);
 
 -- ---------------------------------------------------------------------------------------------------------------------
 --  Stories (script -> scenes -> clips -> final video)

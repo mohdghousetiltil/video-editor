@@ -41,6 +41,13 @@ docker exec videostudio-db pg_dump -U postgres -Fc videostudio > videostudio.dum
 Get-Content videostudio.dump -Encoding Byte -ReadCount 0 | docker exec -i videostudio-db pg_restore -U postgres -d videostudio --clean
 ```
 
+## Update a database you already created
+```powershell
+psql -U postgres -d videostudio -v ON_ERROR_STOP=1 -f db\update_001.sql
+```
+With Docker: `Get-Content db\update_001.sql | docker exec -i videostudio-db psql -U postgres -d videostudio -v ON_ERROR_STOP=1`.
+Don't run `schema.sql` again on an existing database: it stops with "already exists".
+
 ## Notes
 - Money is US dollars; the app shows it as credits (1 credit = $1).
 - Files (videos, pictures, sound) stay on disk or in object storage; `assets` holds the path and details.

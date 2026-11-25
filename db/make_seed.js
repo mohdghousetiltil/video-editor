@@ -23,7 +23,7 @@ w("INSERT INTO user_settings (owner_id) VALUES ('00000000-0000-0000-0000-0000000
 w("INSERT INTO user_look (owner_id, look_id) VALUES ('00000000-0000-0000-0000-000000000001', NULL) ON CONFLICT DO NOTHING;");
 w("INSERT INTO user_radio (owner_id) VALUES ('00000000-0000-0000-0000-000000000001') ON CONFLICT DO NOTHING;");
 w("INSERT INTO director_budgets (owner_id, page, amount_usd) VALUES");
-w(["clip 0.50", "story 2.00", "ugc 0.50", "poses 0.15", "motion 0.50"].map((x) => { const [p, a] = x.split(" "); return `  ('00000000-0000-0000-0000-000000000001', '${p}', ${a})`; }).join(",\n") + "\nON CONFLICT DO NOTHING;");
+w(["clip 0.50", "story 2.00", "ugc 0.80", "poses 0.15", "motion 1.00"].map((x) => { const [p, a] = x.split(" "); return `  ('00000000-0000-0000-0000-000000000001', '${p}', ${a})`; }).join(",\n") + "\nON CONFLICT DO NOTHING;");
 w();
 
 w("INSERT INTO providers (id, name, external, job_prefix) VALUES");
