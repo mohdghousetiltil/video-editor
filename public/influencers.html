@@ -311,7 +311,16 @@ async function makeProfiles(p,fresh){
   busy[p.id]='Making '+views.length+' profiles, about 20-60 seconds…'; render();
   try{
     const r=await fetch('/api/influencers/'+p.id+'/profiles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({views})});
-    const j=await r.json(); if(!r.ok) throw new Error(j.error||'Failed');
+    let j=await r.json(); if(!r.ok) throw new Error(j.error||'Failed');
+    // the server makes them in the background; ask every few seconds until it's finished
+    const until=Date.now()+6*60000;
+    while(j.running){
+      if(Date.now()>until) throw new Error('Still not finished after 6 minutes. Reload the page in a bit to see what was made.');
+      await new Promise(ok=>setTimeout(ok,4000));
+      try{ const q=await fetch('/api/influencers/'+p.id+'/profiles'); if(q.ok) j=await q.json(); }catch{}
+    }
+    if(j.none) throw new Error('The server restarted while making them. Press the button again.');
+    if(j.error) throw new Error(j.error);
     delete busy[p.id]; await load();
     const m=$('vmsg-'+p.id); if(m) m.textContent=(j.failed?.length?'Not made: '+j.failed.map(f=>f.view).join(', ')+' (press the button again). ':'Done. ')+'Cost: '+S.money(j.cost||0);
     window.dispatchEvent(new Event('spend-changed'));

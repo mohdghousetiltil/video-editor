@@ -40,6 +40,7 @@ const writeInf = (a) => { fs.mkdirSync(IMG, { recursive: true }); fs.writeFileSy
 const imgFile = (id) => ["jpg", "png", "webp"].map((e) => path.join(IMG, `${id}.${e}`)).find((f) => fs.existsSync(f));
 // Body profiles of an influencer (front, left, right, back, half body, full body), generated from the main picture: data/img/<id>.views/<view>.<ext>
 const INF_VIEWS = ["front", "left", "right", "back", "half", "full"];
+const profileTasks = new Map(); // influencer id -> body-profile task running in the background (see POST …/profiles)
 const viewDir = (id) => path.join(IMG, `${id}.views`);
 const viewFile = (id, v) => INF_VIEWS.includes(v) ? ["jpg", "png", "webp"].map((e) => path.join(viewDir(id), `${v}.${e}`)).find((f) => fs.existsSync(f)) : undefined;
 
@@ -766,12 +767,25 @@ const server = http.createServer(async (req, res) => {
         fs.writeFileSync(path.join(viewDir(p.id), `${v}.${ext}`), Buffer.from(d.b64_json, "base64"));
         return j.usage?.cost || 0;
       };
-      const results = await Promise.allSettled(want.map(one));
-      const cost = results.reduce((a, r) => a + (r.status === "fulfilled" ? r.value : 0), 0);
-      if (cost) logSpend("Influencers", cost, model);
-      const failed = want.map((v, i) => results[i].status === "rejected" ? { view: v, error: String(results[i].reason?.message || results[i].reason).slice(0, 200) } : null).filter(Boolean);
-      if (failed.length === want.length) return send(res, 502, { error: "No profile could be made: " + failed[0].error, failed });
-      return send(res, 200, { ...pub(p), cost, failed });
+      // Runs in the background: six pictures can take over a minute, and a request held open that long gets
+      // dropped between Cloudflare and Railway (the page saw a bare 502). The page polls GET …/profiles instead.
+      if (profileTasks.get(p.id)?.running) return send(res, 202, { running: true, views: profileTasks.get(p.id).views });
+      const task = { running: true, views: want, started: Date.now() };
+      profileTasks.set(p.id, task);
+      (async () => {
+        const results = await Promise.allSettled(want.map((v) => Promise.race([one(v),
+          new Promise((_, rej) => setTimeout(() => rej(new Error("timed out after 3 minutes")), 180000))])));
+        const cost = results.reduce((a, r) => a + (r.status === "fulfilled" ? r.value : 0), 0);
+        if (cost) logSpend("Influencers", cost, model);
+        const failed = want.map((v, i) => results[i].status === "rejected" ? { view: v, error: String(results[i].reason?.message || results[i].reason).slice(0, 200) } : null).filter(Boolean);
+        Object.assign(task, { running: false, cost, failed, error: failed.length === want.length ? "No profile could be made: " + failed[0].error : null });
+      })().catch((e) => Object.assign(task, { running: false, cost: 0, failed: [], error: String(e.message || e).slice(0, 200) }));
+      return send(res, 202, { running: true, views: want });
+    }
+    if (req.method === "GET" && (pm = url.pathname.match(/^\/api\/influencers\/([\w-]+)\/profiles$/))) {
+      const t = profileTasks.get(pm[1]);
+      if (!t) return send(res, 200, { running: false, none: true });
+      return send(res, 200, { running: t.running, views: t.views, cost: t.cost || 0, failed: t.failed || [], error: t.error || null });
     }
     let vm;
     if (req.method === "GET" && (vm = url.pathname.match(/^\/api\/influencers\/([\w-]+)\/view\/(\w+)$/))) {
