@@ -4,6 +4,7 @@ Files
 - `schema.sql`     tables, functions, triggers and views (22 tables)
 - `seed.sql`       the single local user, the 19 looks, the model catalog and routes, the radio stations (made by `node db/make_seed.js`)
 - `make_seed.js`   rebuilds `seed.sql` from the app's own code
+- `render_jobs.sql` the render job queue (standalone; the app creates it itself when `DATABASE_URL` is set, see the main README, *Scaling renders*)
 
 ## Create it on your PC (Windows, PowerShell)
 
