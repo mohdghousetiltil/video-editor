@@ -29,26 +29,44 @@
   .row .mt{color:var(--mute);font-size:13px;margin-top:4px;overflow-wrap:anywhere}
   .row .mt .why{display:block}
   .row .ac{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto}
-  .row .ac .btn{flex:1 1 auto;display:inline-flex;align-items:center;justify-content:center;gap:4px;padding:7px 8px;font-size:13px}
+  .row .ac{flex-wrap:nowrap;align-items:stretch}
+  .row .ac .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;font-size:13px}
+  .row .ac .dl{flex:1;min-width:0;padding:8px 4px !important;font-size:12px !important;letter-spacing:.03em !important;white-space:nowrap}
+  .row .ac .del{flex:0 0 40px;width:40px;padding:0;margin-left:auto}
   .st{display:inline-block;padding:1px 8px;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;border:1px solid var(--line2)}
   .st.completed{color:var(--ok);border-color:rgba(57,255,156,.45)}.st.failed{color:var(--err);border-color:rgba(255,77,109,.5)}.st.running,.st.pending,.st.in_progress{color:var(--acc)}
   .row .enh-host summary{font-size:12px}
   .playc{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:56px;height:56px;border-radius:50%;display:grid;place-items:center;padding:0;cursor:pointer;
     background:rgba(5,6,13,.66);border:2px solid var(--acc);color:var(--acc);box-shadow:0 0 18px rgba(0,229,255,.45);font-size:24px}
   .playc:hover,.playc:focus-visible{background:rgba(0,229,255,.25);color:#fff}
-  .row .ti button{all:unset;cursor:pointer;display:inline;overflow-wrap:anywhere}
+  .row .ti button{all:unset;cursor:pointer;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
   .row .ti button:hover{color:var(--acc);text-decoration:underline}
   .row .ti button:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
   .det{width:min(560px,94vw);max-height:90dvh;overflow:auto}
   .det .dth{position:relative;background:#000;display:grid;place-items:center}
   .det .dth img{display:block;max-width:100%;max-height:60dvh;object-fit:contain}
+  .det .sd-head h2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-width:0}
+  .det .da{margin-bottom:8px}
+  .det .sc{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:8px 0 12px}
+  .det .sc figure{margin:0;display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mute)}
+  .det .sc .th{position:relative;aspect-ratio:3/4;background:#000 center/contain no-repeat}
+  .det .sc .playc{width:40px;height:40px;font-size:17px}
+  .det .sc .btn{display:flex;align-items:center;justify-content:center;min-height:36px;padding:4px !important}
+  .det .sch{margin:12px 0 0;font-size:13px;color:var(--mute);text-transform:uppercase;letter-spacing:.08em}
+  #findBtn{all:unset;cursor:pointer;display:flex;align-items:center;gap:8px;width:100%;min-height:32px}
+  #findBtn:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+  #findBtn .n{color:var(--acc);font-size:11px;letter-spacing:.08em}
+  #findBtn svg{margin-left:auto;transform:rotate(90deg);transition:transform .2s}
+  #findBtn[aria-expanded="false"] svg{transform:rotate(0)}
+  #find.shut{padding-bottom:8px}#find.shut h2{margin-bottom:0}#find.shut .filters{display:none}
   .det dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 12px;margin:12px 0;font-size:14px}
   .det dt{color:var(--mute)}.det dd{margin:0;overflow-wrap:anywhere;white-space:pre-wrap}
   .det .da{display:flex;gap:8px;flex-wrap:wrap}
   @media(min-width:701px){.row .th{aspect-ratio:auto;height:240px;background-size:contain}}
   @media(max-width:700px){.rows{gap:8px}.row{padding:6px;gap:6px}.row .th{aspect-ratio:3/4}.row .ti{font-size:13px}.row .mt{font-size:11px;line-height:1.35}
+    .row .ac .dl{font-size:10px !important;letter-spacing:0 !important;gap:3px}.row .ac .dl svg{width:14px;height:14px;flex:none}
     .row .mt code,.row .mt .more{display:none}.row .mt .why{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-    .row .ac{flex-wrap:nowrap;gap:4px}.row .ac .btn{flex:1;min-width:0;padding:7px 0}.row .ac .btn .lbl{display:none}.row .enh-host summary{font-size:11px}}
+    }
   .sum{color:var(--mute);font-size:13px;margin:0 0 10px}
   .none{grid-column:1/-1;color:var(--mute);padding:20px;text-align:center}
 </style>
@@ -59,9 +77,9 @@
 </head>
 <body data-title="History" data-sub="Everything you made.">
 <div class="wrap">
-  <div class="panel">
-    <h2>Find</h2>
-    <div class="filters">
+  <div class="panel shut" id="find">
+    <h2><button type="button" id="findBtn" aria-expanded="false" aria-controls="filters">Find <span class="n" id="findN"></span><svg class=ic aria-hidden=true><use href=#i-chevron></use></svg></button></h2>
+    <div class="filters" id="filters">
       <label>Search<input id="q" type="search" placeholder="Title, model or job ID"></label>
       <label>Kind<select id="kind"><option value="">All</option><option value="clip">Single clips</option><option value="scene">Story scenes</option><option value="story">Stories</option><option value="short">Shorts</option><option value="ugc">UGC</option><option value="motion">Poses &amp; motion</option><option value="influencer">Influencers</option></select></label>
       <label>Status<select id="status"><option value="">All</option><option value="running">Running</option><option value="completed">Done</option><option value="failed">Failed</option></select></label>
@@ -72,6 +90,9 @@
   <dialog class="spend-dlg det" id="detDlg" aria-labelledby="detTitle">
     <div class="sd-head"><h2 id="detTitle">Details</h2><button class="btn sd-x" data-x type="button" aria-label="Close"><svg class=ic aria-hidden=true><use href=#i-x></use></svg></button></div>
     <div id="detBody"></div>
+    <div id="detScenes"></div>
+    <div class="da" id="detRedo"></div>
+    <div id="detEnh"></div>
   </dialog>
   <div class="panel">
     <h2>Results</h2>
@@ -84,18 +105,30 @@ const $=id=>document.getElementById(id), S=window.studio;
 const KIND={clip:'Single clip',scene:'Story scene',story:'Story',short:'Short',ugc:'UGC',motion:'Pose / motion',influencer:'Influencer'};
 const p=new URLSearchParams(location.search);
 ['q','kind','status','from','to'].forEach(k=>{ if(p.get(k)) $(k).value=p.get(k); });
-let items=[], MODELS={}, t=null;
+// Find starts folded; it stays as you left it (in this browser), and the header says how many filters are on
+function setFind(open){ $('find').classList.toggle('shut',!open); $('findBtn').setAttribute('aria-expanded',String(open)); }
+try{ setFind(localStorage.getItem('vd0.historyFind')==='1'); }catch{}
+$('findBtn').onclick=()=>{ const open=$('find').classList.contains('shut'); setFind(open); try{ localStorage.setItem('vd0.historyFind',open?'1':'0'); }catch{} };
+let items=[], MODELS={}, t=null, all=new Map(), folded=0;
+// the clip ids a finished story was made from (kept in its record, for Redo)
+const sceneIds=x=>x.kind==='story'&&x.status==='completed'&&Array.isArray(x.retry&&x.retry.body&&x.retry.body.ids)?x.retry.body.ids:[];
 S.models().then(({map})=>{MODELS=map;});
 async function load(){
   const qs=new URLSearchParams(); ['q','kind','status','from','to'].forEach(k=>{ if($(k).value) qs.set(k,$(k).value); });
   history.replaceState(null,'',location.pathname+(qs.toString()?'?'+qs:''));
-  try{ items=(await (await fetch('/api/history?'+qs)).json()).items||[]; }catch{ items=[]; }
+  const on=[...qs.keys()].length; $('findN').textContent=on?`· ${on} filter${on>1?'s':''} on`:'';
+  const get=async u=>{ try{ return (await (await fetch(u)).json()).items||[]; }catch{ return []; } };
+  const [found,every]=await Promise.all([get('/api/history?'+qs),get('/api/history?limit=1000')]);
+  all=new Map(every.map(x=>[x.id,x]));
+  // a scene already inside a finished story isn't listed on its own (open the story's title to see it);
+  // picking "Story scenes" in Kind still lists them all
+  const inStory=new Set($('kind').value==='scene'?[]:every.flatMap(sceneIds));
+  items=found.filter(x=>!inStory.has(x.id)); folded=found.length-items.length;
   render();
 }
 function render(){
   const total=items.reduce((a,x)=>a+(x.cost||0),0);
-  $('sum').textContent=items.length?`${items.length} item${items.length>1?'s':''} · ${S.money(total)} recorded`:'';
-  setTimeout(()=>document.querySelectorAll('.enh-host').forEach(h=>S.mountEnhance&&S.mountEnhance(h,{src:h.dataset.src})));
+  $('sum').textContent=items.length?`${items.length} item${items.length>1?'s':''} · ${S.money(total)} recorded`+(folded?` · ${folded} story scene${folded>1?'s':''} inside their stories`:''):'';
   $('rows').innerHTML=items.length?items.map(x=>{
     const done=x.status==='completed', run=/^(pending|in_progress|running|queued)$/.test(x.status);
     return `<div class="row" data-id="${S.esc(x.id)}">
@@ -104,10 +137,9 @@ function render(){
         <div class="mt"><span class="st ${S.esc(x.status)}">${S.esc(run?'running':x.status==='completed'?'done':x.status)}</span> · ${KIND[x.kind]||S.esc(x.kind)}<span class="more">${x.model?' · '+S.esc((MODELS[x.model]||{}).name||x.model):''}</span>${x.duration?' · '+x.duration+' s':''}${x.res?' · '+S.esc(x.res):''}${x.cost!=null?' · '+S.money(x.cost,3):''}<span class="more">${x.provider&&x.provider!=='openrouter'?' · via '+S.esc(x.provider):''}</span></div>
         <div class="mt">${new Date(x.t).toLocaleString([],{dateStyle:'medium',timeStyle:'short'})} <code>· ${S.esc(x.id)}</code>${x.error?`<span class="why" style="color:var(--err);margin-top:2px">${S.esc(x.error.slice(0,200))}</span>`:''}</div></div>
       <div class="ac">
-        ${done&&x.url?`<a class="btn" href="${S.esc(x.url)}${x.kind==='short'?'?dl=1':'?download=1'}" aria-label="Download"><svg class=ic aria-hidden=true><use href=#i-download></use></svg><span class="lbl"> Download</span></a>`:''}
-        ${x.retry&&!run?`<button class="btn" data-r type="button" aria-label="Retry"><svg class=ic aria-hidden=true><use href=#i-refresh></use></svg><span class="lbl"> Retry</span></button>`:''}
-        ${!run?`<button class="btn danger" data-d type="button" aria-label="Delete ${S.esc(x.title||x.id)}"><svg class=ic aria-hidden=true><use href=#i-x></use></svg><span class="lbl"> Delete</span></button>`:''}
-      </div>${done&&x.url?`<div class="enh-host" data-src="${S.esc(x.url)}"></div>`:''}</div>`;}).join(''):'<div class="none">Nothing here yet. Everything you make on any page shows up here.</div>';
+        ${done&&x.url?`<a class="btn primary dl" href="${S.esc(x.url)}${x.kind==='short'?'?dl=1':'?download=1'}"><svg class=ic aria-hidden=true><use href=#i-download></use></svg> Download</a>`:''}
+        ${!run?`<button class="btn danger del" data-d type="button" aria-label="Delete ${S.esc(x.title||x.id)}" title="Delete"><svg class=ic aria-hidden=true><use href=#i-x></use></svg></button>`:''}
+      </div></div>`;}).join(''):'<div class="none">Nothing here yet. Everything you make on any page shows up here.</div>';
 }
 // ---------- details: the thumbnail and everything recorded about one item (a Short adds its caption and hashtags) ----------
 let detId=null;
@@ -125,11 +157,22 @@ function details(x){
       `<dl>${rows.filter(r=>r[1]).map(r=>`<dt>${r[0]}</dt><dd>${S.esc(String(r[1]))}</dd>`).join('')}</dl>`+
       (done&&x.url?`<div class="da"><a class="btn primary" href="${S.esc(dl(x.url))}"><svg class=ic aria-hidden=true><use href=#i-download></use></svg> Video</a>${x.thumb?`<a class="btn" href="${S.esc(x.thumb+(short?'?dl=1':''))}" download="thumbnail-${S.esc(x.id)}.jpg"><svg class=ic aria-hidden=true><use href=#i-image></use></svg> Thumbnail</a>`:''}</div>`:'');
   };
-  $('detTitle').textContent=x.title||x.id; paint(); $('detDlg').showModal();
+  $('detTitle').textContent=x.title||x.id; paint();
+  const ids=sceneIds(x);
+  $('detScenes').innerHTML=ids.length?`<p class="sch">Scenes (${ids.length})</p><div class="sc">${ids.map((id,i)=>{
+    const c=all.get(id)||{}, url=c.url||'/api/video/'+encodeURIComponent(id), th=c.thumb||url+'/thumb.jpg';
+    return `<figure><div class="th" style="background-image:url('${S.esc(th)}')"><button class="playc" type="button" data-play="${S.esc(url)}" data-name="Scene ${i+1}" aria-label="Play scene ${i+1}"><svg class=ic aria-hidden=true><use href=#i-play></use></svg></button></div>
+      <figcaption>Scene ${i+1}</figcaption><a class="btn" href="${S.esc(url)}?download=1" aria-label="Download scene ${i+1}"><svg class=ic aria-hidden=true><use href=#i-download></use></svg></a></figure>`;}).join('')}</div>`:'';
+  const run=/^(pending|in_progress|running|queued)$/.test(x.status);
+  $('detRedo').innerHTML=x.retry&&!run?'<button class="btn" type="button" data-r><svg class=ic aria-hidden=true><use href=#i-refresh></use></svg> Redo</button>':'';
+  // kept apart from the part above, which is painted again when a Short's caption arrives
+  $('detEnh').innerHTML=''; if(done&&x.url&&S.mountEnhance){ const h=document.createElement('div'); h.className='enh-host'; $('detEnh').append(h); S.mountEnhance(h,{src:x.url}); }
+  $('detDlg').showModal(); $('detDlg').scrollTop=0;
   if(short) fetch('/api/shorts/'+x.id.replace(/^short-/,'')).then(r=>r.ok?r.json():null).then(m=>{ if(m&&detId===x.id) paint(m); }).catch(()=>{});
 }
 $('detDlg').addEventListener('click',e=>{
-  const pl=e.target.closest('[data-play]'); if(pl){ const title=$('detTitle').textContent; $('detDlg').close(); S.playVideo(pl.dataset.play,title); return; }
+  const pl=e.target.closest('[data-play]'); if(pl){ const title=pl.dataset.name?$('detTitle').textContent+' · '+pl.dataset.name:$('detTitle').textContent; $('detDlg').close(); S.playVideo(pl.dataset.play,title); return; }
+  if(e.target.closest('[data-r]')){ const x=items.find(i=>i.id===detId); $('detDlg').close(); if(x) redo(x); return; }
   if(e.target.closest('[data-x]')||e.target===$('detDlg')) $('detDlg').close();
 });
 $('rows').addEventListener('click',async e=>{
@@ -144,18 +187,19 @@ $('rows').addEventListener('click',async e=>{
     if(x.kind==='short') await fetch('/api/history/'+encodeURIComponent(x.id),{method:'DELETE'}).catch(()=>{});
     toast('Deleted','ok'); return load();
   }
-  if(e.target.closest('[data-r]')){
+});
+// Redo (in the details view): the same request again, after a price confirmation
+async function redo(x){
     const b=x.retry.body||{}, m=MODELS[b.model];
     const est=m?S.costLine(m,{res:b.resolution,dur:b.duration,audio:b.generate_audio!==false}).total:(x.cost||0);
-    const ok=await S.confirmSpend({title:'Retry "'+(x.title||x.id).slice(0,60)+'"?',total:est,rows:[['Kind',KIND[x.kind]||x.kind],['Model',m?m.name:x.model||''],['Length',b.duration?b.duration+' s':''],['Resolution',b.resolution||'']],
+    const ok=await S.confirmSpend({title:'Redo "'+(x.title||x.id).slice(0,60)+'"?',total:est,rows:[['Kind',KIND[x.kind]||x.kind],['Model',m?m.name:x.model||''],['Length',b.duration?b.duration+' s':''],['Resolution',b.resolution||'']],
       note:x.kind==='short'?'Retries the render with the analysis already done; only the voice is charged again.':'Sends the same request again as a new job.'});
     if(!ok) return;
     const r=await fetch(x.retry.endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
     const j=await r.json().catch(()=>({}));
-    if(!r.ok) return toast(j.error||'Retry failed','err');
+    if(!r.ok) return toast(j.error||'Redo failed','err');
     toast('Started again'+(j.id?': '+j.id:''),'ok'); window.dispatchEvent(new Event('spend-changed')); setTimeout(load,800);
-  }
-});
+}
 ['kind','status','from','to'].forEach(k=>$(k).addEventListener('change',load));
 $('q').addEventListener('input',()=>{clearTimeout(t);t=setTimeout(load,250);});
 load(); setInterval(()=>{ if(!document.hidden&&items.some(x=>/^(pending|in_progress|running)$/.test(x.status))) load(); },8000);

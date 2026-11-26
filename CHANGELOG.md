@@ -3,6 +3,12 @@
 The version lives in `public/app.js` (`VERSION`). Each release raises the last number by one and gets a line here.
 v1.0 is kept for the first public release.
 
+## 0.0.014600
+- History cards keep just a large Download and a small ✕ to delete. Redo, Enhance and Add background music moved into the
+  details view (tap the title). Titles take two lines at most. The Find filters fold away (tap Find); the header shows how many are on.
+- Once a full story is made, its scene clips are no longer listed on their own: tap the story's title to play or
+  download them. Choosing "Story scenes" under Kind still lists them all.
+
 ## 0.0.014599
 - History: Play sits in the middle of each video's picture, and the whole thumbnail is shown, not a crop. Tapping a
   title opens its details: the large thumbnail, model, cost, date, ID, prompt (and for Shorts the description,
