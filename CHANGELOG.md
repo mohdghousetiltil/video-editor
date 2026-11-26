@@ -3,6 +3,11 @@
 The version lives in `public/app.js` (`VERSION`). Each release raises the last number by one and gets a line here.
 v1.0 is kept for the first public release.
 
+## 0.0.014595
+- Face swap: "Looking for people in the video" shows a progress bar and roughly how long is left, measured from
+  this device's own speed. Getting the face detector ready (10-30 s the first time, a few seconds after) is its own
+  step, so the estimate stays honest; a typical video then takes a few seconds.
+
 ## 0.0.014594
 - Shorts cameo: face, hands and speech now match. The influencer's lips are synced to their own voice line
   (fal.ai Sync Lipsync 2.0, ~$0.05 a second), and the AI's direction is timed to the words: each expression and

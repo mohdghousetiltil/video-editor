@@ -82,10 +82,18 @@
     return { t, frame: Math.max(1, Math.round(t * fps) + 1), eyes: best.eyes };
   }
 
-  // look through the video: about 24 evenly spaced frames, each with its faces. onStep(done, total) for a progress line.
+  // look through the video: about 24 evenly spaced frames, each with its faces. onStep(done, total, secondsLeft, phase)
+  // for a progress line: phase "load" while the detectors download (secondsLeft null), then "scan" with an estimate
+  // from how long the frames so far took (before the first one: this browser's last scan, if any).
+  const PER_KEY = "vd0.scanPerFrame";
+  let warm = false;
   async function scan(src, onStep) {
+    if (onStep) onStep(0, 0, null, "load");
     await load();
     const net = await loadBodies().catch(() => null);
+    // the detectors' first run is slow (they set themselves up, ~10-15 s); do it here on a blank picture so it counts
+    // as loading and the time-left estimate below only sees the real per-frame speed (about 0.25 s a frame)
+    if (!warm) { const b = document.createElement("canvas"); b.width = 320; b.height = 240; try { await faces(b, 320, 240); if (net) await bodies(net, b, 320, 240); } catch {} warm = true; }
     const v = document.createElement("video");
     v.muted = true; v.playsInline = true; v.preload = "auto"; v.src = src;
     await new Promise((res, rej) => { v.onloadeddata = res; v.onerror = () => rej(new Error("Could not read the video")); });
@@ -94,6 +102,9 @@
     const c = document.createElement("canvas"); c.width = W; c.height = H;
     const g = c.getContext("2d");
     const frames = [];
+    let last = null; try { last = Number(localStorage.getItem(PER_KEY)) || null; } catch {}
+    if (onStep) onStep(0, n, last ? Math.round(last * n) : null, "scan");
+    const t0 = performance.now();
     for (let i = 0; i < n; i++) {
       const t = (i + 0.5) * dur / n;
       await new Promise((res) => { v.onseeked = res; v.currentTime = t; });
@@ -104,8 +115,10 @@
       let text = [];
       try { text = textRects(g.getImageData(0, 0, W, H).data, W, H); } catch {}
       frames.push({ t, faces: fs, bodies: net ? await bodies(net, c, W, H).catch(() => []) : [], text });
-      if (onStep) onStep(i + 1, n);
+      const per = (performance.now() - t0) / 1000 / (i + 1);
+      if (onStep) onStep(i + 1, n, Math.round(per * (n - i - 1)), "scan");
     }
+    try { localStorage.setItem(PER_KEY, String((performance.now() - t0) / 1000 / n)); } catch {}
     const width = v.videoWidth, height = v.videoHeight;   // read before letting the video go: they are 0 afterwards
     v.removeAttribute("src"); v.load();
     return { frames, width, height, duration: dur, bodies: !!net };

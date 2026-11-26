@@ -614,7 +614,8 @@ async function swFindPeople(){
   swScan=null; swPeopleList=[]; swPick=null; swByHand=false;
   const box=$('swPeople'); box.classList.remove('hidden'); box.innerHTML='<div class="why">Looking for people in the video…</div>';
   try{
-    const src=swSrc.previewUrl, sc=await people.scan(src,(d,n)=>{ if(swSrc&&swSrc.previewUrl===src) box.innerHTML='<div class="why">Looking for people in the video… '+d+'/'+n+'</div>'; });
+    const src=swSrc.previewUrl, sc=await people.scan(src,(d,n,left,phase)=>{ if(swSrc&&swSrc.previewUrl===src) box.innerHTML=swScanLine(d,n,left,phase); });
+    box.innerHTML='<div class="why">Checking who is who… a few seconds</div>';
     if(!swSrc||swSrc.previewUrl!==src) return;  // another video was picked meanwhile
     swScan=sc; swPeopleList=people.track(sc.frames);
     // side-on faces: their gender is checked once with a quick look (a fraction of a cent each)
@@ -622,6 +623,14 @@ async function swFindPeople(){
     await swChoose();
     if(!sc.bodies) box.insertAdjacentHTML('beforeend','<div class="why warn">The body detector didn\'t load, so only people facing the camera are kept out.</div>');
   }catch(e){ box.innerHTML='<div class="why warn">Couldn\'t look for people ('+S.esc(e.message)+'). The whole video is sent and the model chooses who to replace.</div>'; }
+}
+// progress of the people search: frames done, a bar and roughly how long is left
+function swScanLine(d,n,left,phase){
+  if(phase==='load') return '<div class="why">Getting the face detector ready… about 10–30 s the first time on this device, a few seconds after that</div>';
+  const eta=left==null?'estimating time…':left<=1?'almost done':'about '+(left<60?left+' s':Math.ceil(left/60)+' min')+' left';
+  const pct=n?Math.round(d/n*100):0;
+  return '<div class="why">Looking for people in the video… '+d+'/'+n+' · '+eta+'</div>'+
+    '<div role="progressbar" aria-label="Looking for people" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+pct+'" style="height:4px;background:var(--line);margin-top:6px"><div style="height:100%;width:'+pct+'%;background:var(--acc);transition:width .3s"></div></div>';
 }
 async function swGender(){
   if(swFaceFrom==='pic') return swFace?people.genderOf('',swFace):null;
