@@ -647,6 +647,10 @@ button,.btn,.chip,.model,a,label{touch-action:manipulation}
 
 /* ---------- app feel: no zoom, nav and icons act like buttons, smooth page changes ---------- */
 html{touch-action:manipulation;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+/* No rubber-band at the ends of a page: on the iPhone home-screen app, pulling past the top or bottom stretched the
+   whole page and dragged the fixed nav bar (and sidebar) with it. The page now just stops; the bar never moves.
+   Inner scrollers (lists, dialogs, the looks strip) keep their own scrolling. */
+html,body{overscroll-behavior:none}
 a,button,summary,label,.chip,.model{-webkit-tap-highlight-color:transparent}
 .sb,.tabbar,.radial,.radial-scrim,.btn,button,.chip,.model,.pagehead h1,.sb-brand,svg,svg.ic,.look-card,summary{
   -webkit-user-select:none;user-select:none;-webkit-touch-callout:none}

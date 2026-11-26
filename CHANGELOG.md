@@ -3,6 +3,10 @@
 The version lives in `public/app.js` (`VERSION`). Each release raises the last number by one and gets a line here.
 v1.0 is kept for the first public release.
 
+## 0.0.014597
+- The nav bar stays fixed in place: on the iPhone home-screen app, pulling past the top or bottom of a page no longer
+  stretches the page (the rubber-band bounce) and drags the bar with it. Lists and dialogs inside a page scroll as before.
+
 ## 0.0.014596
 - Face swap: the people search can no longer hang forever. Phones (iOS Safari above all) never loaded the hidden
   video, so it waited indefinitely; the video is now started muted so frames arrive. Every step has a limit
