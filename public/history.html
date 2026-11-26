@@ -21,17 +21,24 @@
   .btn{background:var(--panel2);color:var(--text);border:1px solid var(--line);padding:8px 14px;font:inherit;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block}
   .btn:hover{border-color:var(--acc)}
   .btn.danger:hover{border-color:var(--err);color:var(--err)}
-  .rows{display:flex;flex-direction:column;gap:10px}
-  .row{display:grid;grid-template-columns:96px 1fr auto;gap:14px;align-items:center;padding:10px;border:1px solid var(--line);background:var(--panel2)}
-  .row .th{width:96px;height:96px;background:#000 center/cover no-repeat;display:grid;place-items:center;color:var(--mute);font-size:26px}
-  .row .ti{font-weight:600;overflow-wrap:anywhere}
-  .row .mt{color:var(--mute);font-size:13px;margin-top:4px}
-  .row .ac{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+  /* two cards side by side on every screen: picture on top, then title, details and buttons */
+  .rows{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  .row{display:flex;flex-direction:column;gap:8px;min-width:0;padding:10px;border:1px solid var(--line);background:var(--panel2)}
+  .row .th{width:100%;aspect-ratio:4/5;background:#000 center/cover no-repeat;display:grid;place-items:center;color:var(--mute);font-size:26px}
+  .row .ti{font-weight:600;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .row .mt{color:var(--mute);font-size:13px;margin-top:4px;overflow-wrap:anywhere}
+  .row .mt .why{display:block}
+  .row .ac{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto}
+  .row .ac .btn{flex:1 1 auto;display:inline-flex;align-items:center;justify-content:center;gap:4px;padding:7px 8px;font-size:13px}
   .st{display:inline-block;padding:1px 8px;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;border:1px solid var(--line2)}
   .st.completed{color:var(--ok);border-color:rgba(57,255,156,.45)}.st.failed{color:var(--err);border-color:rgba(255,77,109,.5)}.st.running,.st.pending,.st.in_progress{color:var(--acc)}
-  @media(max-width:700px){.row{grid-template-columns:72px 1fr}.row .th{width:72px;height:72px}.row .ac{grid-column:1/-1;justify-content:flex-start}}
+  .row .enh-host summary{font-size:12px}
+  @media(min-width:701px){.row .th{aspect-ratio:auto;height:240px;background-size:contain}}
+  @media(max-width:700px){.rows{gap:8px}.row{padding:6px;gap:6px}.row .th{aspect-ratio:1}.row .ti{font-size:13px}.row .mt{font-size:11px;line-height:1.35}
+    .row .mt code,.row .mt .more{display:none}.row .mt .why{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+    .row .ac{flex-wrap:nowrap;gap:4px}.row .ac .btn{flex:1;min-width:0;padding:7px 0}.row .ac .btn .lbl{display:none}.row .enh-host summary{font-size:11px}}
   .sum{color:var(--mute);font-size:13px;margin:0 0 10px}
-  .none{color:var(--mute);padding:20px;text-align:center}
+  .none{grid-column:1/-1;color:var(--mute);padding:20px;text-align:center}
 </style>
 <link rel="stylesheet" href="/app.css">
 <script src="/studio.js"></script>
@@ -78,13 +85,13 @@ function render(){
     return `<div class="row" data-id="${S.esc(x.id)}">
       <div class="th" style="${done&&x.thumb?`background-image:url('${S.esc(x.thumb)}')`:''}">${done&&x.thumb?'':run?'<svg class=ic aria-hidden=true><use href=#i-hourglass></use></svg>':x.status==='failed'?'<svg class=ic aria-hidden=true><use href=#i-x></use></svg>':'<svg class=ic aria-hidden=true><use href=#i-film></use></svg>'}</div>
       <div><div class="ti">${S.esc(x.title||x.id)}</div>
-        <div class="mt"><span class="st ${S.esc(x.status)}">${S.esc(run?'running':x.status==='completed'?'done':x.status)}</span> · ${KIND[x.kind]||S.esc(x.kind)}${x.model?' · '+S.esc((MODELS[x.model]||{}).name||x.model):''}${x.duration?' · '+x.duration+' s':''}${x.res?' · '+S.esc(x.res):''}${x.cost!=null?' · '+S.money(x.cost,3):''}${x.provider&&x.provider!=='openrouter'?' · via '+S.esc(x.provider):''}</div>
-        <div class="mt">${new Date(x.t).toLocaleString([],{dateStyle:'medium',timeStyle:'short'})} · <code>${S.esc(x.id)}</code>${x.error?`<br><span style="color:var(--err)">${S.esc(x.error).slice(0,200)}</span>`:''}</div></div>
+        <div class="mt"><span class="st ${S.esc(x.status)}">${S.esc(run?'running':x.status==='completed'?'done':x.status)}</span> · ${KIND[x.kind]||S.esc(x.kind)}<span class="more">${x.model?' · '+S.esc((MODELS[x.model]||{}).name||x.model):''}</span>${x.duration?' · '+x.duration+' s':''}${x.res?' · '+S.esc(x.res):''}${x.cost!=null?' · '+S.money(x.cost,3):''}<span class="more">${x.provider&&x.provider!=='openrouter'?' · via '+S.esc(x.provider):''}</span></div>
+        <div class="mt">${new Date(x.t).toLocaleString([],{dateStyle:'medium',timeStyle:'short'})} <code>· ${S.esc(x.id)}</code>${x.error?`<span class="why" style="color:var(--err);margin-top:2px">${S.esc(x.error.slice(0,200))}</span>`:''}</div></div>
       <div class="ac">
-        ${done&&x.url?`<button class="btn" type="button" data-play="${S.esc(x.url)}"><svg class=ic aria-hidden=true><use href=#i-video></use></svg> Play</button><a class="btn" href="${S.esc(x.url)}${x.kind==='short'?'?dl=1':'?download=1'}"><svg class=ic aria-hidden=true><use href=#i-download></use></svg> Download</a>`:''}
-        ${x.retry&&!run?`<button class="btn" data-r type="button"><svg class=ic aria-hidden=true><use href=#i-refresh></use></svg> Retry</button>`:''}
-        ${!run?`<button class="btn danger" data-d type="button" aria-label="Delete ${S.esc(x.title||x.id)}"><svg class=ic aria-hidden=true><use href=#i-x></use></svg> Delete</button>`:''}
-      </div>${done&&x.url?`<div class="enh-host" style="grid-column:1/-1" data-src="${S.esc(x.url)}"></div>`:''}</div>`;}).join(''):'<div class="none">Nothing here yet. Everything you make on any page shows up here.</div>';
+        ${done&&x.url?`<button class="btn" type="button" data-play="${S.esc(x.url)}" aria-label="Play"><svg class=ic aria-hidden=true><use href=#i-video></use></svg><span class="lbl"> Play</span></button><a class="btn" href="${S.esc(x.url)}${x.kind==='short'?'?dl=1':'?download=1'}" aria-label="Download"><svg class=ic aria-hidden=true><use href=#i-download></use></svg><span class="lbl"> Download</span></a>`:''}
+        ${x.retry&&!run?`<button class="btn" data-r type="button" aria-label="Retry"><svg class=ic aria-hidden=true><use href=#i-refresh></use></svg><span class="lbl"> Retry</span></button>`:''}
+        ${!run?`<button class="btn danger" data-d type="button" aria-label="Delete ${S.esc(x.title||x.id)}"><svg class=ic aria-hidden=true><use href=#i-x></use></svg><span class="lbl"> Delete</span></button>`:''}
+      </div>${done&&x.url?`<div class="enh-host" data-src="${S.esc(x.url)}"></div>`:''}</div>`;}).join(''):'<div class="none">Nothing here yet. Everything you make on any page shows up here.</div>';
 }
 $('rows').addEventListener('click',async e=>{
   const row=e.target.closest('.row'); if(!row) return;
