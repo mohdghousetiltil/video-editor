@@ -3,6 +3,18 @@
 The version lives in `public/app.js` (`VERSION`). Each release raises the last number by one and gets a line here.
 v1.0 is kept for the first public release.
 
+## 0.0.014594
+- Shorts cameo: face, hands and speech now match. The influencer's lips are synced to their own voice line
+  (fal.ai Sync Lipsync 2.0, ~$0.05 a second), and the AI's direction is timed to the words: each expression and
+  gesture is tied to the exact words it belongs to and fits their tone. Without a fal.ai key, or if syncing fails,
+  the talking clip is used unsynced and the Short says so. A cameo now costs about $0.33 (picture + ~4 s clip + sync).
+
+## 0.0.014593
+- Shorts cameo is now filmed like a real short-form creator: the green-screen format (the picture large behind them,
+  waist-up, eye contact, creator lighting), punchy delivery, and gestures that show the idea instead of random waving.
+- The AI that writes the Short also directs every line (expression, energy, 1-2 specific gestures); the hook is played
+  to stop the scroll and the last line as the payoff.
+
 ## 0.0.014592
 - Influencers: once someone is animated, their card's button becomes Meet, which plays the clip. Animate again is in the
   ⋯ menu and replaces it. A new main picture clears the old clip.

@@ -352,8 +352,22 @@ const readBody = (req, max = 25e6) =>
   });
 const orHeaders = () => ({ Authorization: `Bearer ${KEY}`, "Content-Type": "application/json" });
 // Shorts maker (long video -> analysed, cut, captioned 9:16 Short + thumbnail + title); see shorts.js
+// Lip-sync (Shorts cameo): fal.ai's Sync Lipsync 2.0 moves the mouth in a clip to match a voice line. -> mp4 Buffer
+async function lipSync({ video, audio }) {
+  if (!providers.configured().fal) throw new Error("lip-sync needs FAL_KEY");
+  const [video_url, audio_url] = await Promise.all([providers.falUpload(video, "video/mp4", "clip.mp4"), providers.falUpload(audio, "audio/wav", "line.wav")]);
+  const out = await providers.submitFalApp("fal-ai/sync-lipsync/v2", { video_url, audio_url, model: "lipsync-2", sync_mode: "cut_off" });
+  const until = Date.now() + 6 * 60000;
+  for (;;) {
+    const j = await providers.poll(out.id, out.job);
+    if (j.status === "completed") { const r = await fetch(j.videoUrl, { signal: AbortSignal.timeout(120000) }); if (!r.ok) throw new Error(`lip-sync download failed (${r.status})`); return Buffer.from(await r.arrayBuffer()); }
+    if (j.status === "failed") throw new Error(j.error || "lip-sync failed");
+    if (Date.now() > until) throw new Error("lip-sync took longer than 6 minutes");
+    await new Promise((ok) => setTimeout(ok, 4000));
+  }
+}
 const shorts = require("./shorts")({ STORE, FFMPEG, API, getKey: () => KEY, run, send, serveMp4, tts, logSpend, orFetch, renderSlot, getModel: () => settings.get().visionModel, serveThumb, history,
-  readInf, imgFile, viewFile, getImageModel: () => settings.get().imageModel });
+  readInf, imgFile, viewFile, getImageModel: () => settings.get().imageModel, lipSync: providers.configured().fal ? lipSync : null });
 const shortsRoutes = shorts.handle;
 const ctx = { STORE, DATA, API, getKey: () => KEY, orFetch, orHeaders, send, readBody, run, tts, spend, settings, serveMp4, serveThumb, mediaDuration, hasAudio, glitchFilter, renderSlot, prices, imgFile, viewFile, history, liveModels, jobs, ensureVideo, themes, themeText, readInf, STILLS, stillFile, fileDataUrl, frameToJpeg, providers, fetchLink, FFMPEG };
 const story = require("./routes/story")(ctx);

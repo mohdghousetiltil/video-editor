@@ -232,7 +232,7 @@ let VOICES = [];
 fetch('/api/shorts/voices').then((r) => r.json()).then((j) => {
   if (!j.voices) return;
   VOICES = j.voices;
-  if (j.cameo) { cameoPrice = j.cameo.perPicture; if (j.cameo.videoPerSec) cameoSecPrice = j.cameo.videoPerSec; }
+  if (j.cameo) { cameoPrice = j.cameo.perPicture; if (j.cameo.videoPerSec) cameoSecPrice = j.cameo.videoPerSec; if (j.cameo.lipSyncPerSec != null) lipSecPrice = j.cameo.lipSyncPerSec; }
   $('voice').innerHTML = j.voices.map((v) => `<option value="${esc(v.voice)}">${esc(String(v.label).replace(/\s*\((.*?)(?:,\s*(?:Kokoro|ElevenLabs))?\)\s*$/, (m, a) => a && !/^(Kokoro|ElevenLabs)$/.test(a) ? ' · ' + a : ''))}</option>`).join('');
   if ($('voice').dataset.want) $('voice').value = $('voice').dataset.want;
   if (!$('voice').value) $('voice').selectedIndex = 0;
@@ -347,9 +347,9 @@ document.querySelectorAll('[data-src]').forEach((b) => b.onclick = () => {
 let pics = []; // [{name, url (preview), data (jpeg data URL)}]
 const picCost = () => 0.004 + pics.length * 0.0015 + (estimate().v.perSec || 0.00003) * ($('len').value === '30-60' ? 45 : 25) + cameoCount() * cameoEach();
 // influencer cameo: a saved influencer drawn into some of the pictures, then filmed explaining to camera (not remembered, as it costs extra)
-var INFS = [], cameoPrice = 0.07, cameoSecPrice = 0.03; // var like mode; the estimates arrive with the voices
+var INFS = [], cameoPrice = 0.07, cameoSecPrice = 0.03, lipSecPrice = 0.05; // var like mode; the estimates arrive with the voices
 const CAMEO_SECS = 4; // typical length of one talking clip (it follows the line it explains)
-const cameoEach = () => cameoPrice + CAMEO_SECS * cameoSecPrice;
+const cameoEach = () => cameoPrice + CAMEO_SECS * (cameoSecPrice + lipSecPrice);
 let voiceBefore = null; // the narrator picked before an influencer with their own voice took over
 function cameoInf() { return (INFS || []).find((p) => p.id === $('cameoInf').value); }
 function cameoCount() { return cameoInf() ? Math.min(+$('cameoCount').value, pics.length) : 0; }
@@ -366,7 +366,7 @@ function syncCameo() {
   const vName = own ? ($('voice').selectedOptions[0]?.textContent || p.voice) : '';
   $('cameoNote').innerHTML = (!p
     ? (INFS.length ? 'Pick a saved influencer to have them explain your pictures on camera.' : 'Save an influencer with a picture to use a cameo.')
-    : `${esc(p.name)} explains your pictures to camera, with hand gestures, then your original is shown. About ${S.money(cameoEach(), 2)} a cameo (picture + ~${CAMEO_SECS} s clip). ` +
+    : `${esc(p.name)} presents your pictures like a creator: green-screen style, talking to camera, every expression and gesture timed to the words, then your original is shown. About ${S.money(cameoEach(), 2)} a cameo (picture + ~${CAMEO_SECS} s clip${lipSecPrice ? ', lips synced to the voice' : ''}). ` +
       (own ? `Spoken in ${esc(p.name)}'s voice (${esc(vName)}).` : `${esc(p.name)} has no voice yet, so the narrator below speaks. Set one on the Influencers page.`)) + ' <a href="/influencers">Manage influencers</a>';
   if (mode === 'pics') $('estCost').textContent = '≈ ' + S.money(picCost(), 3);
 }
@@ -409,7 +409,7 @@ async function goPictures() {
   const ok = await S.confirmSpend({ title: 'Make an explainer from your pictures?', total: picCost(), rows: [
     ['Cameo', cameo ? `${cameo.name} explaining in ${cameos} picture${cameos > 1 ? 's' : ''} ≈ ${S.money(cameos * cameoEach(), 2)} (estimate)` : ''],
     ['Pictures', String(pics.length)], ['Length', $('len').value.replace('-', '–') + ' s'], ['AI', 'studies the pictures and writes the explanation'],
-    ['Voice', ($('voice').selectedOptions[0]?.textContent || '')]], note: (cameo ? 'The cameo clips are made with Grok Imagine Lite; the real price of each is logged. ' : '') + 'Animation, captions, music and rendering run on your server and cost nothing.' });
+    ['Voice', ($('voice').selectedOptions[0]?.textContent || '')]], note: (cameo ? 'The cameo clips are made with Grok Imagine Lite' + (lipSecPrice ? ' and lip-synced to the voice with Sync Lipsync 2.0' : '') + '; the real price of each is logged. ' : '') + 'Animation, captions, music and rendering run on your server and cost nothing.' });
   if (!ok) return;
   $('go').disabled = true; showProg('Uploading pictures…', 3);
   try {
@@ -558,7 +558,7 @@ function showResult(j) {
   $('oInfo').innerHTML = [
     j.kind === 'pictures' ? `<svg class=ic aria-hidden=true><use href=#i-image></use></svg> Explainer from ${j.source?.pictures || ''} pictures → ${Math.round(j.length || 0)} s Short` :
     j.source && j.source.duration ? `From ${esc(j.source.title || 'your video')} (${fmt(j.source.duration)}) · ${fmt(j.start)}–${fmt(j.end)} → ${Math.round(j.length || j.end - j.start)} s Short` : '',
-    j.cameo ? (j.cameo.pictures.length ? `Cameo: ${esc(j.cameo.name)} in picture${j.cameo.pictures.length > 1 ? 's' : ''} ${j.cameo.pictures.join(', ')}${j.cameo.talking && j.cameo.talking.length ? `, explaining on camera in ${j.cameo.talking.join(', ')}` : ''}${j.cameo.voice ? `, in ${esc(j.cameo.name)}'s voice` : ''}` : 'No cameo picture could be made') : '',
+    j.cameo ? (j.cameo.pictures.length ? `Cameo: ${esc(j.cameo.name)} in picture${j.cameo.pictures.length > 1 ? 's' : ''} ${j.cameo.pictures.join(', ')}${j.cameo.talking && j.cameo.talking.length ? `, explaining on camera in ${j.cameo.talking.join(', ')}` : ''}${j.cameo.synced && j.cameo.synced.length ? ` (lips synced in ${j.cameo.synced.join(', ')})` : ''}${j.cameo.voice ? `, in ${esc(j.cameo.name)}'s voice` : ''}` : 'No cameo picture could be made') : '',
     j.range ? `Searched only ${fmt(j.range[0])}–${fmt(j.range[1])}, as you asked` : '',
     j.segments && j.segments.length > 1 ? `Edited from ${j.segments.length} pieces: ` + j.segments.map((s) => fmt(s.start) + '–' + fmt(s.end)).join(', ') : '',
     j.candidates ? `Compared the ${j.candidates} best moments found across the whole video` : '',

@@ -11,7 +11,7 @@ process.env.CAMEO_POLL_MS = "5"; // the faked video service answers at once
 const createShorts = require("../shorts");
 const { cameoPrompt, cameoTalkPrompt } = require("../lib/identity-prompt");
 
-const { cameoSlides, pictureShots, cameoLen } = createShorts;
+const { cameoSlides, pictureShots, cameoLen, beatOf } = createShorts;
 const FF = process.env.FFMPEG_PATH || "ffmpeg";
 const hasFF = spawnSync(FF, ["-version"]).status === 0;
 
@@ -41,7 +41,9 @@ test("cameo prompt: identity first, the picture is the subject and stays faithfu
   assert.match(p, /IDENTITY PRESERVATION/);
   assert.match(p, /Images 1 to 3 all show this one person/);
   assert.match(p, /Image 4 is NOT a picture of the person/);
-  assert.match(p, /pointing at it/);
+  assert.match(p, /CONTENT CREATOR/);
+  assert.match(p, /direct eye contact/);
+  assert.match(p, /pointing at it over the shoulder/);
   assert.match(p, /FAITHFUL SUBJECT: keep what image 4 shows exactly/);
   assert.match(p, /short grey hair/);
   assert.match(p, /This is the piston\.[\s\S]*Add no text/);
@@ -57,8 +59,8 @@ const run = (args, cwd) => new Promise((resolve, reject) => {
 });
 
 // a Shorts maker in a temp folder, with every paid call faked and recorded
-function studio(root, { imageFails = false, videoFails = false, voice: infVoice } = {}) {
-  const calls = { images: [], videos: [], tts: [], spend: [] }, done = [];
+function studio(root, { imageFails = false, videoFails = false, voice: infVoice, lip = "ok" } = {}) {
+  const calls = { images: [], videos: [], tts: [], spend: [], lips: [] }, done = [];
   const media = (name, args) => { spawnSync(FF, ["-y", ...args, name], { cwd: root }); return fs.readFileSync(path.join(root, name)); };
   const picture = media("p.jpg", ["-f", "lavfi", "-i", "testsrc=s=320x240", "-frames:v", "1"]);
   const drawn = media("c.png", ["-f", "lavfi", "-i", "color=c=red:s=180x320", "-frames:v", "1"]);
@@ -76,7 +78,8 @@ function studio(root, { imageFails = false, videoFails = false, voice: infVoice 
       calls.images.push(body);
       return imageFails ? reply({ error: { message: "refused" } }, false) : reply({ data: [{ b64_json: drawn.toString("base64"), media_type: "image/png" }], usage: { cost: 0.01 } });
     }
-    const plan = { title: "T", hook: "Look", mood: "chill", slides: [{ image: 1, narration: "First point here." }, { image: 2, narration: "Second point here." }] };
+    calls.plans = (calls.plans || []).concat(body.messages[0].content[0].text);
+    const plan = { title: "T", hook: "Look", mood: "chill", slides: [{ image: 1, narration: "First point here.", act: "counts one on a finger" }, { image: 2, narration: "Second point here." }] };
     return reply({ choices: [{ message: { content: JSON.stringify(plan) } }], usage: { cost: 0.002 } });
   };
   const renderSlot = require("../lib/render").createRenderer({ slots: 1, log: { log() {}, error() {} } });
@@ -87,6 +90,7 @@ function studio(root, { imageFails = false, videoFails = false, voice: infVoice 
     send: (res, code, obj) => Object.assign(res, { code, obj }), serveMp4: () => {}, tts: async (a) => { calls.tts.push(a); return voice; },
     logSpend: (...a) => calls.spend.push(a), readInf: () => [{ id: "abc123", name: "Sam", desc: "curly hair", ...(infVoice ? { voice: infVoice } : {}) }],
     imgFile: (id) => (id === "abc123" ? face : undefined), viewFile: () => undefined, getImageModel: () => "meta/muse-image",
+    lipSync: lip === "none" ? null : async (x) => { calls.lips.push(x); if (lip === "fail") throw new Error("no face found"); return clip; },
   });
   const post = async (extra) => {
     const data = "data:image/jpeg;base64," + picture.toString("base64");
@@ -107,6 +111,7 @@ test("pictures without an influencer: no picture is drawn and nothing new is rec
   assert.equal(r.meta.status, "done", r.meta.error);
   assert.equal(s.calls.images.length, 0);
   assert.ok(!("cameo" in r.meta) && !("warning" in r.meta));
+  assert.doesNotMatch(s.calls.plans[0], /director's note/, "no cameo: no acting notes are asked for");
   assert.deepEqual(s.calls.spend.map((a) => a[1]), [0.002]);
   assert.ok(fs.existsSync(path.join(r.dir, "short.mp4")));
 }));
@@ -118,7 +123,12 @@ test("pictures with an influencer: drawn from their picture, filmed explaining, 
   assert.equal(s.calls.images.length, 1);
   assert.equal(s.calls.images[0].input_references.length, 2, "the influencer, then the picture being explained");
   assert.match(s.calls.images[0].prompt, /curly hair[\s\S]*First point here/);
-  assert.deepEqual(r.meta.cameo, { name: "Sam", pictures: [1], talking: [1], voice: null });
+  assert.deepEqual(r.meta.cameo, { name: "Sam", pictures: [1], talking: [1], synced: [1], voice: null });
+  // lip-sync gets the clip and the very line the viewer hears, both cut to the shot
+  assert.equal(s.calls.lips.length, 1);
+  assert.ok(s.calls.lips[0].video.length > 0 && s.calls.lips[0].audio.length > 0);
+  const lipCost = s.calls.spend.find((a) => a[2] === "fal-ai/sync-lipsync/v2")[1];
+  assert.ok(lipCost > 0 && lipCost <= 10 * 0.05);
   assert.equal(r.meta.warning, null);
   assert.equal(r.meta.length, plain.meta.length);
   // the talking clip starts from the drawn picture, is silent, and acts out the line
@@ -128,12 +138,14 @@ test("pictures with an influencer: drawn from their picture, filmed explaining, 
   assert.equal(v.generate_audio, false);
   assert.equal(v.frame_images[0].frame_type, "first_frame");
   assert.match(v.frame_images[0].image_url.url, /^data:image\/png;base64,/);
-  assert.match(v.prompt, /talks straight to the camera[\s\S]*hand gestures[\s\S]*First point here/);
+  assert.match(v.prompt, /content creator[\s\S]*eye contact[\s\S]*HOOK[\s\S]*exactly these words[\s\S]*First point here[\s\S]*counts one on a finger/);
+  assert.match(s.calls.images[0].prompt, /HOOK[\s\S]*counts one on a finger/, "the picture follows the director's note too");
+  assert.match(s.calls.plans[0], /"act"/, "with a cameo the AI directs every line");
   assert.ok(Number.isInteger(v.duration) && v.duration >= 1 && v.duration <= 10);
-  assert.ok(Math.abs(r.meta.cost - plain.meta.cost - 0.01 - 0.09) < 1e-9);
+  assert.ok(Math.abs(r.meta.cost - plain.meta.cost - 0.01 - 0.09 - lipCost) < 1e-4, "cost is kept to 4 decimals");
   assert.deepEqual(s.calls.spend.map((a) => [a[0], a[1], a[2]]).filter((a) => a[2] === "meta/muse-image" || /grok/.test(a[2])),
     [["Shorts", 0.01, "meta/muse-image"], ["Shorts", 0.09, "x-ai/grok-imagine-video-1.5-lite"]]);
-  assert.equal(s.calls.spend.reduce((a, x) => a + x[1], 0).toFixed(4), "0.1020");
+  assert.equal(s.calls.spend.reduce((a, x) => a + x[1], 0).toFixed(4), (0.102 + lipCost).toFixed(4));
   await new Promise((res) => setTimeout(res, 500)); // working files are removed without waiting
   assert.deepEqual(fs.readdirSync(r.dir).filter((f) => /^cameo/.test(f)), [], "working pictures and clips are cleaned up");
 }));
@@ -157,16 +169,35 @@ test("a talking clip that fails: the still cameo picture stays, with a warning",
   assert.ok(!s.calls.spend.some((a) => /grok/.test(a[2])), "a failed clip is not logged as spend");
 }));
 
+test("lip-sync that fails, or no fal.ai key: the talking clip is still used, unsynced", { skip }, () => temp(async (root) => {
+  const f = await studio(root, { lip: "fail" }).post({ influencer_id: "abc123", cameos: 1 });
+  assert.equal(f.meta.status, "done", f.meta.error);
+  assert.deepEqual([f.meta.cameo.talking, f.meta.cameo.synced], [[1], []]);
+  assert.match(f.meta.warning, /Sam's lips are not synced in picture 1: no face found/);
+  const s = studio(root, { lip: "none" }), n = await s.post({ influencer_id: "abc123", cameos: 1 });
+  assert.deepEqual([n.meta.cameo.talking, n.meta.cameo.synced, n.meta.warning], [[1], [], null]);
+  assert.ok(!s.calls.spend.some((a) => /lipsync/.test(a[2])));
+}));
+
+test("beats: first line is the hook, last the payoff", () => {
+  assert.deepEqual([0, 1, 2].map((i) => beatOf(i, 3)), ["hook", "point", "payoff"]);
+  assert.equal(beatOf(0, 1), "hook");
+});
+
 test("cameo length: most of the line, the original keeps ~1.5 s, at most 10 s", () => {
   assert.ok(Math.abs(cameoLen(3) - 1.65) < 1e-9);
   assert.equal(cameoLen(6), 4.5);
   assert.equal(cameoLen(30), 10);
 });
 
-test("talking prompt: to camera, gestures, the line, no text, gender-neutral", () => {
-  const p = cameoTalkPrompt({ desc: "curly hair", narration: "Heat makes it expand." });
-  assert.match(p, /talks straight to the camera/);
-  assert.match(p, /hand gestures/);
+test("talking prompt: creator delivery, purposeful gestures, the beat and the note, no text, gender-neutral", () => {
+  const p = cameoTalkPrompt({ desc: "curly hair", narration: "Heat makes it expand.", act: "hands pull apart", beat: "payoff" });
+  assert.match(p, /content creator/);
+  assert.match(p, /direct eye contact/);
+  assert.match(p, /never random waving/);
+  assert.match(p, /PAYOFF/);
+  assert.match(p, /hands pull apart/);
+  assert.match(p, /exactly these words[\s\S]*each expression and gesture lands on the word/);
   assert.match(p, /Heat makes it expand\./);
   assert.match(p, /no on-screen text/);
   assert.doesNotMatch(p, /\b(she|her|he|his)\b/i);
