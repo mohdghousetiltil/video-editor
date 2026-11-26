@@ -3,7 +3,7 @@
   if (window.__shellRedirect) return; // this page is being replaced by the shell right now
   // The app's version, shown in every page footer and on the boot screen. Raise it with each release and add a line to
   // CHANGELOG.md; v1.0 is kept for the first public release.
-  const VERSION = '0.0.014603';
+  const VERSION = '0.0.014605';
   const svg = (d) => `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
   const ICON = {
     clip: svg('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9.5 5 2.5-5 2.5z"/>'),
@@ -39,7 +39,7 @@
     ['/motion', 'Poses & motion', ICON.motion, 'Poses for TikTok, copy motion'],
     ['/shorts', 'Shorts maker', ICON.shorts, 'Long video → ready-to-post Short'],
     ['/influencers', 'Influencers', ICON.people, 'Your AI influencer library'],
-    ['/scripts', 'Scripts', ICON.pen, 'Suspense script writer (chat)'],
+    ['/scripts', 'Scripts', ICON.pen, 'Story script writer (chat)'],
     ['/history', 'History', ICON.history, 'Everything you made, search, retry'],
     ['/settings', 'Settings', ICON.gear, 'Models, Muse by Meta, spend cap'],
   ];

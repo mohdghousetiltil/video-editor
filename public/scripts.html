@@ -56,6 +56,19 @@
   @media(prefers-reduced-motion:reduce){.ideas .idea{animation:none}}
   .chat{display:flex;flex-direction:column;gap:12px;margin-bottom:14px}
   .msg{padding:12px 14px;border:1px solid var(--line);white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6}
+  .msg .script{white-space:normal}
+  .script h3{margin:0 0 4px;font-size:19px;line-height:1.3}
+  .script .gtag{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--acc,#00e5ff);border:1px solid var(--line);padding:1px 8px}
+  .script h4{margin:14px 0 6px;font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
+  .script p{margin:0 0 8px;display:flex;gap:10px}
+  .script .when{flex:0 0 52px;font-size:12px;color:var(--mute);padding-top:3px}
+  .script .story p{font-size:17.5px;line-height:1.55}
+  .script details{margin-top:10px;border-top:1px solid var(--line);padding-top:8px}
+  .script summary{cursor:pointer;font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:13px;color:var(--acc,#00e5ff);min-height:32px}
+  .script .shots p{font-size:15px;color:var(--mute);margin-top:6px}
+  .script .foot{margin-top:10px;border-top:1px solid var(--line);padding-top:8px;font-size:14px;color:var(--mute)}
+  .script .foot p{display:block}
+  .idea small{-webkit-line-clamp:3}.idea small em{display:block;font-style:normal;color:var(--n)}
   .msg.user{align-self:flex-end;max-width:85%;background:rgba(124,92,255,.14);border-color:rgba(124,92,255,.4)}
   .msg.assistant{background:var(--panel)}
   .msg .tools{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;white-space:normal}
@@ -78,10 +91,11 @@
 <script src="/studio.js"></script>
 <script src="/icons.js"></script>
 </head>
-<body data-title="Scripts" data-sub="Suspense scripts with real hooks.">
+<body data-title="Scripts" data-sub="Rom-com, comedy, kids and new-gen stories.">
 <div class="wrap">
   <div class="panel">
     <div class="opts">
+      <label>Genre<select id="genre"><option value="mix">Mix</option><optgroup label="Main"><option value="romcom">Rom-com</option><option value="comedy">Comedy</option><option value="kids">Kids</option><option value="newgen">New gen</option></optgroup><optgroup label="More"><option value="thriller">Thriller</option><option value="suspense">Suspense / mystery</option><option value="horror">Horror</option></optgroup></select></label>
       <label>Length<select id="len"><option value="30">30 s</option><option value="60" selected>60 s</option><option value="90">90 s</option></select></label>
       <label>Format<select id="fmt"><option value="narrated">Narrated story</option><option value="pov">POV to camera</option><option value="dialogue">Scene with dialogue</option></select></label>
       <button class="btn" id="clear" type="button" style="margin-left:auto"><svg class=ic aria-hidden=true><use href=#i-refresh></use></svg> New chat</button>
@@ -91,52 +105,63 @@
   </div>
   <div class="chat" id="chat" aria-live="polite"></div>
   <div class="compose">
-    <textarea id="input" aria-label="Your message" placeholder="What should the story be about? e.g. a night-shift guard keeps seeing the same visitor on camera"></textarea>
+    <textarea id="input" aria-label="Your message" placeholder="What should the story be about? e.g. two rivals get stuck sharing one wedding umbrella"></textarea>
     <div class="row"><span class="meta" id="meta">About 1 cent per reply.</span><button class="btn primary" id="send" type="button"><svg class=ic aria-hidden=true><use href=#i-pen></use></svg> Write</button></div>
     <div class="err" id="err"></div>
   </div>
 </div>
 <script>
 const $=id=>document.getElementById(id), esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-// [icon, name, one-line hook, prompt]. Six random ones are shown at a time, so every visit (and every user) gets a different set.
+// [genre, icon, name, one-line hook, prompt]. Six are shown at a time; "Mix" always has all four main genres.
 const IDEAS=[
-  ['moon','Night shift','Something walks in at 3 AM','Write a horror story about something that happens on a night shift, with a twist at the end.'],
-  ['target','True crime','One detail nobody noticed','Write a mystery told like a true-crime story about one small detail nobody noticed.'],
-  ['alert','Broken rule','"Never open the door after 2"','Write a story that opens with a strange rule the narrator broke.'],
-  ['zap','Sci-fi twist','The last line flips it all','Write a near-future sci-fi story where the last line changes everything.'],
-  ['brain','Mind game','Trust no narrator','Write a psychological thriller where the narrator slowly realises they are the one being watched.'],
-  ['sparkles','5 ideas first','Hooks to pick from','Give me 5 suspense story ideas with a hook each.'],
-  ['camera','Found footage','The last file on the camera','Write a story told through the last video found on a missing hiker camera.'],
-  ['mic','Voicemail','A message from tomorrow','Write a story about a voicemail from the narrator own number, dated tomorrow.'],
-  ['castle','Hidden room','Not on the floor plan','Write a story about a family who finds a room in their house that is not on the floor plan.'],
-  ['waves','Deep sea','Something answers the sonar','Write a deep-sea suspense story where something answers the submarine sonar.'],
-  ['hourglass','Time loop','Same day, one change','Write a time-loop story where the narrator notices one thing is different every loop.'],
-  ['user','Doppelganger','Someone is living your life','Write a story where the narrator finds someone else living their life, and everyone believes them.'],
-  ['lock','Locked room','No way in, no way out','Write a locked-room mystery with a clue hidden in the first line.'],
-  ['footprints','Lost hiker','Tracks that just stop','Write a story about footprints in the snow that stop in the middle of a field.'],
-  ['link','Online stranger','The account knows too much','Write a story about an online stranger who knows things nobody was ever told.'],
-  ['heart','Dark romance','The perfect match is lying','Write a suspense story about a perfect first date where one small lie unravels everything.'],
-  ['flame','Urban legend','The street everyone avoids','Write a story about the urban legend every local in a small town refuses to talk about.'],
-  ['gem','Heist gone wrong','One of the crew is a fake','Write a heist story where the crew realises one of them is not who they say.'],
-  ['hand','Last confession','A deathbed secret','Write a story about a deathbed confession that changes how the narrator sees their whole family.'],
-  ['wind','Small town','Everyone leaves at sunset','Write a story about a town where everyone goes inside at sunset, and a newcomer who does not.'],
-  ['video','Livestream','Chat sees what they cannot','Write a story about a livestream where the chat sees something behind the streamer.'],
-  ['dice','The game','You cannot quit','Write a story about a game that a group of friends cannot stop playing.'],
-  ['coffee','Roommate','The new one never sleeps','Write a story about a new roommate who never seems to sleep.'],
-  ['wrench','Smart home','The house stops listening','Write a story where a smart home slowly stops obeying its owner.'],
-  ['person','Missing poster','The face is yours','Write a story where the narrator sees a missing-person poster with their own face on it.'],
-  ['surprised','Kid drawing','It draws what comes next','Write a story about a child whose drawings show things before they happen.'],
-  ['help','Survival','One rule kept them alive','Write a survival story built around a single rule that kept everyone alive.'],
-  ['clapper','Cold open','Start in the chaos','Write a story that opens in the middle of the most tense moment, then explains how we got there.'],
+  ['romcom','heart','Wrong number','The text was meant for someone else','Write a rom-com where a text sent to the wrong number starts the best conversation of two people\'s week.'],
+  ['romcom','coffee','Same coffee','Two strangers, one last order','Write a rom-com where two regulars fight over the last coffee every morning.'],
+  ['romcom','wind','One umbrella','Rivals, one storm, one umbrella','Write a rom-com where two office rivals get stuck sharing one umbrella in a storm.'],
+  ['romcom','link','Fake date','Just for one wedding','Write a rom-com about two friends who pretend to date for one family wedding.'],
+  ['romcom','box','Parcel mix-up','The neighbour keeps getting yours','Write a rom-com about neighbours whose parcels keep getting swapped.'],
+  ['romcom','mic','Karaoke night','The duet neither planned','Write a rom-com where two people who claim they cannot sing end up in a karaoke duet.'],
+  ['comedy','laugh','One small lie','It needs a bigger one','Write a comedy where one tiny lie to a boss snowballs out of control.'],
+  ['comedy','shirt','Job interview','Wearing the wrong thing','Write a comedy about a job interview where everything that can go wrong with an outfit does.'],
+  ['comedy','wrench','Fix it myself','The tap had other plans','Write a comedy about someone who insists on fixing a leaking tap without help.'],
+  ['comedy','surprised','Surprise party','Everyone forgot who it is for','Write a comedy about a surprise party that goes wrong because nobody told the planner whose it is.'],
+  ['comedy','video','On mute','Or so they thought','Write a comedy about a work video call where someone believes they are muted.'],
+  ['comedy','coffee','Diet day one','The office brought cake','Write a comedy about the first day of a diet when the whole office keeps bringing food.'],
+  ['kids','sparkles','Shy little star','Afraid to shine','Write a kids story about a little star who is too shy to shine.'],
+  ['kids','castle','Sock kingdom','Where lost socks go','Write a kids story about the kingdom where all the lost socks live.'],
+  ['kids','leaf','Brave snail','The longest race ever','Write a kids story about a slow snail who enters a race and wins something better than first place.'],
+  ['kids','flower','Talking garden','The flowers need help','Write a kids story about a girl who discovers her garden can talk when it is thirsty.'],
+  ['kids','box','The big box','A rocket, a boat, a house','Write a kids story about two friends and one cardboard box that becomes anything.'],
+  ['kids','moon','Sleepy moon','It forgot bedtime','Write a bedtime story for kids about a moon that cannot fall asleep.'],
+  ['newgen','mic','Group chat','Someone left. At 2 AM','Write a new-gen story about the night someone suddenly leaves the friend group chat.'],
+  ['newgen','video','Going viral','For the wrong video','Write a new-gen story about a student who goes viral for the video they almost deleted.'],
+  ['newgen','zap','Side hustle','Day 1 versus day 30','Write a new-gen story about a side hustle started on a dare that actually takes off.'],
+  ['newgen','help','Situationship','So what are we?','Write a new-gen story about finally asking what a situationship is.'],
+  ['newgen','person','First job','Nobody taught this at college','Write a new-gen story about a first week at a first job, where the newest person solves the thing nobody else could.'],
+  ['newgen','target','Delete the app','Seven days offline','Write a new-gen story about a week with all social apps deleted and what shows up in the quiet.'],
+  ['thriller','hourglass','Ten minutes','Before the doors lock','Write a thriller where someone has ten minutes to get out of an office before it locks for the weekend with something inside.'],
+  ['thriller','gem','Heist gone wrong','One of the crew is a fake','Write a heist thriller where the crew realises one of them is not who they say.'],
+  ['thriller','link','Online stranger','The account knows too much','Write a thriller about an online stranger who knows things nobody was ever told.'],
+  ['thriller','brain','Mind game','Trust no narrator','Write a psychological thriller where the narrator slowly realises they are the one being watched.'],
+  ['suspense','lock','Locked room','No way in, no way out','Write a locked-room mystery with a clue hidden in the first line.'],
+  ['suspense','target','One detail','Nobody noticed it','Write a mystery about one small detail nobody noticed.'],
+  ['suspense','footprints','Tracks','They just stop','Write a mystery about footprints in the snow that stop in the middle of a field.'],
+  ['horror','moon','Night shift','Something walks in at 3 AM','Write a horror story about something that happens on a night shift, with a twist at the end.'],
+  ['horror','alert','Broken rule','"Never open the door after 2"','Write a horror story that opens with a strange rule the narrator broke.'],
+  ['horror','camera','Found footage','The last file on the camera','Write a horror story told through the last video found on a missing hiker camera.'],
 ];
-const NEON=['#b18cff','#ff4d6d','#ffb020','#00e5ff','#ff7ad9','#c6ff00'];
+const MAIN=['romcom','comedy','kids','newgen'], GNAME={romcom:'Rom-com',comedy:'Comedy',kids:'Kids',newgen:'New gen',thriller:'Thriller',suspense:'Suspense',horror:'Horror'};
+const NEON=['#ff7ad9','#ffb020','#c6ff00','#00e5ff','#b18cff','#ff4d6d'];
 let shown=[];
+const mixed=a=>{ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; };
 function dealIdeas(){
-  // 6 random ideas, none from the set on screen now
-  const pool=IDEAS.map((_,i)=>i).filter(i=>!shown.includes(i));
-  for(let i=pool.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [pool[i],pool[j]]=[pool[j],pool[i]]; }
-  shown=pool.slice(0,6);
-  $('starters').innerHTML=shown.map((k,p)=>{ const [i,l,h]=IDEAS[k]; return `<button type="button" class="idea" style="--n:${NEON[p]};animation-delay:${p*40}ms" data-k="${k}">${ic(i)}<b>${l}</b><small>${esc(h)}</small></button>`; }).join('');
+  const g=$('genre').value;
+  // not the ones on screen now, unless the genre is too small for that
+  const of=f=>{ const all=IDEAS.map((_,i)=>i).filter(i=>f(IDEAS[i][0])), fresh=all.filter(i=>!shown.includes(i)); return mixed(fresh.length?fresh:all); };
+  let pick;
+  if(g==='mix'){ pick=MAIN.map(m=>of(x=>x===m)[0]); pick.push(of(x=>x==='thriller')[0], mixed(of(x=>MAIN.includes(x)).filter(i=>!pick.includes(i)))[0]); }
+  else { pick=of(x=>x===g); if(pick.length<6) pick=pick.concat(mixed(IDEAS.map((_,i)=>i).filter(i=>IDEAS[i][0]===g&&!pick.includes(i)))); pick=pick.slice(0,6); }
+  shown=pick.filter(i=>i!=null);
+  $('starters').innerHTML=shown.map((k,p)=>{ const [gn,i,l,h]=IDEAS[k]; return `<button type="button" class="idea" style="--n:${NEON[p]};animation-delay:${p*40}ms" data-k="${k}">${ic(i)}<b>${l}</b><small><em>${GNAME[gn]}</em>${esc(h)}</small></button>`; }).join('');
 }
 // the list folds away; open by default until a chat starts, then the user's choice is remembered
 function setIdeas(open, remember){
@@ -162,21 +187,47 @@ async function copyText(text){
   ta.remove(); return ok;
 }
 const save=()=>{ try{ localStorage.setItem('scriptsChat',JSON.stringify(msgs.slice(-30))); }catch{} };
-// only the spoken lines go to Story mode (drops the TITLE / VISUAL / TWIST labels)
-function spoken(t){
-  const out=[];
-  for(const l of t.split('\n')){
-    let m=l.match(/^\s*\**\s*HOOK[^:]*:\s*\**\s*(.+)/i); if(m){ out.push(m[1].trim()); continue; }
-    m=l.match(/^\s*\[[^\]]*\]\s*(.+)/); if(m) out.push(m[1].split(/\|\s*VISUAL\s*:/i)[0].trim());
+// A reply split into its parts, so the story reads on its own and the shot list sits apart. Also splits replies written
+// the old way ("[0-3 s] line | VISUAL: what we see"). Returns null for anything that isn't a script (ideas, chat).
+function parts(t){
+  const head=[], story=[], visuals=[], foot=[]; let at='head';
+  for(const raw of String(t).split('\n')){
+    const l=raw.replace(/\*\*/g,'').trim(); if(!l) continue;
+    if(/^(STORY|SCRIPT)\s*:/i.test(l)){ at='story'; continue; }
+    if(/^VISUALS?\s*:\s*$/i.test(l)){ at='vis'; continue; }
+    if(/^(ENDING|TWIST|TITLE IDEAS)\b[^:]*:/i.test(l)) at='foot';
+    const beat=l.match(/^(\[[^\]]*\])\s*(.*)/);
+    if(at==='story'){ const [line,see]=(beat?beat[2]:l).split(/\s*\|\s*VISUALS?\s*:\s*/i); story.push([beat?beat[1]:'',line]); if(see) visuals.push([beat?beat[1]:'',see]); }
+    else if(at==='vis') visuals.push(beat?[beat[1],beat[2]]:['',l]);
+    else (at==='foot'?foot:head).push(l);
   }
-  const lines=out.map(x=>x.replace(/^["“]|["”]$/g,'')).filter((x,i,a)=>x&&x!==a[i-1]);
-  return lines.length?lines.join('\n'):t;
+  return story.length?{head,story,visuals,foot}:null;
 }
+// only the spoken lines go to Story mode
+function spoken(t){
+  const x=parts(t); if(!x) return t;
+  const hook=x.head.map(l=>l.match(/^HOOK[^:]*:\s*(.+)/i)).find(Boolean);
+  const lines=[hook?hook[1]:'',...x.story.map(b=>b[1])].map(v=>v.trim().replace(/^["“]|["”]$/g,''));
+  return lines.filter((v,i,a)=>v&&a.indexOf(v)===i).join('\n');
+}
+const beats=list=>list.map(([when,line])=>`<p>${when?`<span class="when">${esc(when.replace(/[\[\]]/g,''))}</span>`:''}<span>${esc(line)}</span></p>`).join('');
+function readable(t){
+  const x=parts(t); if(!x) return esc(t);
+  const get=re=>x.head.map(l=>l.match(re)).find(Boolean)?.[1]||'';
+  const title=get(/^TITLE\s*:\s*(.+)/i), genre=get(/^GENRE\s*:\s*(.+)/i);
+  return `<div class="script">${title?`<h3>${esc(title)}</h3>`:''}${genre?`<span class="gtag">${esc(genre)}</span>`:''}
+    <h4>Story</h4><div class="story">${beats(x.story)}</div>
+    ${x.visuals.length?`<details><summary>Visuals · ${x.visuals.length} shot${x.visuals.length>1?'s':''}</summary><div class="shots">${beats(x.visuals)}</div></details>`:''}
+    ${x.foot.length?`<div class="foot">${x.foot.map(l=>`<p>${esc(l)}</p>`).join('')}</div>`:''}</div>`;
+}
+// while it types, only the story shows (the shot list would get in the way)
+const typed=t=>{ const x=parts(t); return x?x.story.map(b=>b[1]).join('\n'):t; };
 // the newest reply is typed out like someone writing it (a few seconds, however long it is); tap it to show it all
 function typeOut(el, text){
   return new Promise(done=>{
-    const body=el.querySelector('.txt'), tools=el.querySelector('.tools');
-    if(matchMedia('(prefers-reduced-motion: reduce)').matches){ body.textContent=text; return done(); }
+    const body=el.querySelector('.txt'), tools=el.querySelector('.tools'), full=text; text=typed(full);
+    const finish=()=>{ body.innerHTML=readable(full); };
+    if(matchMedia('(prefers-reduced-motion: reduce)').matches){ finish(); return done(); }
     tools.hidden=true; el.classList.add('typing');
     const per=Math.max(1,Math.ceil(text.length/400)); let i=0, stop=false;
     el.onclick=()=>{ stop=true; };
@@ -184,25 +235,32 @@ function typeOut(el, text){
       i=stop?text.length:Math.min(text.length,i+per);
       body.textContent=text.slice(0,i);
       if(i<text.length) return requestAnimationFrame(step);
-      el.classList.remove('typing'); el.onclick=null; tools.hidden=false; done();
+      el.classList.remove('typing'); el.onclick=null; tools.hidden=false; finish(); done();
     };
     step();
   });
 }
+// the "more of it" button fits the genre
+const MORE={ mix:['Make it punchier','Rewrite it punchier: a stronger hook, tighter lines and a better payoff.'], romcom:['Make it sweeter','Rewrite it sweeter and wittier: better banter and a bigger "aww" at the end.'],
+  comedy:['Make it funnier','Rewrite it funnier: bigger escalation, sharper punchlines and a callback at the end.'], kids:['Make it more fun','Rewrite it more fun for kids: a playful repeated line, more wonder and a warm happy ending.'],
+  newgen:['More relatable','Rewrite it more relatable: truer to how young people talk and live now, without forced slang.'], thriller:['Raise the stakes','Rewrite it with higher stakes, a tighter ticking clock and a sharper final turn.'],
+  suspense:['More mystery','Rewrite it with a deeper mystery: fairer clues and a more surprising reveal.'], horror:['Make it scarier','Rewrite it scarier: more dread and a nastier final line, with no gore.'] };
 function render(typeLast){
-  $('chat').innerHTML=msgs.length?msgs.map((m,i)=>`<div class="msg ${m.role}"><span class="txt">${typeLast&&i===msgs.length-1?'':esc(m.content)}</span>${m.role==='assistant'?`<div class="tools"><button class="btn" data-story="${i}">${ic('film')} Use in Story mode</button><button class="btn" data-copy="${i}">${ic('check')} Copy</button><button class="btn" data-more="${i}">Make it scarier</button><button class="btn" data-twist="${i}">Different twist</button></div>`:''}</div>`).join('')
+  $('chat').innerHTML=msgs.length?msgs.map((m,i)=>`<div class="msg ${m.role}"><span class="txt">${typeLast&&i===msgs.length-1?'':m.role==='assistant'?readable(m.content):esc(m.content)}</span>${m.role==='assistant'?`<div class="tools"><button class="btn" data-story="${i}">${ic('film')} Use in Story mode</button><button class="btn" data-copy="${i}">${ic('check')} Copy</button><button class="btn" data-more="${i}">${(MORE[m.genre]||MORE.mix)[0]}</button><button class="btn" data-twist="${i}">Different ending</button></div>`:''}</div>`).join('')
     :'<div class="empty">Tap an idea or describe your own below.</div>';
 }
-async function send(text){
+async function send(text,genre){
   text=(text||'').trim(); if(!text||$('send').disabled) return; $('err').textContent='';
+  // an idea or a rewrite keeps its own genre; typed requests use the Genre box
+  genre=genre||$('genre').value;
   msgs.push({role:'user',content:text}); save(); render();
   $('chat').insertAdjacentHTML('beforeend','<div class="msg assistant thinking" id="thinking">Writing… (10-30 seconds)</div>');
   $('thinking').scrollIntoView({behavior:'smooth',block:'end'});
   $('send').disabled=true; $('input').value='';
   try{
-    const r=await fetch('/api/scripts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:msgs,length:+$('len').value,format:$('fmt').value})});
+    const r=await fetch('/api/scripts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:msgs,length:+$('len').value,format:$('fmt').value,genre})});
     const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.error||'The writer failed, try again.');
-    j.reply=plain(j.reply); msgs.push({role:'assistant',content:j.reply}); save(); render(true);
+    j.reply=plain(j.reply); msgs.push({role:'assistant',content:j.reply,genre}); save(); render(true);
     $('meta').textContent='Last reply cost '+(j.cost?'$'+j.cost.toFixed(4):'under a cent')+'.';
     const all=$('chat').querySelectorAll('.msg.assistant'), last=all[all.length-1];
     last?.scrollIntoView({behavior:'smooth',block:'start'});
@@ -210,13 +268,12 @@ async function send(text){
   }catch(e){ msgs.pop(); save(); render(); $('input').value=text; $('err').textContent=e.message; }
   $('send').disabled=false;
 }
-dealIdeas();
 { let saved=null; try{ saved=localStorage.getItem('ideasOpen'); }catch{} setIdeas(saved===null?!msgs.length:saved==='1'); }
 $('ideasTog').onclick=()=>setIdeas($('starters').hidden,true);
 $('shuffle').onclick=dealIdeas;
 $('send').onclick=()=>send($('input').value);
 $('input').addEventListener('keydown',e=>{ if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)) send($('input').value); });
-$('starters').onclick=e=>{ const b=e.target.closest('[data-k]'); if(b){ setIdeas(false); send(IDEAS[b.dataset.k][3]); } };
+$('starters').onclick=e=>{ const b=e.target.closest('[data-k]'); if(b){ setIdeas(false); send(IDEAS[b.dataset.k][4],IDEAS[b.dataset.k][0]); } };
 $('clear').onclick=()=>{ if(msgs.length&&!confirm('Start a new chat? This one will be cleared.')) return; msgs=[]; save(); render(); $('err').textContent=''; setIdeas(true,true); dealIdeas(); };
 $('chat').onclick=async e=>{
   const b=e.target.closest('button'); if(!b) return;
@@ -229,11 +286,12 @@ $('chat').onclick=async e=>{
       const s=getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent='Selected, tap Copy';
     }
   }
-  else if(b.dataset.more) send('Rewrite it scarier: more dread, a tighter ticking clock, and a nastier final twist.');
-  else if(b.dataset.twist) send('Keep the setup, but give it a completely different, more surprising twist ending.');
+  else if(b.dataset.more){ const g=msgs[b.dataset.more].genre; send((MORE[g]||MORE.mix)[1],g); }
+  else if(b.dataset.twist) send('Keep the setup, but give it a completely different, more surprising ending.',msgs[b.dataset.twist].genre);
 };
-try{ const o=JSON.parse(localStorage.getItem('scriptsOpts')||'{}'); if(o.len) $('len').value=o.len; if(o.fmt) $('fmt').value=o.fmt; }catch{}
-['len','fmt'].forEach(id=>$(id).onchange=()=>{ try{ localStorage.setItem('scriptsOpts',JSON.stringify({len:$('len').value,fmt:$('fmt').value})); }catch{} });
+try{ const o=JSON.parse(localStorage.getItem('scriptsOpts')||'{}'); if(o.len) $('len').value=o.len; if(o.fmt) $('fmt').value=o.fmt; if(o.genre) $('genre').value=o.genre; }catch{}
+['len','fmt','genre'].forEach(id=>$(id).onchange=()=>{ try{ localStorage.setItem('scriptsOpts',JSON.stringify({len:$('len').value,fmt:$('fmt').value,genre:$('genre').value})); }catch{} if(id==='genre'){ shown=[]; dealIdeas(); } });
+dealIdeas();
 render();
 </script>
 <script src="/app.js"></script>

@@ -17,6 +17,7 @@ const { createPrices } = require("./lib/prices");
 const { persistentMap } = require("./lib/store");
 const { viewPrompt, realisticPrompt } = require("./lib/identity-prompt");
 const house = require("./lib/prompt-library"); // the owner's prompt standard
+const scriptWriter = require("./lib/script-writer");
 const { startCleanup } = require("./lib/cleanup");
 const modelsLib = require("./lib/models");
 const { createHistory } = require("./lib/history");
@@ -761,7 +762,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, t.error ? { error: t.error } : { images: t.images, cost: t.cost });
     }
 
-    // ---- Scripts: a chat with a suspense writer (craft from thriller novels, films and real viral hooks) ----
+    // ---- Scripts: a chat with a story writer (genres and craft in lib/script-writer.js) ----
     if (req.method === "POST" && url.pathname === "/api/scripts") {
       if (!KEY) return send(res, 500, { error: "OPENROUTER_API_KEY missing." });
       const b = await readBody(req);
@@ -769,21 +770,9 @@ const server = http.createServer(async (req, res) => {
         .slice(-16).map((m) => ({ role: m.role, content: m.content.slice(0, 6000) }));
       if (!msgs.length || msgs[msgs.length - 1].role !== "user") return send(res, 400, { error: "Write a message first." });
       const secs = [15, 30, 45, 60, 90].includes(Number(b.length)) ? Number(b.length) : 60;
-      const fmt = { narrated: "a narrated story (one narrator voice, told like a gripping true story)", dialogue: "a short scene with dialogue between characters plus brief action lines", pov: "a first-person POV story told straight to camera" }[b.format] || "a narrated story (one narrator voice, told like a gripping true story)";
       const model = settings.get().directorModel || "google/gemini-3.5-flash";
-      const sys = [
-        "You are a world-class suspense writer for short vertical videos, the kind of writer who has studied thriller and horror novels, mystery fiction, great film scripts, true-crime storytelling and the hooks of the best-performing human creators.",
-        "You write ORIGINAL stories, never reaction content, never commentary, never 'top 10' lists. Never copy text from existing books, films or creators; use their craft, not their words.",
-        "Your toolkit (use it, don't name it in the script): an in-medias-res cold open; an open loop the viewer needs closed; a specific, concrete, slightly wrong detail; withheld information and dramatic irony (the viewer knows the bomb is under the table); a ticking clock; escalation in threes; a mid-point reversal; a planted object that pays off; a final twist that recontextualises the opening, ideally looping back to the first line.",
-        "Hooks: the first line must stop the scroll within 2 seconds. Use patterns real creators use: a shocking statement, a confession, a forbidden rule ('Never answer the door after 3am. I did.'), a 'this is the last photo of…' moment, a question the viewer can't ignore. Never start with 'Hey guys', 'In this video' or a slow setup.",
-        "Write for the ear: short punchy sentences, present or close past tense, vivid sensory detail, no clichés like 'little did they know' or 'and then everything changed'.",
-        `Default target: ${secs} seconds of speech (about ${Math.round(secs * 2.5)} words), as ${fmt}.`,
-        "When you deliver a script, use exactly this layout in plain text (no markdown tables):",
-        "TITLE: ...\nHOOK (0-2 s): the first spoken line\nSCRIPT:\n[0-3 s] spoken line | VISUAL: what we see\n[3-8 s] spoken line | VISUAL: what we see\n... (one beat per 3-6 seconds, to the end)\nTWIST: one line on why the ending lands\nTITLE IDEAS: 3 short alternative titles",
-        "If the user asks for ideas, give 5 one-line premises with a hook each instead of a full script. If they ask for changes, rewrite the whole script with the changes. If the request is unclear, make a bold choice instead of asking questions.",
-        "Keep it suitable for YouTube and TikTok: suspense and dread are fine, no graphic gore or sexual content.",
-        ...(hing.isHinglish(req) ? [hing.RULE + " The layout labels (TITLE, HOOK, SCRIPT, VISUAL, TWIST, TITLE IDEAS) and the [0-3 s] times stay exactly as shown."] : []),
-      ].join("\n");
+      const sys = scriptWriter.systemPrompt({ genre: b.genre, format: b.format, secs }) +
+        (hing.isHinglish(req) ? "\n" + hing.RULE + " The layout labels (TITLE, GENRE, HOOK, STORY, VISUALS, ENDING, TITLE IDEAS) and the [0-3 s] times stay exactly as shown." : "");
       try {
         const r = await orFetch(`${API}/chat/completions`, { method: "POST", headers: orHeaders(), signal: AbortSignal.timeout(90000),
           body: JSON.stringify({ model, max_tokens: 4000, temperature: 0.9, reasoning: { effort: "low" }, messages: [{ role: "system", content: sys }, ...msgs] }) });

@@ -3,6 +3,14 @@
 The version lives in `public/app.js` (`VERSION`). Each release raises the last number by one and gets a line here.
 v1.0 is kept for the first public release.
 
+## 0.0.014605
+- Scripts: rom-com, comedy, kids and new-gen are the main genres (thriller, suspense and horror too), with a Genre
+  box and matching ideas. The story is shown on its own, with the shot list folded underneath, instead of mixed line
+  by line. The writer is told to keep stories easy to follow.
+
+## 0.0.014604
+- The original glowing app icon is back.
+
 ## 0.0.014603
 - Cleaner app icon: the same corner brackets and play arrow, flat on a plain dark tile, in every size.
 

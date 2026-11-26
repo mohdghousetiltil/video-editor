@@ -66,7 +66,7 @@
     'One prompt, one video.': 'Ek prompt, ek video.',
     'Your AI influencers.': 'Tumhare AI influencers.',
     'Poses for TikTok, or copy any motion.': 'TikTok ke liye poses, ya koi bhi motion copy karo.',
-    'Suspense scripts with real hooks.': 'Real hooks wale suspense scripts.',
+    'Rom-com, comedy, kids and new-gen stories.': 'Rom-com, comedy, kids aur new-gen kahaniyan.',
     'Models, spending cap and storage.': 'Models, spending cap aur storage.',
     'A video or a few pictures in, ready-to-post Short out.': 'Video ya kuch pictures daalo, post-ready Short nikalo.',
     'Paste a story, get one finished video.': 'Story paste karo, ek ready video le jao.',
