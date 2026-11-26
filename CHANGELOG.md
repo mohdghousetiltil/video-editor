@@ -3,6 +3,9 @@
 The version lives in `public/app.js` (`VERSION`). Each release raises the last number by one and gets a line here.
 v1.0 is kept for the first public release.
 
+## 0.0.014603
+- Cleaner app icon: the same corner brackets and play arrow, flat on a plain dark tile, in every size.
+
 ## 0.0.014602
 - Your own prompt standard (identity preservation, adaptive reference analysis, side / back / full-body views,
   photographic realism) is built in word for word, with pronouns matched to the person and drawn or 3D characters
