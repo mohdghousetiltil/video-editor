@@ -12,17 +12,7 @@ const { toSec, cleanSegments, parseTime } = require("./lib/cut");
 
 // estimated voice price per second of speech (the voice service doesn't report cost); same numbers as lib/spend.js
 const TTS_RATE = { "hexgrad/kokoro-82m": 0.00003, "elevenlabs/eleven-turbo-v2.5": 0.0005 };
-// Narrator voices (OpenRouter /audio/speech). Kokoro costs ~$0.002 per minute; ElevenLabs sounds more natural.
-const VOICES = [
-  { voice: "am_michael", model: "hexgrad/kokoro-82m", label: "Michael (US male, Kokoro)" },
-  { voice: "am_adam", model: "hexgrad/kokoro-82m", label: "Adam (US male, Kokoro)" },
-  { voice: "af_heart", model: "hexgrad/kokoro-82m", label: "Heart (US female, Kokoro)" },
-  { voice: "af_bella", model: "hexgrad/kokoro-82m", label: "Bella (US female, Kokoro)" },
-  { voice: "bm_george", model: "hexgrad/kokoro-82m", label: "George (UK male, Kokoro)" },
-  { voice: "bf_emma", model: "hexgrad/kokoro-82m", label: "Emma (UK female, Kokoro)" },
-  { voice: "brian", model: "elevenlabs/eleven-turbo-v2.5", label: "Brian (ElevenLabs)" },
-  { voice: "jessica", model: "elevenlabs/eleven-turbo-v2.5", label: "Jessica (ElevenLabs)" },
-];
+const { VOICES } = require("./lib/voices"); // narrator voices
 
 const { MOOD_EXPR, MOODS, renderMood } = require("./lib/music");
 const hing = require("./lib/hinglish"); // Hinglish mode

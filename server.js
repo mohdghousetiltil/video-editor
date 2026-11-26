@@ -16,6 +16,7 @@ const { createSpend, TTS_PER_SEC } = require("./lib/spend");
 const { createPrices } = require("./lib/prices");
 const { persistentMap } = require("./lib/store");
 const { viewPrompt, realisticPrompt } = require("./lib/identity-prompt");
+const house = require("./lib/prompt-library"); // the owner's prompt standard
 const { startCleanup } = require("./lib/cleanup");
 const modelsLib = require("./lib/models");
 const { createHistory } = require("./lib/history");
@@ -498,6 +499,8 @@ const server = http.createServer(async (req, res) => {
           body.frame_images = [{ type: "image_url", image_url: { url: `data:${mime};base64,` + fs.readFileSync(f).toString("base64") }, frame_type: "first_frame" }];
           delete body.input_references; // frame_images takes precedence anyway
           note = "Started from the saved influencer picture.";
+          const lock = house.videoLock(); // keep it the same person for the whole clip (skipped when the prompt is already very long)
+          if (String(body.prompt).length + lock.length < 2400) body.prompt += " " + lock;
         }
       }
       // cheapest configured provider for this model (fal.ai / BytePlus when their keys are set, else OpenRouter)
@@ -614,7 +617,8 @@ const server = http.createServer(async (req, res) => {
       const prompt = "Edit image 1. Keep exactly the same person: identical face, facial features, hair, skin tone, body proportions, pose, framing and the same background. " +
         (outfitImg ? "Image 2 shows an outfit. Dress the person from image 1 in exactly that outfit (same garments, colors, patterns, fit and accessories as image 2); do not copy the face, body or background of image 2. Change ONLY their clothing. " : outfit ? `Change ONLY their clothing to: ${outfit}. ` : "Keep the clothing exactly the same. ") +
         (makeup ? `Change ONLY their makeup to: ${makeup}. ` : "Keep the makeup exactly the same. ") +
-        "Realistic vertical 9:16 smartphone selfie photo, natural skin texture, no beauty filter, nothing else changed.";
+        "Realistic vertical 9:16 smartphone selfie photo, natural skin texture, no beauty filter, nothing else changed." +
+        "\n\n" + house.RECONSTRUCTION + "\n\n" + house.PHOTO_REALISM + "\n\n" + house.KEEP_MEDIUM;
       try {
         const r = await orFetch(`${API}/images`, { method: "POST", headers: orHeaders(), body: JSON.stringify({ model, prompt, n: 1, aspect_ratio: "9:16", input_references: [{ type: "image_url", image_url: { url: person } }, ...(outfitImg ? [{ type: "image_url", image_url: { url: outfitImg } }] : [])] }) }, { safe: false });
         const j = await r.json().catch(() => ({}));
@@ -638,7 +642,8 @@ const server = http.createServer(async (req, res) => {
       const mime = "image/" + path.extname(f).slice(1).replace("jpg", "jpeg");
       const person = `data:${mime};base64,` + fs.readFileSync(f).toString("base64");
       const prompt = "Image 1 shows a person. Image 2 shows a product. Create one realistic vertical 9:16 smartphone selfie photo of exactly the same person as image 1 (identical face, hair, skin tone and outfit) holding exactly the product from image 2 up near the camera with its label facing the lens. " +
-        "The product must keep its exact shape, size, colors, label text and packaging from image 2, with nothing added or changed. Natural window light, casual home setting, natural skin texture, no beauty filter, relaxed friendly expression, looking at the camera. " + String(b.extra || "").slice(0, 300);
+        "The product must keep its exact shape, size, colors, label text and packaging from image 2, with nothing added or changed. Natural window light, casual home setting, natural skin texture, no beauty filter, relaxed friendly expression, looking at the camera. " + String(b.extra || "").slice(0, 300) +
+        "\n\n" + house.RECONSTRUCTION + "\n\n" + house.PHOTO_REALISM + "\n\n" + house.KEEP_MEDIUM;
       try {
         const r = await orFetch(`${API}/images`, { method: "POST", headers: orHeaders(), body: JSON.stringify({ model, prompt, n: 1, aspect_ratio: "9:16", input_references: [{ type: "image_url", image_url: { url: person } }, { type: "image_url", image_url: { url: b.product } }] }) }, { safe: false });
         const j = await r.json().catch(() => ({}));
@@ -690,7 +695,7 @@ const server = http.createServer(async (req, res) => {
         clay: "Handmade stop-motion claymation figure, visible fingerprints in the plasticine, miniature set lighting, of ",
         comic: "Bold comic-book illustration, thick ink outlines, halftone shading, flat vivid colours, of ",
         neon: "Cyberpunk digital illustration lit by pink and cyan neon signs, glowing rim light, rainy night city behind, of " }[b.style] || "Realistic smartphone selfie portrait photo of ";
-      const prompt = `${lead}${desc}. Head and shoulders, looking at the camera, front-facing, relaxed expression with a slight smile, soft natural light, clean simple background${(b.style || "photo") === "photo" ? ", visible skin pores and fine peach fuzz, slight natural asymmetry, a few flyaway hairs, warm window light with soft falloff, none of the plastic over-retouched AI look, no beauty filter" : ""}. Vertical 9:16 framing.`;
+      const prompt = `${lead}${desc}. Head and shoulders, looking at the camera, front-facing, relaxed expression with a slight smile, soft natural light, clean simple background${(b.style || "photo") === "photo" ? ", visible skin pores and fine peach fuzz, slight natural asymmetry, a few flyaway hairs, warm window light with soft falloff, none of the plastic over-retouched AI look, no beauty filter" : ""}. Vertical 9:16 framing.` + ((b.style || "photo") === "photo" ? "\n\n" + house.PHOTO_REALISM : "");
       // from your photo: a NEW character in the chosen style that keeps your look (video models refuse real people's photos)
       const REF_STYLE = {
         // real = true to the photo: the same face, nothing beautified (it used to idealise the face; the polished look is now "glam")
@@ -979,6 +984,7 @@ const server = http.createServer(async (req, res) => {
           (bible ? "The user gives a story's character and setting notes: rewrite them so EVERY character gets one compact description (under 50 words each), then one sentence for the main setting. Under 220 words in total, plain text, one line per character. For each character: "
             : "Write ONE compact paragraph, under 70 words.") + " Present tense, no names of real people or brands: who they are (kind of being, age range, build), face (shape, eyes, eyebrows, notable features), hair (colour, length, style), skin or fur tone, " +
           "outfit with exact colours and items, and 1-2 distinctive details (accessory, mark, posture). Only visible traits, no personality or backstory, no scene or action. Keep everything the user gave. " +
+          "Pin down permanent physical characteristics (facial geometry, eye shape and spacing, eyebrows, nose, lips, jawline, skin tone, hair texture and density, body proportions) rather than lighting, pose or lens effects. Do not beautify or idealise. " +
           (look ? `The video look is ${look.name}: ${look.style}. Describe the character so it fits that look. ` : "") + "Output ONLY the description, no preamble or quotes.";
         const r = await orFetch(`${API}/chat/completions`, { method: "POST", headers: orHeaders(),
           body: JSON.stringify({ model: textModel(), max_tokens: bible ? 1200 : 600, reasoning: { enabled: false }, messages: [{ role: "system", content: sys }, { role: "user", content: b.prompt.trim().slice(0, 1500) }] }) });
@@ -1003,7 +1009,8 @@ const server = http.createServer(async (req, res) => {
         "Write one vivid paragraph in present tense: subject and consistent appearance (hair, clothes, colors), setting, lighting, concrete visible action in time order that fits the clip length, camera shot (one fixed angle, no camera movement unless the idea asks for it), mood. Only the main and supporting characters move; the background stays still unless the idea says otherwise. " +
         "Describe only what can be seen and heard in one continuous shot, following any timed beats given at the end; no abstract story, no on-screen text unless essential. " +
         "Never describe split screens, comic panels, multiple frames or a storyboard: the whole frame shows one scene. " +
-        "End with a short 'Sound:' line (ambience, effects, any short spoken line in quotes). Keep under " + (Number(b.max_words) || 140) + " words. " +
+        "End with a short 'Sound:' line (ambience, effects, any short spoken line in quotes). Keep under " + (Number(b.max_words) || 180) + " words. " +
+        "\n\n" + house.enhancerGuide() + "\n\n" +
         lenRule + "Aspect ratio: " + (b.aspect_ratio || "9:16") + ". " +
         (b.style ? "Visual style to respect: " + b.style + " " : look ? `Visual style to respect (${look.name} look): ${look.style}. ` : "") + charNote + (b.extra || "") +
         (hing.isHinglish(req) ? " Every line a person SAYS inside the prompt (spoken dialogue in quotes, or a voiceover) is written in Hinglish: modern Hindi mixed with English, in English letters only, never Devanagari. Everything else in the prompt stays in English." : "");

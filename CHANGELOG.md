@@ -3,6 +3,16 @@
 The version lives in `public/app.js` (`VERSION`). Each release raises the last number by one and gets a line here.
 v1.0 is kept for the first public release.
 
+## 0.0.014602
+- Your own prompt standard (identity preservation, adaptive reference analysis, side / back / full-body views,
+  photographic realism) is built in word for word, with pronouns matched to the person and drawn or 3D characters
+  kept in their style. It drives the poses, Realistic look, cameo, look change, UGC start frame, new portraits,
+  clips that start from an influencer's picture, and the Enhance prompt and character writers.
+- Many more voices: 32 Kokoro (US, UK, Hindi) and 21 ElevenLabs in Shorts, Story and the influencer's voice.
+
+## 0.0.014601
+- History: the card's Download button shows just its icon.
+
 ## 0.0.014600
 - History cards keep just a large Download and a small ✕ to delete. Redo, Enhance and Add background music moved into the
   details view (tap the title). Titles take two lines at most. The Find filters fold away (tap Find); the header shows how many are on.

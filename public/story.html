@@ -269,9 +269,9 @@ function render(){
   totals(); renderBoard();
 }
 const TTS={
-  'hexgrad/kokoro-82m':{label:'Kokoro 82M (cheapest)',perSec:.00003,voices:['am_adam','am_michael','am_onyx','bm_george','bm_daniel','af_heart','af_bella','af_nicole','bf_emma']},
-  'elevenlabs/eleven-turbo-v2.5':{label:'ElevenLabs Turbo v2.5',perSec:.0005,voices:['george','brian','adam','daniel','liam','will','sarah','jessica','alice','lily']},
-  'elevenlabs/eleven-v3':{label:'ElevenLabs v3 (most expressive)',perSec:.001,tone:true,voices:['george','brian','adam','daniel','liam','will','sarah','jessica','alice','lily']},
+  'hexgrad/kokoro-82m':{label:'Kokoro 82M (cheapest)',perSec:.00003,voices:['am_adam','am_michael','am_onyx','am_echo','am_eric','am_fenrir','am_liam','am_puck','am_santa','bm_george','bm_daniel','bm_fable','bm_lewis','af_heart','af_bella','af_nicole','af_alloy','af_aoede','af_jessica','af_kore','af_nova','af_river','af_sarah','af_sky','bf_emma','bf_alice','bf_isabella','bf_lily','hf_alpha','hf_beta','hm_omega','hm_psi']},
+  'elevenlabs/eleven-turbo-v2.5':{label:'ElevenLabs Turbo v2.5',perSec:.0005,voices:['george','brian','adam','daniel','liam','will','bill','callum','charlie','chris','eric','harry','roger','sarah','jessica','alice','lily','bella','laura','matilda','river']},
+  'elevenlabs/eleven-v3':{label:'ElevenLabs v3 (most expressive)',perSec:.001,tone:true,voices:['george','brian','adam','daniel','liam','will','bill','callum','charlie','chris','eric','harry','roger','sarah','jessica','alice','lily','bella','laura','matilda','river']},
 };
 function nwText(s){
   const words=(s.narration||'').trim().split(/\s+/).filter(Boolean).length, d=dur(s), max=Math.round(d*2.5);
