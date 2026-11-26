@@ -3,7 +3,7 @@
   if (window.__shellRedirect) return; // this page is being replaced by the shell right now
   // The app's version, shown in every page footer and on the boot screen. Raise it with each release and add a line to
   // CHANGELOG.md; v1.0 is kept for the first public release.
-  const VERSION = '0.0.014605';
+  const VERSION = '0.0.014606';
   const svg = (d) => `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
   const ICON = {
     clip: svg('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9.5 5 2.5-5 2.5z"/>'),
@@ -49,7 +49,7 @@
   const side = document.createElement('aside');
   side.className = 'sb';
   side.innerHTML =
-    '<a class="sb-brand" href="/"><span class="sb-logo">'+ICON.clip+'</span><span>VD<em>-0</em></span></a>' +
+    '<a class="sb-brand" href="/"><span class="sb-logo">'+ICON.clip+'</span><span>VD<em>0</em></span></a>' +
     '<div class="sb-nav">' +
     items.map((i) => `<a href="${i[0]}" class="${i[0] === here ? 'on' : ''}" title="${i[1]}: ${i[3]}"${i[0] === here ? ' aria-current="page"' : ''}><span class="ic">${i[2]}</span><span class="tx"><b>${i[1]}</b><small>${i[3]}</small></span></a>`).join('') +
     '</div><a class="sb-queue" id="sbQueue" href="/history?status=running" hidden><span class="dot ok"></span><span id="sbQueueTxt"></span></a>' +
