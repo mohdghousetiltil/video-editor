@@ -26,8 +26,30 @@ const VOICES = [
 
 const { MOOD_EXPR, MOODS, renderMood } = require("./lib/music");
 const hing = require("./lib/hinglish"); // Hinglish mode
+const { cameoPrompt } = require("./lib/identity-prompt");
 
-module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, serveMp4, tts, logSpend = () => {}, orFetch = fetch, renderSlot = null, getModel = () => null, serveThumb, history = null }) {
+// Influencer cameo (Pictures -> explainer): a saved influencer is drawn into up to CAMEO_MAX of the pictures.
+const CAMEO_MAX = 3;
+// estimated price of one cameo picture per image model (shown before paying; the real charge is what gets logged)
+const CAMEO_PRICE = { "meta/muse-image": 0.01, "google/gemini-3.1-flash-image": 0.07, "bytedance-seed/seedream-5-0-lite": 0.035, "black-forest-labs/flux-3-image-klein": 0.015 };
+const cameoPrice = (model) => CAMEO_PRICE[model] ?? 0.07;
+// which of the n narrated pictures the person appears in: the hook first, then the payoff, then the middle
+function cameoSlides(n, count) {
+  const want = [0, n - 1, Math.floor((n - 1) / 2)].slice(0, Math.max(0, Math.min(CAMEO_MAX, count)));
+  return [...new Set(want)].filter((i) => i >= 0 && i < n).sort((a, b) => a - b);
+}
+// What is on screen when: one shot per line, except a line with a cameo, which opens on the person presenting and
+// then crossfades to the untouched original, so nothing in the user's picture is lost. X = crossfade length.
+function pictureShots(slides, X) {
+  return slides.flatMap((s) => {
+    if (!s.cameo) return [{ file: s.file, start: s.start, D: s.D }];
+    const a = s.D * 0.55;
+    return [{ file: s.cameo, start: s.start, D: a }, { file: s.file, start: s.start + a - X, D: s.D - a + X, inner: true }];
+  });
+}
+
+module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, serveMp4, tts, logSpend = () => {}, orFetch = fetch, renderSlot = null, getModel = () => null, serveThumb, history = null,
+  readInf = () => [], imgFile = () => undefined, viewFile = () => undefined, getImageModel = () => "meta/muse-image" }) {
   if (!renderSlot || !renderSlot.submit) renderSlot = require("./lib/render").createRenderer({ slots: 99 }); // stand-alone use: no limit
   const hist = (id, rec) => { try { history && history.put("short-" + id, { kind: "short", url: `/api/shorts/${id}/short.mp4`, thumb: `/api/shorts/${id}/thumb.jpg`, ...rec }); } catch {} };
   const DIR = path.join(STORE, "work", "shorts");
@@ -727,6 +749,27 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
     return plan;
   }
 
+  // One cameo picture: the influencer (main picture + front / half-body poses) presenting the user's picture.
+  // Each one is logged as spent the moment it comes back, under the image model.
+  async function drawCameo(job, dir, cameo, subject, narration, out) {
+    const url = (f) => `data:image/${path.extname(f).slice(1).replace("jpg", "jpeg")};base64,${fs.readFileSync(path.join(dir, f)).toString("base64")}`;
+    const model = getImageModel(), prompt = cameoPrompt({ refs: cameo.refs.length, desc: cameo.desc, narration });
+    const r = await orFetch(`${API}/images`, {
+      method: "POST", headers: { Authorization: `Bearer ${getKey()}`, "Content-Type": "application/json" }, signal: AbortSignal.timeout(180000),
+      body: JSON.stringify({ model, prompt, n: 1, aspect_ratio: "9:16", input_references: [...cameo.refs, subject].map((f) => ({ type: "image_url", image_url: { url: url(f) } })) }),
+    }, { safe: false });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.error) throw new Error(j.error?.message || `image failed (${r.status})`);
+    const cost = Number(j.usage?.cost) || 0;
+    job.cameoCost = (job.cameoCost || 0) + cost;
+    logSpend("Shorts", cost, model);
+    const d = j.data?.[0];
+    if (!d?.b64_json) throw new Error("the image model returned no picture");
+    const file = `${out}.${/png/.test(d.media_type || "") ? "png" : /webp/.test(d.media_type || "") ? "webp" : "jpg"}`;
+    fs.writeFileSync(path.join(dir, file), Buffer.from(d.b64_json, "base64"));
+    return file;
+  }
+
   async function runPictures(id, opts) {
     const job = jobs.get(id), dir = dirOf(id);
     job.lang = opts.lang || "";
@@ -737,6 +780,22 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       const plan = opts.reusePlan && fs.existsSync(path.join(dir, "plan.json")) ? JSON.parse(fs.readFileSync(path.join(dir, "plan.json"), "utf8")) : await askPictures(job, files, opts);
       fs.writeFileSync(path.join(dir, "plan.json"), JSON.stringify(plan));
       job.plan = { title: plan.title, hook: plan.hook };
+
+      // the cameo pictures (only with an influencer picked); one that can't be made leaves just the original
+      const cameos = new Map(); // line number -> picture file
+      if (opts.cameo) {
+        const at = cameoSlides(plan.slides.length, opts.cameo.count);
+        let done = 0;
+        Object.assign(job, { step: `Adding ${opts.cameo.name} to the pictures`, pct: 14 });
+        await pool(at, 2, async (i) => {
+          const s = plan.slides[i];
+          // a retry keeps the cameo pictures the first attempt already paid for
+          const had = opts.reusePlan && fs.readdirSync(dir).find((f) => new RegExp(`^cameo${i}\\.(png|jpg|webp)$`).test(f));
+          try { cameos.set(i, had || await drawCameo(job, dir, opts.cameo, path.basename(files[s.image]), s.narration, `cameo${i}`)); }
+          catch (e) { job.warning = `${opts.cameo.name} is missing from picture ${s.image + 1}: ${String(e.message).slice(0, 160)}`; }
+          job.pct = 14 + Math.round((++done / at.length) * 6);
+        });
+      }
 
       // 1. narrator: one line per picture (silence trimmed so the lines flow)
       const v = VOICES.find((x) => x.voice === opts.voice) || VOICES[0];
@@ -750,17 +809,18 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
         const vd = await audioDuration(path.join(dir, vf));
         if (!vd) throw new Error(`The narrator's line for picture ${s.image + 1} came back empty. Try again.`);
         job.ttsCost = (job.ttsCost || 0) + vd * (TTS_RATE[v.model] ?? 0.0005);
-        slides.push({ ...s, voice: vf, vd, D: Math.max(2.5, vd + 0.6) });
+        slides.push({ ...s, file: path.basename(files[s.image]), cameo: cameos.get(i), voice: vf, vd, D: Math.max(2.5, vd + 0.6) });
       }
       let t = 0;
       slides.forEach((s, k) => { s.start = t; t += s.D - X; });
       const total = slides.reduce((a, s) => a + s.D, 0) - X * (slides.length - 1);
 
       // 2. every picture: fitted over a blurred fill of itself, then a slow push-in (or pull-out) for its whole line
-      for (let k = 0; k < slides.length; k++) {
-        const s = slides[k];
-        Object.assign(job, { step: `Animating picture ${k + 1}/${slides.length}`, pct: 45 + Math.round((k / slides.length) * 25) });
-        await run(["-y", "-i", path.basename(files[s.image]), "-filter_complex",
+      const shots = pictureShots(slides, X);
+      for (let k = 0; k < shots.length; k++) {
+        const s = shots[k];
+        Object.assign(job, { step: `Animating picture ${k + 1}/${shots.length}`, pct: 45 + Math.round((k / shots.length) * 25) });
+        await run(["-y", "-i", s.file, "-filter_complex",
           `[0:v]scale=${W * 2}:${H * 2}:force_original_aspect_ratio=increase,crop=${W * 2}:${H * 2},boxblur=40:2,eq=brightness=-0.1:saturation=0.8[bg];` +
           `[0:v]scale=${W * 2 - 120}:${H * 2 - 400}:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,format=yuv420p[o]`,
           "-map", "[o]", "-frames:v", "1", `slide${k}.png`], dir);
@@ -797,12 +857,12 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
 
       // 5. the video: pictures crossfaded, captions burned in, music ducked under the voice, loudness to -14 LUFS
       const ins = [];
-      slides.forEach((_, k) => ins.push("-i", `s${k}.mp4`));
+      shots.forEach((_, k) => ins.push("-i", `s${k}.mp4`));
       ins.push("-i", "voice.wav");
       if (musicFile) ins.push("-stream_loop", "-1", "-t", total.toFixed(3), "-i", musicFile);
-      const n = slides.length, aV = n, aM = n + 1;
+      const n = shots.length, aV = n, aM = n + 1;
       let g = "", last = "[0:v]";
-      for (let k = 1; k < n; k++) { g += `${last}[${k}:v]xfade=transition=${PIC_TRANS[k % PIC_TRANS.length]}:duration=${X}:offset=${slides[k].start.toFixed(3)}[x${k}];`; last = `[x${k}]`; }
+      for (let k = 1; k < n; k++) { g += `${last}[${k}:v]xfade=transition=${shots[k].inner ? "fade" : PIC_TRANS[k % PIC_TRANS.length]}:duration=${X}:offset=${shots[k].start.toFixed(3)}[x${k}];`; last = `[x${k}]`; }
       g += `${last}fade=t=in:d=0.3,subtitles=subs.ass:fontsdir=${fontsArg(dir)},format=yuv420p[v];`;
       g += musicFile
         ? `[${aM}:a]aresample=48000,aformat=channel_layouts=stereo,volume=0.3,afade=t=out:st=${Math.max(0, total - 1.5).toFixed(2)}:d=1.5[mu];[${aV}:a]asplit[sp1][sp2];[mu][sp1]sidechaincompress=threshold=0.02:ratio=12:attack=20:release=450[mud];[sp2][mud]amix=inputs=2:duration=first:normalize=0,loudnorm=I=-14:TP=-1.5:LRA=11[a]`
@@ -823,7 +883,8 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
         id, status: "done", kind: "pictures", createdAt: job.createdAt, source: { title: opts.title || plan.title || "Pictures", pictures: files.length },
         length: +total.toFixed(1), hook, captions: events.length, voiceover: slides.map((s) => s.narration),
         title: String(plan.title || "").slice(0, 100), description: String(plan.description || ""), hashtags: tags.slice(0, 8),
-        thumbnailText: tt, cost: +(job.cost || 0).toFixed(4), sound: { music: musicFile ? mood : null, effects: opts.sfx !== false ? n - 1 : 0 },
+        thumbnailText: tt, cost: +((job.cost || 0) + (job.cameoCost || 0)).toFixed(4), sound: { music: musicFile ? mood : null, effects: opts.sfx !== false ? slides.length - 1 : 0 },
+        ...(opts.cameo ? { cameo: { name: opts.cameo.name, pictures: slides.filter((s) => s.cameo).map((s) => s.image + 1) }, warning: job.warning || null } : {}),
         opts: { captions: opts.captions, capStyle: opts.capStyle, music: opts.music, voice: opts.voice, len: opts.len },
       };
       saveMeta(id, meta);
@@ -835,8 +896,8 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       hist(id, { status: "failed", error: job.error });
     } finally {
       logSpend("Shorts", (job.cost || 0) - (job.ttsCost || 0), modelNow(), "short-" + id);
-      for (const f of fs.readdirSync(dir)) if (/^(s\d+\.mp4|slide\d+\.png|vo\d+\.mp3|vt\d+\.wav|voice\.wav|sfx-.*\.wav|music-.*\.m4a)$/.test(f)) fs.rm(path.join(dir, f), { force: true }, () => {});
-      setTimeout(() => jobs.delete(id), 60 * 60 * 1000);
+      for (const f of fs.readdirSync(dir)) if (/^(s\d+\.mp4|slide\d+\.png|vo\d+\.mp3|vt\d+\.wav|voice\.wav|sfx-.*\.wav|music-.*\.m4a|cameoref\d+\.(jpg|png|webp)|cameo\d+\.(jpg|png|webp))$/.test(f)) fs.rm(path.join(dir, f), { force: true }, () => {});
+      setTimeout(() => jobs.delete(id), 60 * 60 * 1000).unref?.(); // (never keeps the process alive by itself)
     }
   }
 
@@ -933,7 +994,8 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       start(id, { ...readOpts((k) => url.searchParams.get(k)), file, title: name, lang: hing.isHinglish(req) ? "hinglish" : "" });
       return send(res, 200, { id }), true;
     }
-    // pictures -> explainer Short: JSON {images:[data URLs], hint, voice, len, captions, capStyle, music, sfx}
+    // pictures -> explainer Short: JSON {images:[data URLs], hint, voice, len, captions, capStyle, music, sfx,
+    // influencer_id?, cameos? (how many pictures that influencer appears in, 1-3)}
     if (req.method === "POST" && url.pathname === "/api/shorts/pictures") {
       if (!getKey()) return send(res, 500, { error: "OPENROUTER_API_KEY missing." }), true;
       let b = "";
@@ -943,6 +1005,12 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       const imgs = (Array.isArray(body.images) ? body.images : []).map((u) => String(u).match(/^data:image\/(jpeg|jpg|png|webp);base64,([A-Za-z0-9+/=]+)$/)).filter(Boolean);
       if (!imgs.length) return send(res, 400, { error: "Add at least one picture." }), true;
       if (imgs.length > 10) return send(res, 400, { error: "Up to 10 pictures at a time." }), true;
+      let inf = null, main = null;
+      if (body.influencer_id) {
+        inf = /^[\w-]+$/.test(body.influencer_id) && readInf().find((x) => x.id === body.influencer_id);
+        main = inf && imgFile(inf.id);
+        if (!main) return send(res, 400, { error: "That influencer has no saved picture." }), true;
+      }
       const id = newJob(), dir = dirOf(id);
       // every picture is stored as JPEG (the vision model and ffmpeg both read it)
       for (let i = 0; i < imgs.length; i++) {
@@ -953,6 +1021,14 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       }
       const get = (k) => (body[k] == null ? null : String(body[k]));
       const opts = { ...readOpts(get), images: imgs.map(() => 1), title: String(body.title || "").slice(0, 120), lang: hing.isHinglish(req) ? "hinglish" : "" };
+      if (inf) { // the reference pictures travel in the Short's folder, so a render worker has them too
+        const refs = [main, viewFile(inf.id, "front"), viewFile(inf.id, "half")].filter(Boolean).map((f, i) => {
+          const name = `cameoref${i}${path.extname(f)}`;
+          fs.copyFileSync(f, path.join(dir, name));
+          return name;
+        });
+        opts.cameo = { name: String(inf.name || "Influencer").slice(0, 60), desc: String(inf.desc || "").slice(0, 600), refs, count: Math.max(1, Math.min(CAMEO_MAX, Math.round(+body.cameos) || 2)) };
+      }
       const q = renderSlot.stats ? renderSlot.stats() : null, ahead = q ? q.waiting + (q.active >= q.slots ? 1 : 0) : 0;
       const job = jobs.get(id);
       job.step = ahead ? `Waiting for ${ahead} other video${ahead > 1 ? "s" : ""} to finish rendering` : "Starting";
@@ -1006,7 +1082,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       start(id, { ...o, link: null, file: src, reusePlan: true });
       return send(res, 200, { id }), true;
     }
-    if (req.method === "GET" && url.pathname === "/api/shorts/voices") return send(res, 200, { voices: VOICES.filter((v) => !hing.isHinglish(req) || /eleven/.test(v.model)).map((v) => (hing.isHinglish(req) ? { ...v, model: hing.HINGLISH_TTS, label: v.label.replace("ElevenLabs", "ElevenLabs v3") } : v)).map(({ voice, label, model }) => ({ voice, label, model, perSec: TTS_RATE[model] ?? 0.0005 })), vision: modelNow() }), true;
+    if (req.method === "GET" && url.pathname === "/api/shorts/voices") return send(res, 200, { voices: VOICES.filter((v) => !hing.isHinglish(req) || /eleven/.test(v.model)).map((v) => (hing.isHinglish(req) ? { ...v, model: hing.HINGLISH_TTS, label: v.label.replace("ElevenLabs", "ElevenLabs v3") } : v)).map(({ voice, label, model }) => ({ voice, label, model, perSec: TTS_RATE[model] ?? 0.0005 })), vision: modelNow(), cameo: { model: getImageModel(), perPicture: cameoPrice(getImageModel()) } }), true;
     if (req.method === "GET" && url.pathname === "/api/shorts") {
       const ids = fs.readdirSync(DIR).filter((d) => /^\w+$/.test(d)).sort().reverse().slice(0, 30);
       return send(res, 200, { shorts: ids.map(publicView).filter(Boolean) }), true;
@@ -1034,3 +1110,4 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
     return false;
   } };
 };
+Object.assign(module.exports, { cameoSlides, pictureShots });

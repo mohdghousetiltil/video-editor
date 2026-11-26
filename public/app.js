@@ -3,7 +3,7 @@
   if (window.__shellRedirect) return; // this page is being replaced by the shell right now
   // The app's version, shown in every page footer and on the boot screen. Raise it with each release and add a line to
   // CHANGELOG.md; v1.0 is kept for the first public release.
-  const VERSION = '0.0.014589';
+  const VERSION = '0.0.014591';
   const svg = (d) => `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
   const ICON = {
     clip: svg('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9.5 5 2.5-5 2.5z"/>'),
@@ -354,7 +354,7 @@
   setInterval(() => { if (!offScreen()) loadSpend(); }, 60000);
   addEventListener('spend-changed', () => setTimeout(loadSpend, 1500)); // pages can nudge it after a paid action
 
-  // ---------- Easter eggs (Settings → "Little easter-egg glitches"; off when the OS asks for reduced motion, except
+  // ---------- Easter eggs (Settings → "Little easter-egg glitches" switches them and the ambient glitch effects; off when the OS asks for reduced motion, except
   // netrunner mode itself and its screen break, which then plays a calm short version) ----------
   //  · every few minutes a page title or heading glitches for a split second (never buttons)
   //  · ↑ ↑ ↓ ↓ ← → ← → B A  → OVERDRIVE
@@ -366,12 +366,15 @@
   //  · after midnight the server light says NETRUNNER ONLINE
   //  · netrunner mode, phones: the first tap on + breaks the screen (breach.js), once per app launch
   (() => {
-    let on = true;
-    try { on = localStorage.getItem('eggs') !== '0'; } catch {}
-    if (!sessionStorage.getItem('eggsSync')) { // pick up the server setting once per visit
-      fetch('/api/settings').then((r) => r.json()).then((j) => { try { localStorage.setItem('eggs', j.settings.eggs ? '1' : '0'); sessionStorage.setItem('eggsSync', '1'); } catch {} }).catch(() => {});
-    }
-    if (!on) return;
+    // The switch takes effect at once: html.fx-off stops the CSS effects and every JS egg checks eggsOn() as it fires.
+    // The storage event reaches the other pages the app keeps alive.
+    const root = document.documentElement;
+    const eggsOn = () => !root.classList.contains('fx-off');
+    // Off unless this browser ticked the box. The choice stays in this browser only, never on the server.
+    const applyEggs = () => { let on = false; try { on = localStorage.getItem('eggsOn') === '1'; } catch {} root.classList.toggle('fx-off', !on); };
+    applyEggs();
+    window.applyEggs = applyEggs;
+    addEventListener('storage', (e) => { if (e.key === 'eggsOn' || e.key === null) applyEggs(); });
     // night owls: after midnight the status light (desktop) says NETRUNNER ONLINE and the phone orb glows magenta
     const night = new Date().getHours() < 4;
     if (night) { window.__eggNight = true; document.body.classList.add('eg-night'); }
@@ -385,7 +388,7 @@
       if (!played()) { const s = document.createElement('script'); s.src = '/breach.js'; document.head.appendChild(s); }
       moreBtn.addEventListener('click', (e) => {
         const show = window.studioBreach; // not loaded (yet, or offline): + simply works as always
-        if (!show || isOpen() || played()) return;
+        if (!eggsOn() || !show || isOpen() || played()) return;
         const orb = moreBtn.querySelector('.tb-orb').getBoundingClientRect();
         if (!orb.width) return;
         const started = show.play({ x: orb.left + orb.width / 2, y: orb.top + orb.height / 2 }, {
@@ -398,8 +401,9 @@
       }, true);
     };
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) { armBreach(); return; }
-    const glitch = (el) => { if (!el) return; el.classList.remove('eg-glitch'); void el.offsetWidth; el.classList.add('eg-glitch'); setTimeout(() => el.classList.remove('eg-glitch'), 420); };
+    const glitch = (el) => { if (!el || !eggsOn()) return; el.classList.remove('eg-glitch'); void el.offsetWidth; el.classList.add('eg-glitch'); setTimeout(() => el.classList.remove('eg-glitch'), 420); };
     const tear = (n = 5) => {
+      if (!eggsOn()) return;
       for (let i = 0; i < n; i++) setTimeout(() => {
         const t = document.createElement('div');
         t.className = 'eg-tear';
@@ -418,12 +422,14 @@
     setTimeout(tick, 60000 + Math.random() * 60000);
     const buzz = (p) => { try { navigator.vibrate && navigator.vibrate(p); } catch {} }; // Android only; iPhones ignore it
     const overdrive = () => {
+      if (!eggsOn()) return;
       document.body.classList.add('eg-overdrive'); tear(6); buzz([40, 30, 120]);
       toast('OVERDRIVE ENGAGED // all limiters off (not really)', 'ok');
       setTimeout(() => document.body.classList.remove('eg-overdrive'), 2500);
     };
     // nav labels (sidebar on desktop, tab bar on phones) scramble into hex/katakana for a moment
     const hack = () => {
+      if (!eggsOn()) return;
       const nodes = [...side.querySelectorAll('.sb-nav .tx b')]
         .concat([...tabs.querySelectorAll('a, .tb-more small')].map((el) => [...el.childNodes].find((n) => n.nodeType === 3 && n.textContent.trim()) || el.querySelector('small')).filter(Boolean));
       const orig = nodes.map((n) => n.textContent);
@@ -452,6 +458,7 @@
     const fastTaps = (el, n, fn) => {
       let ts = [];
       el && el.addEventListener('click', (e) => {
+        if (!eggsOn()) return;
         const now = Date.now(); ts = ts.filter((t) => now - t < 1600); ts.push(now);
         if (ts.length >= n) { ts = []; e.preventDefault(); fn(); }
       });
@@ -464,7 +471,7 @@
     const orb = tabs.querySelector('.tb-more');
     // a finger that moves (scrolling, sliding off) cancels the hold, so a scroll never fires it
     let hx = 0, hy = 0;
-    orb.addEventListener('pointerdown', (e) => { held = false; hx = e.clientX; hy = e.clientY; clearTimeout(holdT); holdT = setTimeout(() => { held = true; overdrive(); }, 1500); });
+    orb.addEventListener('pointerdown', (e) => { held = false; hx = e.clientX; hy = e.clientY; clearTimeout(holdT); holdT = setTimeout(() => { if (!eggsOn()) return; held = true; overdrive(); }, 1500); });
     orb.addEventListener('pointermove', (e) => { if (Math.hypot(e.clientX - hx, e.clientY - hy) > 10) clearTimeout(holdT); });
     ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => orb.addEventListener(ev, () => clearTimeout(holdT)));
     orb.addEventListener('click', (e) => { if (held) { held = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
@@ -489,7 +496,7 @@
     //  · home-screen app: a boot screen for 3.756 s, at most once an hour (tap to skip)
     const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
     if (matchMedia('(pointer: coarse)').matches) {
-      const rgb = () => { document.body.classList.remove('eg-rgb'); void document.body.offsetWidth; document.body.classList.add('eg-rgb'); setTimeout(() => document.body.classList.remove('eg-rgb'), 650); };
+      const rgb = () => { if (!eggsOn()) return; document.body.classList.remove('eg-rgb'); void document.body.offsetWidth; document.body.classList.add('eg-rgb'); setTimeout(() => document.body.classList.remove('eg-rgb'), 650); };
       let multi = null;
       addEventListener('touchstart', (e) => { if (e.touches.length >= 2) multi = { n: e.touches.length, t: Date.now(), moved: false }; }, { passive: true });
       addEventListener('touchmove', () => { if (multi) multi.moved = true; }, { passive: true });
@@ -503,7 +510,7 @@
       const h1 = document.querySelector('.pagehead h1');
       if (h1) {
         let ht;
-        h1.addEventListener('touchstart', () => { ht = setTimeout(() => { h1.classList.add('eg-holo'); buzz(30); setTimeout(() => h1.classList.remove('eg-holo'), 6000); }, 1000); }, { passive: true });
+        h1.addEventListener('touchstart', () => { ht = setTimeout(() => { if (!eggsOn()) return; h1.classList.add('eg-holo'); buzz(30); setTimeout(() => h1.classList.remove('eg-holo'), 6000); }, 1000); }, { passive: true });
         ['touchend', 'touchmove', 'touchcancel'].forEach((ev) => h1.addEventListener(ev, () => clearTimeout(ht), { passive: true }));
       }
       // pull down hard at the very top (the iPhone bounce) three times
@@ -514,7 +521,7 @@
         const dy = (e.changedTouches[0]?.clientY || 0) - py; py = null;
         if (dy < 140) return;
         const now = Date.now(); pulls = pulls.filter((t) => now - t < 4000); pulls.push(now);
-        if (pulls.length >= 3) { pulls = []; document.body.classList.add('eg-reboot'); tear(4); setTimeout(() => document.body.classList.remove('eg-reboot'), 1300); }
+        if (pulls.length >= 3 && eggsOn()) { pulls = []; document.body.classList.add('eg-reboot'); tear(4); setTimeout(() => document.body.classList.remove('eg-reboot'), 1300); }
       }, { passive: true });
       // sideways and back
       let turned = 0;
@@ -522,11 +529,11 @@
       const onTurn = () => {
         const land = so ? /landscape/.test(so.type) : Math.abs(window.orientation || 0) === 90;
         if (land) turned = Date.now();
-        else if (turned && Date.now() - turned < 2000) { turned = 0; document.body.classList.add('eg-roll'); setTimeout(() => document.body.classList.remove('eg-roll'), 1100); }
+        else if (eggsOn() && turned && Date.now() - turned < 2000) { turned = 0; document.body.classList.add('eg-roll'); setTimeout(() => document.body.classList.remove('eg-roll'), 1100); }
       };
       so && so.addEventListener ? so.addEventListener('change', onTurn) : addEventListener('orientationchange', onTurn);
     }
-    if (standalone) {
+    if (standalone && eggsOn()) {
       // at most once an hour
       const HOUR = 3600000, now = Date.now();
       let last = 0; try { last = Number(localStorage.getItem('egBootAt')) || 0; } catch {}
@@ -537,7 +544,7 @@
         // a different crew each boot
         const CREWS = ['NETRUNNER', 'FIXER', 'TECHIE', 'NOMAD', 'SOLO', 'ROCKERBOY', 'MEDTECH', 'MEDIA'];
         const crew = new Date().getHours() < 4 ? 'NETRUNNER' : CREWS[Math.floor(Math.random() * CREWS.length)];
-        const lines = [`VD-0 OS v${VERSION}`, 'LINKING NEURAL RENDER CORE ......... OK', `JACKING IN ${crew} CREW .............. OK`, 'CALIBRATING LOOKS ...................... OK', `WELCOME BACK, ${crew}`];
+        const lines = [`VD0 OS v${VERSION}`, 'LINKING NEURAL RENDER CORE ......... OK', `JACKING IN ${crew} CREW .............. OK`, 'CALIBRATING LOOKS ...................... OK', `WELCOME BACK, ${crew}`];
         // on screen for 3.756 s: the lines type in over the first ~2.4 s, then it holds and fades
         boot.innerHTML = lines.map((l, i) => `<div style="--d:${i * 600}ms">${l}</div>`).join('');
         const end = () => { boot.classList.add('out'); setTimeout(() => boot.remove(), 300); };
@@ -564,7 +571,7 @@
       ft.className = 'site-foot';
       ft.innerHTML = '<a href="/guide">How it works</a><span aria-hidden="true">·</span>' + ['help', 'about', 'privacy', 'refunds'].map((k) => `<button type="button" data-k="${k}">${S.INFO[k][0]}</button>`).join('<span aria-hidden="true">·</span>') +
         '<span class="sf-note">Single-user studio · charges go to your own OpenRouter key</span>' +
-        `<span class="sf-ver">VD-0 v${VERSION}</span>`;
+        `<span class="sf-ver">VD0 v${VERSION}</span>`;
       ft.addEventListener('click', (e) => { const b = e.target.closest('button[data-k]'); if (b) S.openInfo(b.dataset.k); });
       wrap.append(ft);
     }
@@ -583,7 +590,7 @@
   const dot = document.getElementById('sbDot'), txt = document.getElementById('sbTxt');
   const ping = () =>
     fetch('/api/influencers')
-      .then((r) => { if (!r.ok) throw 0; dot.className = 'dot ok'; txt.textContent = window.__eggNight ? 'NETRUNNER ONLINE' : 'SERVER ONLINE'; })
+      .then((r) => { if (!r.ok) throw 0; dot.className = 'dot ok'; txt.textContent = window.__eggNight && !document.documentElement.classList.contains('fx-off') ? 'NETRUNNER ONLINE' : 'SERVER ONLINE'; })
       .catch(() => { dot.className = 'dot bad'; txt.textContent = 'SERVER OFFLINE'; });
   ping();
   setInterval(() => { if (!offScreen()) ping(); }, 15000);

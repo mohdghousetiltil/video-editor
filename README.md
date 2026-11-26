@@ -1,6 +1,6 @@
 # video-editor
 
-**VD-0**, an AI video studio: single clips, story mode, UGC, poses and motion, and a Shorts maker (long video or link -> captioned 9:16 Short + thumbnail + title).
+**VD0**, an AI video studio: single clips, story mode, UGC, poses and motion, and a Shorts maker (long video or link -> captioned 9:16 Short + thumbnail + title).
 
 Run: copy `.env.example` to `.env`, add your OpenRouter key, then `node server.js` (http://localhost:3000).
 

@@ -449,10 +449,16 @@ body.eg-overdrive .wrap,body.eg-overdrive .sb{animation:eg-shake .12s steps(2) 2
 @keyframes eg-tear{to{transform:translateX(calc(var(--x) * -1));opacity:0}}
 .eg-scramble{font-family:var(--font-mono) !important;color:var(--mg) !important}
 @media(prefers-reduced-motion:reduce){html::before,body::before,.pagehead h1::before,.pagehead h1::after{animation:none !important;display:none}.eg-glitch,body.eg-overdrive,body.eg-overdrive .wrap{animation:none !important}}
+/* Settings switch off (app.js sets html.fx-off): no glitches, sweeping beam, scanlines or moving decoration */
+html.fx-off body::before,html.fx-off body::after,html.fx-off .pagehead h1::before,html.fx-off .pagehead h1::after,
+html.fx-off .radial-geo .gl::before,html.fx-off .radial-geo .gl::after{display:none !important}
+html.fx-off::before,html.fx-off .sb-brand span:last-child::after,html.fx-off .sb-logo,html.fx-off .primary:hover,
+html.fx-off body.radial-open .radial-geo .gl,html.fx-off .eg-glitch,html.fx-off .tabbar a.eg-glitch,html.fx-off .tb-orb.eg-glitch{animation:none !important}
+html.fx-off .eg-tear{display:none}
 /* phone easter eggs: the tab bar can glitch too, and the orb glows magenta after midnight */
 .tabbar a.eg-glitch,.tb-orb.eg-glitch{animation:eg-glitch .38s steps(2) 1 !important}
 .tabbar .eg-scramble{font-family:var(--font-mono) !important;color:var(--mg) !important}
-@media(max-width:900px){body.eg-night .tb-orb{background:radial-gradient(circle at 30% 25%,#ffb3d6,var(--mg) 50%,var(--violet) 115%) !important;box-shadow:0 0 22px rgba(255,46,147,.8) !important}}
+@media(max-width:900px){html:not(.fx-off) body.eg-night .tb-orb{background:radial-gradient(circle at 30% 25%,#ffb3d6,var(--mg) 50%,var(--violet) 115%) !important;box-shadow:0 0 22px rgba(255,46,147,.8) !important}}
 .tb-more{-webkit-touch-callout:none;user-select:none}
 
 /* netrunner screen break (breach.js): one layer over everything, drawn on a canvas, with a text readout */

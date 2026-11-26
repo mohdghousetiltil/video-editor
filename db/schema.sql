@@ -70,7 +70,7 @@ CREATE TABLE user_settings (
   confirm_under_usd   numeric(6,2) NOT NULL DEFAULT 0 CHECK (confirm_under_usd BETWEEN 0 AND 5),
   keep_days           integer NOT NULL DEFAULT 14   CHECK (keep_days BETWEEN 1 AND 365),
   keep_shorts_days    integer NOT NULL DEFAULT 60   CHECK (keep_shorts_days BETWEEN 1 AND 3650),
-  easter_eggs         boolean NOT NULL DEFAULT true,
+  easter_eggs         boolean NOT NULL DEFAULT false,
   units               ui_units NOT NULL DEFAULT 'credits',
   hindi_mode          boolean NOT NULL DEFAULT false,
   extra               jsonb NOT NULL DEFAULT '{}'::jsonb,       -- anything new, until it earns a column

@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#05060d">
-<meta name="apple-mobile-web-app-title" content="VD-0">
+<meta name="apple-mobile-web-app-title" content="VD0">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;800&family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600&display=swap">
@@ -139,7 +139,6 @@ function paint() {
   for (const k of ['textModel', 'visionModel', 'imageModel', 'directorModel', 'monthlyCap', 'dailyVideoCap', 'weeklyVideoCap', 'tz', 'keepDays', 'keepShortsDays']) if (document.activeElement !== $(k)) $(k).value = S[k];
   document.querySelectorAll('[data-db]').forEach((el) => { if (document.activeElement !== el) el.value = (+((S.directorBudget || {})[el.dataset.db] || 0)).toFixed(2); });
   if ($('voice').options.length) $('voice').value = S.voice;
-  $('eggs').checked = !!S.eggs;
   $('capNote').innerHTML = S.monthlyCap > 0 ? 'Cap: $' + (+S.monthlyCap).toFixed(2) + ' a month. Paid buttons stop once this month reaches it.' : '<svg class=ic aria-hidden=true><use href=#i-alert></use></svg> No cap: nothing stops paid calls except your OpenRouter credit.';
   $('confirmUnder').value = String(S.confirmUnder || 0);
 }
@@ -169,7 +168,6 @@ async function save(patch) {
   const j = await r.json();
   if (!r.ok) return toast(j.error || 'Could not save', 'err');
   S = j.settings; paint();
-  try { localStorage.setItem('eggs', S.eggs ? '1' : '0'); } catch {}
   $('saved').classList.add('show'); clearTimeout(savedT); savedT = setTimeout(() => $('saved').classList.remove('show'), 1600);
 }
 fetch('/api/settings').then((r) => r.json()).then((j) => {
@@ -192,7 +190,13 @@ document.querySelectorAll('[data-db]').forEach((el) => el.addEventListener('chan
 for (const k of ['textModel', 'visionModel', 'imageModel', 'directorModel', 'voice']) $(k).addEventListener('change', () => save({ [k]: $(k).value }));
 for (const k of ['monthlyCap', 'dailyVideoCap', 'weeklyVideoCap', 'keepDays', 'keepShortsDays']) $(k).addEventListener('change', () => save({ [k]: +$(k).value }));
 $('tz').addEventListener('change', () => save({ tz: $('tz').value.trim() }));
-$('eggs').addEventListener('change', () => save({ eggs: $('eggs').checked }));
+// easter eggs are this browser's own choice (off until ticked), so they are not part of the server settings
+try { $('eggs').checked = localStorage.getItem('eggsOn') === '1'; } catch {}
+$('eggs').addEventListener('change', () => {
+  try { localStorage.setItem('eggsOn', $('eggs').checked ? '1' : '0'); } catch { return toast('This browser would not save the choice', 'err'); }
+  window.applyEggs?.();
+  $('saved').classList.add('show'); clearTimeout(savedT); savedT = setTimeout(() => $('saved').classList.remove('show'), 1600);
+});
 $('screenCheck').addEventListener('click', () => {
   const sh = window.parent !== window && window.parent.__shell;
   if (!sh) { $('screenMsg').textContent = 'This page is open on its own (no frame), so there is nothing to show.'; return; }

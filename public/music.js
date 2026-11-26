@@ -108,7 +108,7 @@
     // lock-screen / headset controls and the "now playing" card
     function meta() {
       if (!('mediaSession' in navigator)) return;
-      try { navigator.mediaSession.metadata = new MediaMetadata({ title: cur().name, artist: cur().tag, album: 'VD-0 radio' }); } catch {}
+      try { navigator.mediaSession.metadata = new MediaMetadata({ title: cur().name, artist: cur().tag, album: 'VD0 radio' }); } catch {}
     }
     if ('mediaSession' in navigator) {
       const m = navigator.mediaSession;

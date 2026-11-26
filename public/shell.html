@@ -11,8 +11,8 @@
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#05060d">
-<meta name="apple-mobile-web-app-title" content="VD-0">
-<title>VD-0</title>
+<meta name="apple-mobile-web-app-title" content="VD0">
+<title>VD0</title>
 <style>
   /* The shell: one page that never reloads. It owns the music (so it keeps playing between pages) and shows every
      page of the app in a full-screen frame. */
@@ -41,7 +41,7 @@
 <div id="probe"></div>
 <div id="vp" aria-hidden="true"></div>
 <div id="vh" aria-hidden="true"></div><div id="lvh" aria-hidden="true"></div><div id="dvh" aria-hidden="true"></div>
-<div id="stage"><iframe id="app" title="VD-0"
+<div id="stage"><iframe id="app" title="VD0"
   allow="clipboard-write; clipboard-read; fullscreen; web-share; autoplay; camera; microphone; picture-in-picture"
   allowfullscreen></iframe></div>
 <noscript>This app needs JavaScript. <a href="/?noshell">Open it without the frame</a>.</noscript>
@@ -95,7 +95,7 @@
     var k = keyOf(u.href), f = frames[k];
     if (!f) {
       f = document.createElement('iframe');
-      f.title = 'VD-0'; f.setAttribute('allow', frame.getAttribute('allow')); f.setAttribute('allowfullscreen', '');
+      f.title = 'VD0'; f.setAttribute('allow', frame.getAttribute('allow')); f.setAttribute('allowfullscreen', '');
       f.style.cssText = frame.style.cssText; f.className = frame.className; f.id = '';
       f.addEventListener('load', function () { if (f === frame) { remeasure(); push(); } });
       frames[k] = f; stageEl.appendChild(f); f.src = u.pathname + u.search + u.hash;

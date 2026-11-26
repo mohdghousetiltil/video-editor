@@ -352,7 +352,8 @@ const readBody = (req, max = 25e6) =>
   });
 const orHeaders = () => ({ Authorization: `Bearer ${KEY}`, "Content-Type": "application/json" });
 // Shorts maker (long video -> analysed, cut, captioned 9:16 Short + thumbnail + title); see shorts.js
-const shorts = require("./shorts")({ STORE, FFMPEG, API, getKey: () => KEY, run, send, serveMp4, tts, logSpend, orFetch, renderSlot, getModel: () => settings.get().visionModel, serveThumb, history });
+const shorts = require("./shorts")({ STORE, FFMPEG, API, getKey: () => KEY, run, send, serveMp4, tts, logSpend, orFetch, renderSlot, getModel: () => settings.get().visionModel, serveThumb, history,
+  readInf, imgFile, viewFile, getImageModel: () => settings.get().imageModel });
 const shortsRoutes = shorts.handle;
 const ctx = { STORE, DATA, API, getKey: () => KEY, orFetch, orHeaders, send, readBody, run, tts, spend, settings, serveMp4, serveThumb, mediaDuration, hasAudio, glitchFilter, renderSlot, prices, imgFile, viewFile, history, liveModels, jobs, ensureVideo, themes, themeText, readInf, STILLS, stillFile, fileDataUrl, frameToJpeg, providers, fetchLink, FFMPEG };
 const story = require("./routes/story")(ctx);

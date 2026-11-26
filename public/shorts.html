@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#05060d">
-<meta name="apple-mobile-web-app-title" content="VD-0">
+<meta name="apple-mobile-web-app-title" content="VD0">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;800&family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600&display=swap">
@@ -77,6 +77,8 @@
   .pics .pic{position:relative;aspect-ratio:3/4;background:#000 center/cover no-repeat;border:1px solid var(--line)}
   .pics .pic span{position:absolute;left:4px;top:4px;font:700 11px/1 var(--font-ui,Inter);background:rgba(0,0,0,.7);color:#fff;padding:3px 5px}
   .pics .pic button{position:absolute;top:3px;right:3px;width:24px;height:24px;border-radius:50%;border:0;background:rgba(0,0,0,.75);color:#fff;cursor:pointer;line-height:1}
+  .grid.cameo{margin-bottom:0}
+  #cameoPic{width:54px;height:72px;object-fit:cover;border:1px solid var(--line)}
   .range{display:flex;flex-direction:column;gap:6px;grid-column:span 2;min-width:0}
   .range-l{font-size:12px;color:var(--mute);letter-spacing:.06em;text-transform:uppercase;font-weight:600}
   .range-row{display:flex;align-items:flex-end;gap:10px}
@@ -106,6 +108,12 @@
       <div class="drop" id="picDrop"><b>Drop pictures here or click to choose</b>Up to 10 · AI studies them and makes an explainer video</div>
       <input type="file" id="picFile" accept="image/*" multiple class="hidden">
       <div class="pics" id="picList"></div>
+      <div class="grid cameo">
+        <label>Influencer cameo (optional)<select id="cameoInf"><option value="">None</option></select></label>
+        <label id="cameoCountWrap" class="hidden">Appears in<select id="cameoCount"><option value="1">1 picture</option><option value="2" selected>2 pictures</option><option value="3">3 pictures</option></select></label>
+        <img id="cameoPic" class="hidden" alt="">
+      </div>
+      <div class="note" id="cameoNote"><a href="/influencers">Manage influencers</a></div>
     </div>
     <div id="srcFile">
       <div class="drop" id="drop"><b id="dropName">Drop a video here or click to choose</b>MP4, MOV, WEBM · up to 500 MB</div>
@@ -224,6 +232,7 @@ let VOICES = [];
 fetch('/api/shorts/voices').then((r) => r.json()).then((j) => {
   if (!j.voices) return;
   VOICES = j.voices;
+  if (j.cameo) { cameoPrice = j.cameo.perPicture; syncCameo(); }
   $('voice').innerHTML = j.voices.map((v) => `<option value="${esc(v.voice)}">${esc(String(v.label).replace(/\s*\((.*?)(?:,\s*(?:Kokoro|ElevenLabs))?\)\s*$/, (m, a) => a && !/^(Kokoro|ElevenLabs)$/.test(a) ? ' · ' + a : ''))}</option>`).join('');
   if ($('voice').dataset.want) $('voice').value = $('voice').dataset.want;
   if (!$('voice').value) $('voice').selectedIndex = 0;
@@ -334,7 +343,27 @@ document.querySelectorAll('[data-src]').forEach((b) => b.onclick = () => {
 
 // ---------- pictures -> explainer: up to 10, shrunk in the browser before upload ----------
 let pics = []; // [{name, url (preview), data (jpeg data URL)}]
-const picCost = () => 0.004 + pics.length * 0.0015 + (estimate().v.perSec || 0.00003) * ($('len').value === '30-60' ? 45 : 25);
+const picCost = () => 0.004 + pics.length * 0.0015 + (estimate().v.perSec || 0.00003) * ($('len').value === '30-60' ? 45 : 25) + cameoCount() * cameoPrice;
+// influencer cameo: a saved influencer drawn into some of the pictures (not remembered, as it costs extra)
+var INFS = [], cameoPrice = 0.07; // var like mode; the estimate for the chosen picture model arrives with the voices
+function cameoInf() { return (INFS || []).find((p) => p.id === $('cameoInf').value); }
+function cameoCount() { return cameoInf() ? Math.min(+$('cameoCount').value, pics.length) : 0; }
+function syncCameo() {
+  const p = cameoInf();
+  $('cameoCountWrap').classList.toggle('hidden', !p);
+  $('cameoPic').classList.toggle('hidden', !p);
+  if (p) { $('cameoPic').src = p.image; $('cameoPic').alt = p.name; }
+  $('cameoNote').innerHTML = (!p
+    ? (INFS.length ? 'Pick a saved influencer to have them appear and point things out.' : 'Save an influencer with a picture to use a cameo.')
+    : `AI draws ${esc(p.name)} presenting the picture, then your original is shown. About ${S.money(cameoPrice, 3)} a cameo picture.`) + ' <a href="/influencers">Manage influencers</a>';
+  if (mode === 'pics') $('estCost').textContent = '≈ ' + S.money(picCost(), 3);
+}
+fetch('/api/influencers').then((r) => r.json()).then((j) => {
+  INFS = (j.influencers || []).filter((p) => p.image);
+  $('cameoInf').insertAdjacentHTML('beforeend', INFS.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join(''));
+  syncCameo();
+}).catch(() => {});
+['cameoInf', 'cameoCount'].forEach((k) => $(k).addEventListener('change', syncCameo));
 function shrinkPic(f, max = 1600) {
   return new Promise((res, rej) => {
     const u = URL.createObjectURL(f), im = new Image();
@@ -364,7 +393,9 @@ $('picDrop').ondragleave = () => $('picDrop').classList.remove('over');
 $('picDrop').ondrop = (e) => { e.preventDefault(); $('picDrop').classList.remove('over'); addPics(e.dataTransfer.files); };
 async function goPictures() {
   if (!pics.length) return fail('Add at least one picture.');
+  const cameo = cameoInf(), cameos = cameoCount();
   const ok = await S.confirmSpend({ title: 'Make an explainer from your pictures?', total: picCost(), rows: [
+    ['Cameo', cameo ? `${cameo.name} in ${cameos} picture${cameos > 1 ? 's' : ''} ≈ ${S.money(cameos * cameoPrice, 3)} (estimate)` : ''],
     ['Pictures', String(pics.length)], ['Length', $('len').value.replace('-', '–') + ' s'], ['AI', 'studies the pictures and writes the explanation'],
     ['Voice', ($('voice').selectedOptions[0]?.textContent || '')]], note: 'Animation, captions, music and rendering run on your server and cost nothing.' });
   if (!ok) return;
@@ -373,7 +404,8 @@ async function goPictures() {
     const music = $('music').value === 'upload' ? (musicId || 'none') : $('music').value;
     const r = await fetch('/api/shorts/pictures', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
       images: pics.map((p) => p.data), hint: $('hint').value.trim(), len: $('len').value, voice: $('voice').value, music,
-      captions: $('captions').value, capStyle: $('capStyle').value, sfx: $('sfx').checked ? '1' : '0', title: $('hint').value.trim().slice(0, 80) }) });
+      captions: $('captions').value, capStyle: $('capStyle').value, sfx: $('sfx').checked ? '1' : '0', title: $('hint').value.trim().slice(0, 80),
+      ...(cameo ? { influencer_id: cameo.id, cameos } : {}) }) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || 'Request failed (' + r.status + ')');
     location.hash = j.id; track(j.id);
@@ -514,6 +546,7 @@ function showResult(j) {
   $('oInfo').innerHTML = [
     j.kind === 'pictures' ? `<svg class=ic aria-hidden=true><use href=#i-image></use></svg> Explainer from ${j.source?.pictures || ''} pictures → ${Math.round(j.length || 0)} s Short` :
     j.source && j.source.duration ? `From ${esc(j.source.title || 'your video')} (${fmt(j.source.duration)}) · ${fmt(j.start)}–${fmt(j.end)} → ${Math.round(j.length || j.end - j.start)} s Short` : '',
+    j.cameo ? (j.cameo.pictures.length ? `Cameo: ${esc(j.cameo.name)} in picture${j.cameo.pictures.length > 1 ? 's' : ''} ${j.cameo.pictures.join(', ')}` : 'No cameo picture could be made') : '',
     j.range ? `Searched only ${fmt(j.range[0])}–${fmt(j.range[1])}, as you asked` : '',
     j.segments && j.segments.length > 1 ? `Edited from ${j.segments.length} pieces: ` + j.segments.map((s) => fmt(s.start) + '–' + fmt(s.end)).join(', ') : '',
     j.candidates ? `Compared the ${j.candidates} best moments found across the whole video` : '',
