@@ -26,13 +26,19 @@ const VOICES = [
 
 const { MOOD_EXPR, MOODS, renderMood } = require("./lib/music");
 const hing = require("./lib/hinglish"); // Hinglish mode
-const { cameoPrompt } = require("./lib/identity-prompt");
+const { cameoPrompt, cameoTalkPrompt } = require("./lib/identity-prompt");
 
 // Influencer cameo (Pictures -> explainer): a saved influencer is drawn into up to CAMEO_MAX of the pictures.
 const CAMEO_MAX = 3;
 // estimated price of one cameo picture per image model (shown before paying; the real charge is what gets logged)
 const CAMEO_PRICE = { "meta/muse-image": 0.01, "google/gemini-3.1-flash-image": 0.07, "bytedance-seed/seedream-5-0-lite": 0.035, "black-forest-labs/flux-3-image-klein": 0.015 };
 const cameoPrice = (model) => CAMEO_PRICE[model] ?? 0.07;
+// the cameo picture then comes alive: a silent clip of the person explaining to camera (their voice is laid over it).
+// Grok Imagine Lite takes a first frame, accepts realistic faces, any whole length 1-15 s, ~$0.03 a second at 720p.
+const POLL_MS = Number(process.env.CAMEO_POLL_MS) || 4000;
+const CAMEO_VIDEO = { model: "x-ai/grok-imagine-video-1.5-lite", res: "720p", perSec: 0.03, max: 10 };
+// how long the person is on screen in a line of D seconds: most of it, but the original picture keeps at least ~1.5 s
+const cameoLen = (D) => Math.min(CAMEO_VIDEO.max, Math.max(D * 0.55, D - 1.5));
 // which of the n narrated pictures the person appears in: the hook first, then the payoff, then the middle
 function cameoSlides(n, count) {
   const want = [0, n - 1, Math.floor((n - 1) / 2)].slice(0, Math.max(0, Math.min(CAMEO_MAX, count)));
@@ -43,8 +49,8 @@ function cameoSlides(n, count) {
 function pictureShots(slides, X) {
   return slides.flatMap((s) => {
     if (!s.cameo) return [{ file: s.file, start: s.start, D: s.D }];
-    const a = s.D * 0.55;
-    return [{ file: s.cameo, start: s.start, D: a }, { file: s.file, start: s.start + a - X, D: s.D - a + X, inner: true }];
+    const a = cameoLen(s.D);
+    return [{ file: s.cameo, ...(s.clip ? { clip: s.clip } : {}), start: s.start, D: a }, { file: s.file, start: s.start + a - X, D: s.D - a + X, inner: true }];
   });
 }
 
@@ -770,6 +776,35 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
     return file;
   }
 
+  // One talking clip: the cameo picture as the first frame, the person explaining the line to camera. Logged as spent
+  // when it is finished (OpenRouter's own figure, else the estimate). Returns the clip's file name.
+  async function animateCameo(job, dir, still, narration, desc, secs, out) {
+    const H = { Authorization: `Bearer ${getKey()}`, "Content-Type": "application/json" };
+    const mime = "image/" + path.extname(still).slice(1).replace("jpg", "jpeg");
+    const r = await orFetch(`${API}/videos`, {
+      method: "POST", headers: H, signal: AbortSignal.timeout(60000),
+      body: JSON.stringify({ model: CAMEO_VIDEO.model, prompt: cameoTalkPrompt({ desc, narration }), duration: secs, resolution: CAMEO_VIDEO.res, aspect_ratio: "9:16", generate_audio: false,
+        frame_images: [{ type: "image_url", image_url: { url: `data:${mime};base64,` + fs.readFileSync(path.join(dir, still)).toString("base64") }, frame_type: "first_frame" }] }),
+    }, { safe: false });
+    let j = await r.json().catch(() => ({}));
+    if (!r.ok || j.error || !j.id) throw new Error(j.error?.message || `video failed (${r.status})`);
+    const vid = j.id, until = Date.now() + 8 * 60000;
+    while (j.status !== "completed") {
+      if (j.status === "failed") throw new Error(typeof j.error === "string" ? j.error : j.error?.message || "the clip failed");
+      if (Date.now() > until) throw new Error("the clip took longer than 8 minutes");
+      await new Promise((ok) => setTimeout(ok, POLL_MS));
+      const q = await orFetch(`${API}/videos/${vid}`, { headers: H, signal: AbortSignal.timeout(30000) }).catch(() => null);
+      if (q && q.ok) j = await q.json().catch(() => j);
+    }
+    const cost = Number(j.usage?.cost) || secs * CAMEO_VIDEO.perSec;
+    job.cameoCost = (job.cameoCost || 0) + cost;
+    logSpend("Shorts", cost, CAMEO_VIDEO.model);
+    const d = await orFetch(`${API}/videos/${vid}/content?index=0`, { headers: { Authorization: `Bearer ${getKey()}` }, signal: AbortSignal.timeout(120000) });
+    if (!d.ok) throw new Error(`couldn't download the clip (${d.status})`);
+    fs.writeFileSync(path.join(dir, `${out}.mp4`), Buffer.from(await d.arrayBuffer()));
+    return `${out}.mp4`;
+  }
+
   async function runPictures(id, opts) {
     const job = jobs.get(id), dir = dirOf(id);
     job.lang = opts.lang || "";
@@ -811,6 +846,20 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
         job.ttsCost = (job.ttsCost || 0) + vd * (TTS_RATE[v.model] ?? 0.0005);
         slides.push({ ...s, file: path.basename(files[s.image]), cameo: cameos.get(i), voice: vf, vd, D: Math.max(2.5, vd + 0.6) });
       }
+      // 1b. the cameo pictures come alive: the person explains the line to camera (silent, the voice goes over it);
+      // a clip that can't be made leaves the still picture
+      const live = slides.filter((s) => s.cameo);
+      if (live.length) {
+        let done = 0;
+        Object.assign(job, { step: `${opts.cameo.name} is explaining on camera`, pct: 46 });
+        await pool(live, 3, async (s) => {
+          const out = s.cameo.replace(/^cameo(\d+)\..*$/, "cameovid$1");
+          const had = opts.reusePlan && fs.existsSync(path.join(dir, `${out}.mp4`)) && `${out}.mp4`;
+          try { s.clip = had || await animateCameo(job, dir, s.cameo, s.narration, opts.cameo.desc, Math.ceil(cameoLen(s.D)), out); }
+          catch (e) { job.warning = `${opts.cameo.name} stays a still picture in picture ${s.image + 1}: ${String(e.message).slice(0, 160)}`; }
+          job.pct = 46 + Math.round((++done / live.length) * 4);
+        });
+      }
       let t = 0;
       slides.forEach((s, k) => { s.start = t; t += s.D - X; });
       const total = slides.reduce((a, s) => a + s.D, 0) - X * (slides.length - 1);
@@ -825,6 +874,9 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
           `[0:v]scale=${W * 2 - 120}:${H * 2 - 400}:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,format=yuv420p[o]`,
           "-map", "[o]", "-frames:v", "1", `slide${k}.png`], dir);
         const frames = Math.round(s.D * 30), [z0, z1] = k % 2 ? [1.08, 1] : [1, 1.08];
+        // a talking cameo: the clip itself, filling the frame (its last frame held if it is a little short)
+        if (s.clip) { await run(["-y", "-i", s.clip, "-vf", `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},fps=30,tpad=stop_mode=clone:stop_duration=${s.D.toFixed(3)},format=yuv420p`,
+          "-frames:v", String(frames), "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-an", `s${k}.mp4`], dir); continue; }
         await run(["-y", "-loop", "1", "-framerate", "30", "-t", s.D.toFixed(3), "-i", `slide${k}.png`, "-vf",
           `zoompan=z='${z0}+(${(z1 - z0).toFixed(3)})*on/${Math.max(1, frames - 1)}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=${W}x${H}:fps=30,format=yuv420p`,
           "-frames:v", String(frames), "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-an", `s${k}.mp4`], dir);
@@ -884,7 +936,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
         length: +total.toFixed(1), hook, captions: events.length, voiceover: slides.map((s) => s.narration),
         title: String(plan.title || "").slice(0, 100), description: String(plan.description || ""), hashtags: tags.slice(0, 8),
         thumbnailText: tt, cost: +((job.cost || 0) + (job.cameoCost || 0)).toFixed(4), sound: { music: musicFile ? mood : null, effects: opts.sfx !== false ? slides.length - 1 : 0 },
-        ...(opts.cameo ? { cameo: { name: opts.cameo.name, pictures: slides.filter((s) => s.cameo).map((s) => s.image + 1) }, warning: job.warning || null } : {}),
+        ...(opts.cameo ? { cameo: { name: opts.cameo.name, pictures: slides.filter((s) => s.cameo).map((s) => s.image + 1), talking: slides.filter((s) => s.clip).map((s) => s.image + 1), voice: opts.cameo.voice || null }, warning: job.warning || null } : {}),
         opts: { captions: opts.captions, capStyle: opts.capStyle, music: opts.music, voice: opts.voice, len: opts.len },
       };
       saveMeta(id, meta);
@@ -896,7 +948,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       hist(id, { status: "failed", error: job.error });
     } finally {
       logSpend("Shorts", (job.cost || 0) - (job.ttsCost || 0), modelNow(), "short-" + id);
-      for (const f of fs.readdirSync(dir)) if (/^(s\d+\.mp4|slide\d+\.png|vo\d+\.mp3|vt\d+\.wav|voice\.wav|sfx-.*\.wav|music-.*\.m4a|cameoref\d+\.(jpg|png|webp)|cameo\d+\.(jpg|png|webp))$/.test(f)) fs.rm(path.join(dir, f), { force: true }, () => {});
+      for (const f of fs.readdirSync(dir)) if (/^(s\d+\.mp4|slide\d+\.png|vo\d+\.mp3|vt\d+\.wav|voice\.wav|sfx-.*\.wav|music-.*\.m4a|cameoref\d+\.(jpg|png|webp)|cameo\d+\.(jpg|png|webp)|cameovid\d+\.mp4)$/.test(f)) fs.rm(path.join(dir, f), { force: true }, () => {});
       setTimeout(() => jobs.delete(id), 60 * 60 * 1000).unref?.(); // (never keeps the process alive by itself)
     }
   }
@@ -1028,6 +1080,8 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
           return name;
         });
         opts.cameo = { name: String(inf.name || "Influencer").slice(0, 60), desc: String(inf.desc || "").slice(0, 600), refs, count: Math.max(1, Math.min(CAMEO_MAX, Math.round(+body.cameos) || 2)) };
+        // the whole Short is spoken in the influencer's own voice when they have one
+        if (inf.voice && VOICES.some((v) => v.voice === inf.voice)) opts.voice = opts.cameo.voice = inf.voice;
       }
       const q = renderSlot.stats ? renderSlot.stats() : null, ahead = q ? q.waiting + (q.active >= q.slots ? 1 : 0) : 0;
       const job = jobs.get(id);
@@ -1082,7 +1136,7 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
       start(id, { ...o, link: null, file: src, reusePlan: true });
       return send(res, 200, { id }), true;
     }
-    if (req.method === "GET" && url.pathname === "/api/shorts/voices") return send(res, 200, { voices: VOICES.filter((v) => !hing.isHinglish(req) || /eleven/.test(v.model)).map((v) => (hing.isHinglish(req) ? { ...v, model: hing.HINGLISH_TTS, label: v.label.replace("ElevenLabs", "ElevenLabs v3") } : v)).map(({ voice, label, model }) => ({ voice, label, model, perSec: TTS_RATE[model] ?? 0.0005 })), vision: modelNow(), cameo: { model: getImageModel(), perPicture: cameoPrice(getImageModel()) } }), true;
+    if (req.method === "GET" && url.pathname === "/api/shorts/voices") return send(res, 200, { voices: VOICES.filter((v) => !hing.isHinglish(req) || /eleven/.test(v.model)).map((v) => (hing.isHinglish(req) ? { ...v, model: hing.HINGLISH_TTS, label: v.label.replace("ElevenLabs", "ElevenLabs v3") } : v)).map(({ voice, label, model }) => ({ voice, label, model, perSec: TTS_RATE[model] ?? 0.0005 })), vision: modelNow(), cameo: { model: getImageModel(), perPicture: cameoPrice(getImageModel()), video: CAMEO_VIDEO.model, videoPerSec: CAMEO_VIDEO.perSec } }), true;
     if (req.method === "GET" && url.pathname === "/api/shorts") {
       const ids = fs.readdirSync(DIR).filter((d) => /^\w+$/.test(d)).sort().reverse().slice(0, 30);
       return send(res, 200, { shorts: ids.map(publicView).filter(Boolean) }), true;
@@ -1110,4 +1164,4 @@ module.exports = function createShorts({ STORE, FFMPEG, API, getKey, run, send, 
     return false;
   } };
 };
-Object.assign(module.exports, { cameoSlides, pictureShots });
+Object.assign(module.exports, { cameoSlides, pictureShots, cameoLen });

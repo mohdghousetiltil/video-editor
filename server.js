@@ -779,7 +779,8 @@ const server = http.createServer(async (req, res) => {
 
     // ---- Influencer library (saved on disk in ./data so every page can use it) ----
     const pub = (p) => ({ id: p.id, name: p.name, desc: p.desc, seed: p.seed, seedance: p.seedance || null, image: imgFile(p.id) ? `/api/influencers/${p.id}/image?v=${p.updated || 0}` : null,
-      views: Object.fromEntries(INF_VIEWS.map((v) => [v, viewFile(p.id, v)]).filter(([, f]) => f).map(([v, f]) => [v, `/api/influencers/${p.id}/view/${v}?v=${Math.round(fs.statSync(f).mtimeMs)}`])) });
+      views: Object.fromEntries(INF_VIEWS.map((v) => [v, viewFile(p.id, v)]).filter(([, f]) => f).map(([v, f]) => [v, `/api/influencers/${p.id}/view/${v}?v=${Math.round(fs.statSync(f).mtimeMs)}`])),
+      voice: p.voice || null, video: p.video ? `/api/video/${p.video}` : null });
     // Visitor location: on the live site the Cloudflare proxy answers this itself (from its own request data); reaching the
     // server directly (running locally) there is no such data
     if (url.pathname === "/api/geo" && req.method === "GET") return send(res, 200, { country: req.headers["cf-ipcountry"] || null, region: null, city: null, local: true });
@@ -792,12 +793,14 @@ const server = http.createServer(async (req, res) => {
       let p = b.id && all.find((x) => x.id === b.id);
       if (!p) { p = { id: crypto.randomBytes(5).toString("hex") }; all.push(p); }
       Object.assign(p, { name, desc, seed: Number.isInteger(b.seed) ? b.seed : p.seed ?? Math.floor(Math.random() * 2e9), updated: Date.now() });
+      // the influencer's own voice (a narrator voice id from the Shorts list); "" clears it
+      if (typeof b.voice === "string") { if (/^[\w-]{1,40}$/.test(b.voice)) p.voice = b.voice; else delete p.voice; }
       writeInf(all);
       if (b.removeImage) { const f = imgFile(p.id); if (f) fs.unlinkSync(f); }
       const m = typeof b.image === "string" && b.image.match(/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/);
       if (m) {
         const old = imgFile(p.id); if (old) fs.unlinkSync(old);
-        p.seedance = null; writeInf(all); // new picture: earlier Seedance test no longer applies
+        p.seedance = null; delete p.video; writeInf(all); // new picture: earlier Seedance test and Meet clip no longer apply
         fs.rmSync(viewDir(p.id), { recursive: true, force: true }); // and the old body profiles would show someone else now
         fs.writeFileSync(path.join(IMG, `${p.id}.${m[1] === "jpeg" ? "jpg" : m[1]}`), Buffer.from(m[2], "base64"));
       }
@@ -886,6 +889,17 @@ const server = http.createServer(async (req, res) => {
       p.seedance = "ok"; writeInf(all);
       jobs.set(j.id, { startedAt: Date.now(), status: j.status || "pending", polling_url: j.polling_url, model: "bytedance/seedance-2.0-mini", feature: "Influencers" });
       return send(res, 200, { result: "ok", id: j.id });
+    }
+    // Meet: the clip made with Animate is kept on the influencer, so the card can play it (job id of a finished video)
+    let mv;
+    if (req.method === "POST" && (mv = url.pathname.match(/^\/api\/influencers\/([\w-]+)\/video$/))) {
+      const b = await readBody(req), all = readInf(), p = all.find((x) => x.id === mv[1]);
+      if (!p) return send(res, 404, { error: "No such influencer." });
+      if (b.job === null) delete p.video;
+      else if (/^[\w-]+$/.test(String(b.job || "")) && jobs.get(b.job)?.status === "completed") p.video = b.job;
+      else return send(res, 400, { error: "That clip isn't finished yet." });
+      writeInf(all);
+      return send(res, 200, pub(p));
     }
     let im;
     if ((im = url.pathname.match(/^\/api\/influencers\/([\w-]+)(\/image)?$/))) {

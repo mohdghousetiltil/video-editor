@@ -292,6 +292,7 @@
         <label>Name<input type="text" id="name" placeholder="e.g. Maya"></label>
         <label>Description <small>reused word for word in every prompt</small>
           <textarea id="desc" placeholder="A friendly woman in her mid-20s with warm light-brown skin, shoulder-length wavy dark brown hair, small gold hoop earrings, cream knit sweater."></textarea></label>
+        <label>Voice <small>speaks for them in Shorts</small><select id="voice"><option value="">Not set (uses the Short's narrator)</option></select></label>
         <div class="row"><button class="btn" id="descPic" type="button"><svg class=ic aria-hidden=true><use href=#i-sparkles></use></svg> Fill description from the picture</button><span class="meta" id="descPicMsg"></span></div>
       </div>
 
@@ -325,6 +326,10 @@
   <div class="sd-head"><h2 id="posesTitle">Poses</h2><button class="btn sd-x" data-x type="button" aria-label="Close"><svg class=ic aria-hidden=true><use href=#i-x></use></svg></button></div>
   <p class="meta pd-note">Redo or delete a single pose. The main picture is never changed.</p>
   <div class="pd-grid" id="posesGrid" data-confirm-anchor></div>
+</dialog>
+<dialog class="spend-dlg" id="meetDlg" aria-labelledby="meetTitle">
+  <div class="sd-head"><h2 id="meetTitle">Meet</h2><button class="btn sd-x" data-x type="button" aria-label="Close"><svg class=ic aria-hidden=true><use href=#i-x></use></svg></button></div>
+  <video id="meetVid" controls playsinline loop style="width:100%;max-height:70vh;background:#000"></video>
 </dialog>
 <dialog class="spend-dlg" id="animDlg" aria-label="Animate influencer">
   <div class="sd-head"><h2 id="animTitle">Animate</h2><button class="btn sd-x" data-x type="button" aria-label="Close"><svg class=ic aria-hidden=true><use href=#i-x></use></svg></button></div>
@@ -497,14 +502,18 @@ function resetForm(){
   editing=null;image=null;removeImage=false;
   $('formTitle').textContent='Add influencer'; $('tabAddTxt').textContent='Add influencer';
   $('name').value='';$('desc').value='';$('seed').value=newSeed();$('err').textContent='';
-  showPreview(null); $('cands').innerHTML=''; $('gMsg').textContent=''; render();
+  showPreview(null); $('cands').innerHTML=''; $('gMsg').textContent=''; setVoice(''); render();
 }
+// voices: the same narrator list as the Shorts maker
+function setVoice(v){ const s=$('voice'); if(v&&![...s.options].some(o=>o.value===v)) s.insertAdjacentHTML('beforeend',`<option value="${esc(v)}">${esc(v)}</option>`); s.value=v; }
+fetch('/api/shorts/voices').then(r=>r.json()).then(j=>{ const cur=$('voice').value;
+  $('voice').insertAdjacentHTML('beforeend',(j.voices||[]).map(v=>`<option value="${esc(v.voice)}">${esc(v.label)}</option>`).join('')); setVoice(cur); }).catch(()=>{});
 $('reset').onclick=resetForm;
 
 function edit(p){
   editing=p.id;image=null;removeImage=false;
   $('formTitle').textContent='Edit '+p.name; $('tabAddTxt').textContent='Edit '+p.name;
-  $('name').value=p.name;$('desc').value=p.desc||'';$('seed').value=p.seed;$('err').textContent='';
+  $('name').value=p.name;$('desc').value=p.desc||'';$('seed').value=p.seed;setVoice(p.voice||'');$('err').textContent='';
   $('cands').innerHTML=''; $('gMsg').textContent='';
   showPreview(p.image); render(); setView('add');
 }
@@ -516,7 +525,7 @@ $('save').onclick=async()=>{
   const b=$('save'); b.disabled=true;
   try{
     const r=await fetch('/api/influencers',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-      id:editing,name:$('name').value,desc:$('desc').value,seed:Number.isInteger(seed)?seed:undefined,
+      id:editing,name:$('name').value,desc:$('desc').value,voice:$('voice').value,seed:Number.isInteger(seed)?seed:undefined,
       ...(image?{image}:{}),...(removeImage?{removeImage:true}:{})})});
     const j=await r.json(); if(!r.ok) throw new Error(j.error||'Save failed');
     const newPic=!!image; await load(); resetForm(); setView('lib'); // back to the library, where the new card is
@@ -644,13 +653,16 @@ function render(){
         ${p.desc?`<div class="desc">${esc(p.desc)}</div>`:''}
         <div class="actions">
           ${!p.image?`<button class="btn primary" data-e="${p.id}">${ic('image')} Add a picture</button>`
+            // animated already: Meet plays their clip (Animate again and the poses stay in the menu)
+            :p.video?`<button class="btn primary" data-meet="${p.id}">${ic('play')} Meet</button>`
             // no poses (body profiles) yet: making them comes first; once there are poses the button is Animate
             :!nViews(p)?`<button class="btn primary" data-v="${p.id}" ${busy[p.id]?'disabled':''} title="Make the poses: front, sides, back, half and full body">${ic(busy[p.id]?'hourglass':'person')} ${busy[p.id]?'Posing…':'Pose'}</button>`
             :`<button class="btn primary" data-a="${p.id}">${ic('clapper')} Animate</button>`}
           <button class="btn more" data-m="${p.id}" aria-label="More for ${esc(p.name)}" aria-haspopup="menu" aria-expanded="false">${ic('dots')}</button>
           <div class="menu" role="menu" id="menu-${p.id}" hidden>
             <a role="menuitem" href="/ugc?inf=${p.id}">${ic('box')} Use in UGC</a>
-            ${p.image&&!nViews(p)?`<button role="menuitem" data-a="${p.id}">${ic('clapper')} Animate<span class="sub">no poses yet</span></button>`:''}
+            ${p.image&&!nViews(p)&&!p.video?`<button role="menuitem" data-a="${p.id}">${ic('clapper')} Animate<span class="sub">no poses yet</span></button>`:''}
+            ${p.video?`<button role="menuitem" data-a="${p.id}">${ic('clapper')} Animate again<span class="sub">replaces Meet</span></button>`:''}
             ${p.image?`<button role="menuitem" data-v="${p.id}" ${busy[p.id]?'disabled':''}>${ic('person')} ${nViews(p)===VIEWS.length?'Redo':'Make'} body profiles<span class="sub">${nViews(p)}/6</span></button>
             <button role="menuitem" data-t="${p.id}">${ic('zap')} Test with Seedance<span class="sub">${p.seedance==='ok'?'accepts':p.seedance==='blocked'?'blocks':'untested'}</span></button>`:''}
             ${p.image?`<button role="menuitem" data-pm="${p.id}">${ic('image')} Manage poses<span class="sub">redo / delete one</span></button>`:''}
@@ -683,7 +695,12 @@ function render(){
   $('list').querySelectorAll('[data-pm]').forEach(b=>b.onclick=()=>openPoses(b.dataset.pm));
   if($('posesDlg').open) paintPoses(); // keep the panel in step with the latest poses
   $('list').querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>openAnim(items.find(x=>x.id===b.dataset.a)));
+  $('list').querySelectorAll('[data-meet]').forEach(b=>b.onclick=()=>meet(items.find(x=>x.id===b.dataset.meet)));
 }
+// ---------- Meet: play the clip made with Animate ----------
+function meet(p){ $('meetTitle').textContent='Meet '+p.name; const v=$('meetVid'); v.src=p.video; v.muted=false; $('meetDlg').showModal(); v.play().catch(()=>{}); }
+$('meetDlg').addEventListener('click',e=>{ if(e.target.closest('[data-x]')||e.target===$('meetDlg')) $('meetDlg').close(); });
+$('meetDlg').addEventListener('close',()=>{ const v=$('meetVid'); v.pause(); v.removeAttribute('src'); v.load(); });
 // ---------- picture -> video: animate a saved influencer from their picture (same face, seed and description) ----------
 let MM={}, animP=null, animT=null;
 S.models().then(({map})=>{ MM=map; fillAnim(); });
@@ -712,6 +729,9 @@ $('animGo').onclick=async()=>{
       if(d.status==='failed'){ clearInterval(animT); $('animStage').innerHTML='<p class="err"><svg class=ic aria-hidden=true><use href=#i-circle-x></use></svg> '+S.esc(d.error||'failed')+'</p>'; $('animGo').disabled=false; return; }
       if(d.status!=='completed') return $('animStage').innerHTML=S.stageHTML(d);
       clearInterval(animT); $('animGo').disabled=false;
+      // keep it on the influencer: their card's button becomes Meet
+      const who=animP; fetch('/api/influencers/'+who.id+'/video',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job:j.id})})
+        .then(r=>r.ok?(toast('Saved. Press Meet on '+who.name+' to play it.'),load()):null).catch(()=>{});
       $('animStage').innerHTML=`<video src="${d.videoUrl}" controls autoplay loop playsinline style="width:100%;max-height:50vh"></video><a class="btn" href="${d.videoUrl}?download=1"><svg class=ic aria-hidden=true><use href=#i-download></use></svg> Download</a>`;
       window.dispatchEvent(new Event('spend-changed')); };
     animT=setInterval(poll,3000); poll();

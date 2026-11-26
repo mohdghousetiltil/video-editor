@@ -3,6 +3,14 @@
 The version lives in `public/app.js` (`VERSION`). Each release raises the last number by one and gets a line here.
 v1.0 is kept for the first public release.
 
+## 0.0.014592
+- Influencers: once someone is animated, their card's button becomes Meet, which plays the clip. Animate again is in the
+  ⋯ menu and replaces it. A new main picture clears the old clip.
+- Influencers have their own voice (Edit → Voice). When one is picked as a Shorts cameo, the whole Short is spoken in it.
+- Shorts maker → Pictures: the cameo now comes alive. The drawn picture becomes a short silent clip (Grok Imagine Lite,
+  ~$0.03 a second) of the influencer explaining to camera with hand gestures, under their voice. If a clip can't be
+  made, the still picture stays and the Short says so. The estimate and confirmation include the clips.
+
 ## 0.0.014591
 - Shorts maker → Pictures: optional influencer cameo. A saved influencer is drawn into up to 3 of your pictures,
   presenting and pointing at what is being explained; each opens on the cameo, then shows your original.
