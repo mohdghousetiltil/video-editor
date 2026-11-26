@@ -24,7 +24,7 @@
   /* two cards side by side on every screen: picture on top, then title, details and buttons */
   .rows{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
   .row{display:flex;flex-direction:column;gap:8px;min-width:0;padding:10px;border:1px solid var(--line);background:var(--panel2)}
-  .row .th{width:100%;aspect-ratio:4/5;background:#000 center/cover no-repeat;display:grid;place-items:center;color:var(--mute);font-size:26px}
+  .row .th{position:relative;width:100%;aspect-ratio:4/5;background:#000 center/contain no-repeat;display:grid;place-items:center;color:var(--mute);font-size:26px}
   .row .ti{font-weight:600;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
   .row .mt{color:var(--mute);font-size:13px;margin-top:4px;overflow-wrap:anywhere}
   .row .mt .why{display:block}
@@ -33,8 +33,20 @@
   .st{display:inline-block;padding:1px 8px;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;border:1px solid var(--line2)}
   .st.completed{color:var(--ok);border-color:rgba(57,255,156,.45)}.st.failed{color:var(--err);border-color:rgba(255,77,109,.5)}.st.running,.st.pending,.st.in_progress{color:var(--acc)}
   .row .enh-host summary{font-size:12px}
+  .playc{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:56px;height:56px;border-radius:50%;display:grid;place-items:center;padding:0;cursor:pointer;
+    background:rgba(5,6,13,.66);border:2px solid var(--acc);color:var(--acc);box-shadow:0 0 18px rgba(0,229,255,.45);font-size:24px}
+  .playc:hover,.playc:focus-visible{background:rgba(0,229,255,.25);color:#fff}
+  .row .ti button{all:unset;cursor:pointer;display:inline;overflow-wrap:anywhere}
+  .row .ti button:hover{color:var(--acc);text-decoration:underline}
+  .row .ti button:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+  .det{width:min(560px,94vw);max-height:90dvh;overflow:auto}
+  .det .dth{position:relative;background:#000;display:grid;place-items:center}
+  .det .dth img{display:block;max-width:100%;max-height:60dvh;object-fit:contain}
+  .det dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 12px;margin:12px 0;font-size:14px}
+  .det dt{color:var(--mute)}.det dd{margin:0;overflow-wrap:anywhere;white-space:pre-wrap}
+  .det .da{display:flex;gap:8px;flex-wrap:wrap}
   @media(min-width:701px){.row .th{aspect-ratio:auto;height:240px;background-size:contain}}
-  @media(max-width:700px){.rows{gap:8px}.row{padding:6px;gap:6px}.row .th{aspect-ratio:1}.row .ti{font-size:13px}.row .mt{font-size:11px;line-height:1.35}
+  @media(max-width:700px){.rows{gap:8px}.row{padding:6px;gap:6px}.row .th{aspect-ratio:3/4}.row .ti{font-size:13px}.row .mt{font-size:11px;line-height:1.35}
     .row .mt code,.row .mt .more{display:none}.row .mt .why{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
     .row .ac{flex-wrap:nowrap;gap:4px}.row .ac .btn{flex:1;min-width:0;padding:7px 0}.row .ac .btn .lbl{display:none}.row .enh-host summary{font-size:11px}}
   .sum{color:var(--mute);font-size:13px;margin:0 0 10px}
@@ -57,6 +69,10 @@
       <label>To<input id="to" type="date"></label>
     </div>
   </div>
+  <dialog class="spend-dlg det" id="detDlg" aria-labelledby="detTitle">
+    <div class="sd-head"><h2 id="detTitle">Details</h2><button class="btn sd-x" data-x type="button" aria-label="Close"><svg class=ic aria-hidden=true><use href=#i-x></use></svg></button></div>
+    <div id="detBody"></div>
+  </dialog>
   <div class="panel">
     <h2>Results</h2>
     <p class="sum" id="sum" aria-live="polite"></p>
@@ -83,20 +99,44 @@ function render(){
   $('rows').innerHTML=items.length?items.map(x=>{
     const done=x.status==='completed', run=/^(pending|in_progress|running|queued)$/.test(x.status);
     return `<div class="row" data-id="${S.esc(x.id)}">
-      <div class="th" style="${done&&x.thumb?`background-image:url('${S.esc(x.thumb)}')`:''}">${done&&x.thumb?'':run?'<svg class=ic aria-hidden=true><use href=#i-hourglass></use></svg>':x.status==='failed'?'<svg class=ic aria-hidden=true><use href=#i-x></use></svg>':'<svg class=ic aria-hidden=true><use href=#i-film></use></svg>'}</div>
-      <div><div class="ti">${S.esc(x.title||x.id)}</div>
+      <div class="th" style="${done&&x.thumb?`background-image:url('${S.esc(x.thumb)}')`:''}">${done&&x.url?`<button class="playc" type="button" data-play="${S.esc(x.url)}" aria-label="Play ${S.esc(x.title||x.id)}"><svg class=ic aria-hidden=true><use href=#i-play></use></svg></button>`:''}${done&&x.thumb?'':run?'<svg class=ic aria-hidden=true><use href=#i-hourglass></use></svg>':x.status==='failed'?'<svg class=ic aria-hidden=true><use href=#i-x></use></svg>':'<svg class=ic aria-hidden=true><use href=#i-film></use></svg>'}</div>
+      <div><div class="ti"><button type="button" data-det title="Open details">${S.esc(x.title||x.id)}</button></div>
         <div class="mt"><span class="st ${S.esc(x.status)}">${S.esc(run?'running':x.status==='completed'?'done':x.status)}</span> · ${KIND[x.kind]||S.esc(x.kind)}<span class="more">${x.model?' · '+S.esc((MODELS[x.model]||{}).name||x.model):''}</span>${x.duration?' · '+x.duration+' s':''}${x.res?' · '+S.esc(x.res):''}${x.cost!=null?' · '+S.money(x.cost,3):''}<span class="more">${x.provider&&x.provider!=='openrouter'?' · via '+S.esc(x.provider):''}</span></div>
         <div class="mt">${new Date(x.t).toLocaleString([],{dateStyle:'medium',timeStyle:'short'})} <code>· ${S.esc(x.id)}</code>${x.error?`<span class="why" style="color:var(--err);margin-top:2px">${S.esc(x.error.slice(0,200))}</span>`:''}</div></div>
       <div class="ac">
-        ${done&&x.url?`<button class="btn" type="button" data-play="${S.esc(x.url)}" aria-label="Play"><svg class=ic aria-hidden=true><use href=#i-video></use></svg><span class="lbl"> Play</span></button><a class="btn" href="${S.esc(x.url)}${x.kind==='short'?'?dl=1':'?download=1'}" aria-label="Download"><svg class=ic aria-hidden=true><use href=#i-download></use></svg><span class="lbl"> Download</span></a>`:''}
+        ${done&&x.url?`<a class="btn" href="${S.esc(x.url)}${x.kind==='short'?'?dl=1':'?download=1'}" aria-label="Download"><svg class=ic aria-hidden=true><use href=#i-download></use></svg><span class="lbl"> Download</span></a>`:''}
         ${x.retry&&!run?`<button class="btn" data-r type="button" aria-label="Retry"><svg class=ic aria-hidden=true><use href=#i-refresh></use></svg><span class="lbl"> Retry</span></button>`:''}
         ${!run?`<button class="btn danger" data-d type="button" aria-label="Delete ${S.esc(x.title||x.id)}"><svg class=ic aria-hidden=true><use href=#i-x></use></svg><span class="lbl"> Delete</span></button>`:''}
       </div>${done&&x.url?`<div class="enh-host" data-src="${S.esc(x.url)}"></div>`:''}</div>`;}).join(''):'<div class="none">Nothing here yet. Everything you make on any page shows up here.</div>';
 }
+// ---------- details: the thumbnail and everything recorded about one item (a Short adds its caption and hashtags) ----------
+let detId=null;
+function details(x){
+  detId=x.id;
+  const done=x.status==='completed', short=x.kind==='short', body=(x.retry&&x.retry.body)||{};
+  const dl=u=>u+(short?'?dl=1':'?download=1');
+  const paint=more=>{
+    const m=more||{};
+    const rows=[['Status',done?'done':x.status],['Kind',KIND[x.kind]||x.kind],['Model',x.model?(MODELS[x.model]||{}).name||x.model:''],['Provider',x.provider],
+      ['Length',x.duration?x.duration+' s':m.length?m.length+' s':''],['Resolution',x.res],['Cost',x.cost!=null?S.money(x.cost,3):''],
+      ['Made',new Date(x.t).toLocaleString([],{dateStyle:'full',timeStyle:'short'})],['ID',x.id],['Prompt',body.prompt],['Hook',m.hook],['Description',m.description],
+      ['Hashtags',(m.hashtags||[]).map(h=>'#'+h).join(' ')],['Voiceover',(m.voiceover||[]).join('\n')],['Thumbnail text',m.thumbnailText],['Warning',m.warning],['Error',x.error]];
+    $('detBody').innerHTML=(done&&x.thumb?`<div class="dth"><img src="${S.esc(x.thumb)}" alt="Thumbnail">${x.url?`<button class="playc" type="button" data-play="${S.esc(x.url)}" aria-label="Play"><svg class=ic aria-hidden=true><use href=#i-play></use></svg></button>`:''}</div>`:'')+
+      `<dl>${rows.filter(r=>r[1]).map(r=>`<dt>${r[0]}</dt><dd>${S.esc(String(r[1]))}</dd>`).join('')}</dl>`+
+      (done&&x.url?`<div class="da"><a class="btn primary" href="${S.esc(dl(x.url))}"><svg class=ic aria-hidden=true><use href=#i-download></use></svg> Video</a>${x.thumb?`<a class="btn" href="${S.esc(x.thumb+(short?'?dl=1':''))}" download="thumbnail-${S.esc(x.id)}.jpg"><svg class=ic aria-hidden=true><use href=#i-image></use></svg> Thumbnail</a>`:''}</div>`:'');
+  };
+  $('detTitle').textContent=x.title||x.id; paint(); $('detDlg').showModal();
+  if(short) fetch('/api/shorts/'+x.id.replace(/^short-/,'')).then(r=>r.ok?r.json():null).then(m=>{ if(m&&detId===x.id) paint(m); }).catch(()=>{});
+}
+$('detDlg').addEventListener('click',e=>{
+  const pl=e.target.closest('[data-play]'); if(pl){ const title=$('detTitle').textContent; $('detDlg').close(); S.playVideo(pl.dataset.play,title); return; }
+  if(e.target.closest('[data-x]')||e.target===$('detDlg')) $('detDlg').close();
+});
 $('rows').addEventListener('click',async e=>{
   const row=e.target.closest('.row'); if(!row) return;
   const x=items.find(i=>i.id===row.dataset.id);
   const pl=e.target.closest('[data-play]'); if(pl){ S.playVideo(pl.dataset.play, x?x.title||'':''); return; }
+  if(e.target.closest('[data-det]')){ details(x); return; }
   if(e.target.closest('[data-d]')){
     if(!confirm(`Delete "${x.title||x.id}" from history${x.kind==='short'?' and the server':''}? The video file kept on the server is removed too. This can't be undone.`)) return;
     const r=x.kind==='short'?await fetch('/api/shorts/'+x.id.replace(/^short-/,''),{method:'DELETE'}):await fetch('/api/history/'+encodeURIComponent(x.id),{method:'DELETE'});

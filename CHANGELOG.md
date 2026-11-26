@@ -3,6 +3,11 @@
 The version lives in `public/app.js` (`VERSION`). Each release raises the last number by one and gets a line here.
 v1.0 is kept for the first public release.
 
+## 0.0.014599
+- History: Play sits in the middle of each video's picture, and the whole thumbnail is shown, not a crop. Tapping a
+  title opens its details: the large thumbnail, model, cost, date, ID, prompt (and for Shorts the description,
+  hashtags and voiceover), with buttons to download the video or the thumbnail.
+
 ## 0.0.014598
 - History is a two-column grid of cards (picture on top, details and buttons below), four to a screen on a phone,
   where the buttons show as icons and the model and job ID are tucked away.
