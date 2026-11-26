@@ -11,10 +11,13 @@
 // The pure parts (track, choose, cropBox) are plain functions so the tests can run them in Node.
 (function (root) {
   const CDN = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.15";
+  // nothing here may wait forever: a stalled download, a video the browser never loads or a seek that never lands
+  // gives up after a while with a clear message (the face swap then sends the whole video instead)
+  const within = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(msg)), ms))]);
   let ready = null;
   function load() {
     if (ready) return ready;
-    ready = new Promise((res, rej) => {
+    ready = within(new Promise((res, rej) => {
       if (root.faceapi) return res();
       const s = document.createElement("script");
       s.src = CDN + "/dist/face-api.js";
@@ -27,7 +30,7 @@
       await f.nets.ssdMobilenetv1.loadFromUri(CDN + "/model");
       await f.nets.ageGenderNet.loadFromUri(CDN + "/model");
       await f.nets.faceLandmark68TinyNet.loadFromUri(CDN + "/model");   // 77 KB: eye points, to find a frame with open eyes
-    });
+    }), 90000, "The face detector didn't download within 90 s (slow or blocked connection to cdn.jsdelivr.net)");
     ready.catch(() => { ready = null; });
     return ready;
   }
@@ -45,6 +48,7 @@
       s.onload = res; s.onerror = () => rej(new Error("body detector did not load"));
       document.head.append(s);
     })).then(() => root.cocoSsd.load({ base: "lite_mobilenet_v2" }));
+    bodyNet = within(bodyNet, 45000, "body detector took too long");   // optional: without it, faces only
     bodyNet.catch(() => { bodyNet = null; });
     return bodyNet;
   }
@@ -93,10 +97,15 @@
     const net = await loadBodies().catch(() => null);
     // the detectors' first run is slow (they set themselves up, ~10-15 s); do it here on a blank picture so it counts
     // as loading and the time-left estimate below only sees the real per-frame speed (about 0.25 s a frame)
-    if (!warm) { const b = document.createElement("canvas"); b.width = 320; b.height = 240; try { await faces(b, 320, 240); if (net) await bodies(net, b, 320, 240); } catch {} warm = true; }
+    if (!warm) { const b = document.createElement("canvas"); b.width = 320; b.height = 240; try { await within((async () => { await faces(b, 320, 240); if (net) await bodies(net, b, 320, 240); })(), 60000, "warm-up"); } catch {} warm = true; }
     const v = document.createElement("video");
-    v.muted = true; v.playsInline = true; v.preload = "auto"; v.src = src;
-    await new Promise((res, rej) => { v.onloadeddata = res; v.onerror = () => rej(new Error("Could not read the video")); });
+    v.muted = true; v.playsInline = true; v.setAttribute("playsinline", ""); v.setAttribute("muted", ""); v.preload = "auto"; v.crossOrigin = "anonymous"; v.src = src;
+    // phones (iOS Safari above all) don't load a video that isn't playing: start it muted, then pause, so frames arrive
+    const loaded = new Promise((res, rej) => { v.onloadeddata = res; v.onerror = () => rej(new Error("Could not read the video (format not supported by this browser?)")); });
+    v.load();
+    v.play().then(() => v.pause()).catch(() => {});
+    await within(loaded, 30000, "The browser didn't load the video within 30 s");
+    v.pause();
     const dur = v.duration || 1, n = Math.max(6, Math.min(24, Math.round(dur * 2)));
     const W = 640, H = Math.round(640 * v.videoHeight / v.videoWidth) || 360;
     const c = document.createElement("canvas"); c.width = W; c.height = H;
@@ -105,20 +114,31 @@
     let last = null; try { last = Number(localStorage.getItem(PER_KEY)) || null; } catch {}
     if (onStep) onStep(0, n, last ? Math.round(last * n) : null, "scan");
     const t0 = performance.now();
+    let skipped = 0;
     for (let i = 0; i < n; i++) {
       const t = (i + 0.5) * dur / n;
-      await new Promise((res) => { v.onseeked = res; v.currentTime = t; });
-      g.drawImage(v, 0, 0, W, H);
-      const fs = await faces(c, W, H);
+      // a seek that never lands (or a frame the detector chokes on) is skipped, not waited on forever
+      try {
+        await within(new Promise((res) => { v.onseeked = res; v.currentTime = t; }), 10000, "seek");
+        g.drawImage(v, 0, 0, W, H);
+      } catch {
+        skipped++;
+        // the first two seeks both stuck: this browser can't step through this video, don't make them wait for the rest
+        if (!frames.length && skipped >= 2) { v.removeAttribute("src"); v.load(); throw new Error("this browser couldn't step through the video"); }
+        if (onStep) onStep(i + 1, n, null, "scan"); continue;
+      }
+      let fs = [];
+      try { fs = await within(faces(c, W, H), 20000, "detect"); } catch { skipped++; }
       // a small picture of each face (the biggest one per person is kept later)
       for (const f of fs) f.thumb = faceThumb(c, f, W, H);
       let text = [];
       try { text = textRects(g.getImageData(0, 0, W, H).data, W, H); } catch {}
-      frames.push({ t, faces: fs, bodies: net ? await bodies(net, c, W, H).catch(() => []) : [], text });
+      frames.push({ t, faces: fs, bodies: net ? await within(bodies(net, c, W, H), 20000, "bodies").catch(() => []) : [], text });
       const per = (performance.now() - t0) / 1000 / (i + 1);
       if (onStep) onStep(i + 1, n, Math.round(per * (n - i - 1)), "scan");
     }
-    try { localStorage.setItem(PER_KEY, String((performance.now() - t0) / 1000 / n)); } catch {}
+    if (!frames.length) { v.removeAttribute("src"); v.load(); throw new Error("this browser couldn't step through the video"); }
+    if (skipped < n / 3) try { localStorage.setItem(PER_KEY, String((performance.now() - t0) / 1000 / n)); } catch {}
     const width = v.videoWidth, height = v.videoHeight;   // read before letting the video go: they are 0 afterwards
     v.removeAttribute("src"); v.load();
     return { frames, width, height, duration: dur, bodies: !!net };

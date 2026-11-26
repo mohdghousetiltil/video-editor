@@ -614,19 +614,21 @@ async function swFindPeople(){
   swScan=null; swPeopleList=[]; swPick=null; swByHand=false;
   const box=$('swPeople'); box.classList.remove('hidden'); box.innerHTML='<div class="why">Looking for people in the video…</div>';
   try{
-    const src=swSrc.previewUrl, sc=await people.scan(src,(d,n,left,phase)=>{ if(swSrc&&swSrc.previewUrl===src) box.innerHTML=swScanLine(d,n,left,phase); });
+    const src=swSrc.previewUrl, t0=Date.now();
+    let last=[0,0,null,'load']; const tick=setInterval(()=>{ if(swSrc&&swSrc.previewUrl===src&&last[3]==='load') box.innerHTML=swScanLine(...last,Math.round((Date.now()-t0)/1000)); },1000);
+    let sc; try{ sc=await people.scan(src,(d,n,left,phase)=>{ last=[d,n,left,phase]; if(swSrc&&swSrc.previewUrl===src) box.innerHTML=swScanLine(d,n,left,phase); }); } finally { clearInterval(tick); }
     box.innerHTML='<div class="why">Checking who is who… a few seconds</div>';
     if(!swSrc||swSrc.previewUrl!==src) return;  // another video was picked meanwhile
     swScan=sc; swPeopleList=people.track(sc.frames);
     // side-on faces: their gender is checked once with a quick look (a fraction of a cent each)
-    await people.checkGenders(swPeopleList, async (image)=>{ const r=await fetch('/api/swap/gender',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image})}); const j=await r.json(); return r.ok?j.gender:null; });
+    await people.checkGenders(swPeopleList, async (image)=>{ const r=await fetch('/api/swap/gender',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image}),signal:AbortSignal.timeout(20000)}); const j=await r.json(); return r.ok?j.gender:null; });
     await swChoose();
     if(!sc.bodies) box.insertAdjacentHTML('beforeend','<div class="why warn">The body detector didn\'t load, so only people facing the camera are kept out.</div>');
-  }catch(e){ box.innerHTML='<div class="why warn">Couldn\'t look for people ('+S.esc(e.message)+'). The whole video is sent and the model chooses who to replace.</div>'; }
+  }catch(e){ box.innerHTML='<div class="why warn">Couldn\'t look for people: '+S.esc(e.message)+'. You can still swap: the whole video is sent and the model chooses who to replace. <button class="btn" type="button" id="swRescan">Try again</button></div>'; const b=$('swRescan'); if(b) b.onclick=swFindPeople; }
 }
 // progress of the people search: frames done, a bar and roughly how long is left
-function swScanLine(d,n,left,phase){
-  if(phase==='load') return '<div class="why">Getting the face detector ready… about 10–30 s the first time on this device, a few seconds after that</div>';
+function swScanLine(d,n,left,phase,secs){
+  if(phase==='load') return '<div class="why">Getting the face detector ready… about 10–30 s the first time on this device, a few seconds after that'+(secs?' ('+secs+' s so far)':'')+'</div>';
   const eta=left==null?'estimating time…':left<=1?'almost done':'about '+(left<60?left+' s':Math.ceil(left/60)+' min')+' left';
   const pct=n?Math.round(d/n*100):0;
   return '<div class="why">Looking for people in the video… '+d+'/'+n+' · '+eta+'</div>'+

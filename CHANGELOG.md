@@ -3,6 +3,13 @@
 The version lives in `public/app.js` (`VERSION`). Each release raises the last number by one and gets a line here.
 v1.0 is kept for the first public release.
 
+## 0.0.014596
+- Face swap: the people search can no longer hang forever. Phones (iOS Safari above all) never loaded the hidden
+  video, so it waited indefinitely; the video is now started muted so frames arrive. Every step has a limit
+  (detector download 90 s, video 30 s, each frame 10-20 s, gender check 20 s); a frame that gets stuck is skipped,
+  and if the search fails the page says why, with Try again, and the swap still works on the whole video.
+- While the detector gets ready, a live "N s so far" counter shows it is still working.
+
 ## 0.0.014595
 - Face swap: "Looking for people in the video" shows a progress bar and roughly how long is left, measured from
   this device's own speed. Getting the face detector ready (10-30 s the first time, a few seconds after) is its own

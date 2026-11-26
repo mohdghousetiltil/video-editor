@@ -798,7 +798,18 @@ const server = http.createServer(async (req, res) => {
     // Visitor location: on the live site the Cloudflare proxy answers this itself (from its own request data); reaching the
     // server directly (running locally) there is no such data
     if (url.pathname === "/api/geo" && req.method === "GET") return send(res, 200, { country: req.headers["cf-ipcountry"] || null, region: null, city: null, local: true });
-    if (url.pathname === "/api/influencers" && req.method === "GET") return send(res, 200, { influencers: readInf().map(pub) });
+    if (url.pathname === "/api/influencers" && req.method === "GET") {
+      // clips animated before Meet existed: link the newest finished "Animate <name>" from History (made after the current picture)
+      const all = readInf(); let changed = false;
+      for (const p of all) {
+        if (p.video || p.noVideo) continue;
+        const f = imgFile(p.id), pic = f ? fs.statSync(f).mtimeMs - 60000 : 0; // a clip of an older picture would show someone else
+        const h = history.list({ kind: "influencer", status: "completed", limit: 1000 }).find((r) => r.title === "Animate " + p.name && r.id && !/^short-/.test(r.id) && (!pic || !r.t || r.t >= pic));
+        if (h) { p.video = h.id; changed = true; }
+      }
+      if (changed) writeInf(all);
+      return send(res, 200, { influencers: all.map(pub) });
+    }
     if (url.pathname === "/api/influencers" && req.method === "POST") {
       const b = await readBody(req);
       const name = String(b.name || "").trim().slice(0, 60), desc = String(b.desc || "").trim().slice(0, 1500);
@@ -909,8 +920,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && (mv = url.pathname.match(/^\/api\/influencers\/([\w-]+)\/video$/))) {
       const b = await readBody(req), all = readInf(), p = all.find((x) => x.id === mv[1]);
       if (!p) return send(res, 404, { error: "No such influencer." });
-      if (b.job === null) delete p.video;
-      else if (/^[\w-]+$/.test(String(b.job || "")) && jobs.get(b.job)?.status === "completed") p.video = b.job;
+      if (b.job === null) { delete p.video; p.noVideo = true; } // removed on purpose: don't link it again from History
+      else if (/^[\w-]+$/.test(String(b.job || "")) && jobs.get(b.job)?.status === "completed") { p.video = b.job; delete p.noVideo; }
       else return send(res, 400, { error: "That clip isn't finished yet." });
       writeInf(all);
       return send(res, 200, pub(p));
